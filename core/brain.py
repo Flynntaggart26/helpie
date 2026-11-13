@@ -5,11 +5,13 @@ import datetime as dt
 import json
 import random
 import re
+from pathlib import Path
 from typing import Callable, Optional
 
 import actions
 import documents
 import memory
+import shutil
 from llm import Brain as LlmBrain
 
 GREETINGS = [
@@ -190,6 +192,65 @@ class Brain:
     def _refresh_memory(self) -> None:
         self.llm.memory_text = memory.as_prompt()
         self.on_event({"type": "memory", "items": memory.list_items()})
+
+    # ------------------------------------------------------------------ #
+    def _resolve_folder(self, text: str) -> Optional[Path]:
+        t = text.lower()
+        mapping = {
+            "desktop": Path.home() / "Desktop",
+            "downloads": Path.home() / "Downloads",
+            "documents": Path.home() / "Documents",
+            "pictures": Path.home() / "Pictures",
+            "music": Path.home() / "Music",
+            "videos": Path.home() / "Videos",
+            "masaüstü": Path.home() / "Desktop",
+            "indirilenler": Path.home() / "Downloads",
+            "belgeler": Path.home() / "Documents",
+            "resimler": Path.home() / "Pictures",
+            "müzik": Path.home() / "Music",
+            "videolar": Path.home() / "Videos",
+        }
+        for key, path in mapping.items():
+            if key in t:
+                return path
+        return None
+
+    def _format_organize_result(self, result: dict, dry: bool) -> str:
+        if "error" in result:
+            return result["error"]
+        prefix = "Preview: " if dry else ""
+        if result["moved"] == 0:
+            return f"{prefix}Nothing to organize in {Path(result['folder']).name}."
+        lines = [f"{prefix}Organized {result['moved']} file(s) in {Path(result['folder']).name} by {result['by']}."]
+        if result["errors"]:
+            lines.append(f"  {result['errors']} error(s).")
+        return " ".join(lines)
+
+    def _format_organize_all_result(self, results: list[dict], dry: bool) -> str:
+        prefix = "Preview: " if dry else ""
+        total = sum(r.get("moved", 0) for r in results if "error" not in r)
+        if total == 0:
+            return f"{prefix}Nothing to organize."
+        parts = [f"{prefix}Organized {total} file(s) across {len(results)} folder(s)."]
+        for r in results:
+            if "error" not in r and r.get("moved", 0):
+                parts.append(f"  {Path(r['folder']).name}: {r['moved']} file(s)")
+        return " ".join(parts)
+
+    def _format_duplicate_result(self, result: dict, dry: bool) -> str:
+        prefix = "Preview: " if dry else ""
+        if result["groups"] == 0:
+            return f"{prefix}No duplicate files found in {Path(result['folder']).name}."
+        if result["removed"] == 0:
+            return f"{prefix}Found {result['groups']} duplicate group(s) but removed none."
+        freed_mb = result["freed_bytes"] / (1024 * 1024)
+        return f"{prefix}Removed {result['removed']} duplicate file(s), freed {freed_mb:.1f} MB in {Path(result['folder']).name}."
+
+    def _format_empty_folder_result(self, result: dict, dry: bool) -> str:
+        prefix = "Preview: " if dry else ""
+        if result["removed"] == 0:
+            return f"{prefix}No empty folders found in {Path(result['folder']).name}."
+        return f"{prefix}Removed {result['removed']} empty folder(s) in {Path(result['folder']).name}."
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -491,6 +552,38 @@ class Brain:
                           r"|(masaüstü|indirilenler|belgeler|resimler|müzik|videolar)\s*(?:klasörünü|klasörü)?\s*aç", t)
         if match:
             return actions.open_folder(match.group(1) or match.group(2))
+
+        # file organizer
+        if re.search(r"\b(organize|sort|arrange|clean up|tidy|düzenle|sırala|temizle)\b", t) and \
+           re.search(r"\b(desktop|downloads|documents|folder|klasör|masaüstü|indirilenler|belgeler)\b", t):
+            folder = self._resolve_folder(t)
+            if folder:
+                by = "date" if re.search(r"\b(date|tarih|time)\b", t) else "type"
+                dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme)\b", t))
+                result = actions.organize_folder(folder, by, dry)
+                return self._format_organize_result(result, dry)
+            return "Which folder should I organize? Try 'organize downloads by type'."
+
+        if re.search(r"\b(organize|sort|arrange|clean up|tidy|düzenle|sırala|temizle)\b", t) and \
+           re.search(r"\b(all|everything|hepsi|her yer)\b", t):
+            by = "date" if re.search(r"\b(date|tarih|time)\b", t) else "type"
+            dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme)\b", t))
+            results = actions.organize_all(by, dry)
+            return self._format_organize_all_result(results, dry)
+
+        if re.search(r"\b(duplicate|duplicates|copy|copies|kopyalar|tekrar)\b", t) and \
+           re.search(r"\b(find|remove|delete|clean|bul|sil|temizle)\b", t):
+            folder = self._resolve_folder(t) or Path.home() / "Downloads"
+            dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme)\b", t))
+            result = actions.remove_duplicates(folder, dry)
+            return self._format_duplicate_result(result, dry)
+
+        if re.search(r"\b(empty folder|empty folders|boş klasör|boş klasörler)\b", t) and \
+           re.search(r"\b(remove|delete|clean|sil|temizle)\b", t):
+            folder = self._resolve_folder(t) or Path.home() / "Downloads"
+            dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme)\b", t))
+            result = actions.clean_empty_folders(folder, dry)
+            return self._format_empty_folder_result(result, dry)
 
         site_key = next((s for s in actions.SITES if s in t), None)
         if site_key and re.search(r"\b(open|go to|launch|aç|git|gir)\b", t):

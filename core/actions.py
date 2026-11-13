@@ -5,6 +5,7 @@ import ctypes
 import datetime as dt
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -766,6 +767,191 @@ def open_folder(name: str = "") -> str:
             return f"Opening {alias}."
     os.startfile(str(Path.home()))
     return "Opening your home folder."
+
+
+# --------------------------------------------------------------------------- #
+#  File organizer
+# --------------------------------------------------------------------------- #
+FILE_CATEGORIES: dict[str, set[str]] = {
+    "Images": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".svg", ".ico", ".heic", ".avif"},
+    "Documents": {".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".md", ".tex", ".epub"},
+    "Spreadsheets": {".xls", ".xlsx", ".csv", ".ods", ".tsv"},
+    "Presentations": {".ppt", ".pptx", ".odp", ".key"},
+    "Archives": {".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".iso"},
+    "Audio": {".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma", ".opus"},
+    "Video": {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts"},
+    "Code": {".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yaml", ".yml", ".cs", ".java", ".cpp", ".c", ".h", ".go", ".rs", ".php", ".rb", ".sh", ".sql"},
+    "Executables": {".exe", ".msi", ".app", ".deb", ".rpm", ".apk", ".jar", ".bat", ".cmd", ".ps1"},
+    "Fonts": {".ttf", ".otf", ".woff", ".woff2", ".eot"},
+    "3D": {".stl", ".obj", ".fbx", ".blend", ".gltf", ".glb", ".dae", ".ply"},
+}
+
+DEFAULT_FOLDERS = [
+    Path.home() / "Desktop",
+    Path.home() / "Downloads",
+    Path.home() / "Documents",
+    Path.home() / "OneDrive" / "Desktop",
+]
+
+
+def _category_for(suffix: str) -> str:
+    suffix = suffix.lower()
+    for cat, exts in FILE_CATEGORIES.items():
+        if suffix in exts:
+            return cat
+    return "Other"
+
+
+def _safe_move(src: Path, dst_dir: Path, dry_run: bool = False) -> tuple[bool, str]:
+    """Move src into dst_dir, avoiding collisions. Returns (moved, destination_name)."""
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / src.name
+    if not dst.exists():
+        if not dry_run:
+            try:
+                shutil.move(str(src), str(dst))
+            except Exception as e:
+                return False, f"error: {e}"
+        return True, dst.name
+    # collision: add counter
+    stem, ext = src.stem, src.suffix
+    counter = 1
+    while True:
+        new_name = f"{stem} ({counter}){ext}"
+        dst = dst_dir / new_name
+        if not dst.exists():
+            if not dry_run:
+                try:
+                    shutil.move(str(src), str(dst))
+                except Exception as e:
+                    return False, f"error: {e}"
+            return True, new_name
+        counter += 1
+        if counter > 999:
+            return False, "too many collisions"
+
+
+def organize_folder(folder: Path, by: str = "type", dry_run: bool = False) -> dict:
+    """Organize files in folder by type or date. Returns stats dict."""
+    if not folder.exists() or not folder.is_dir():
+        return {"error": f"Folder not found: {folder}"}
+    if by not in ("type", "date"):
+        return {"error": "by must be 'type' or 'date'"}
+
+    moved = 0
+    skipped = 0
+    errors = 0
+    details: list[str] = []
+
+    for item in folder.iterdir():
+        if not item.is_file():
+            continue
+        if item.name.startswith("."):
+            continue
+        if by == "type":
+            cat = _category_for(item.suffix)
+            target_dir = folder / cat
+        else:  # date
+            try:
+                mtime = dt.datetime.fromtimestamp(item.stat().st_mtime)
+                target_dir = folder / mtime.strftime("%Y-%m")
+            except Exception:
+                target_dir = folder / "Unknown-Date"
+        ok, msg = _safe_move(item, target_dir, dry_run)
+        if ok:
+            moved += 1
+            details.append(f"  {item.name} → {target_dir.name}/{msg}")
+        else:
+            errors += 1
+            details.append(f"  {item.name} → FAILED: {msg}")
+
+    return {
+        "folder": str(folder),
+        "by": by,
+        "dry_run": dry_run,
+        "moved": moved,
+        "skipped": skipped,
+        "errors": errors,
+        "details": details,
+    }
+
+
+def organize_all(by: str = "type", dry_run: bool = False) -> list[dict]:
+    results = []
+    for folder in DEFAULT_FOLDERS:
+        if folder.exists():
+            results.append(organize_folder(folder, by, dry_run))
+    return results
+
+
+def find_duplicates(folder: Path) -> list[list[Path]]:
+    """Return groups of duplicate files (same size + hash) under folder."""
+    import hashlib
+    by_size: dict[int, list[Path]] = {}
+    for item in folder.rglob("*"):
+        if not item.is_file():
+            continue
+        try:
+            size = item.stat().st_size
+        except OSError:
+            continue
+        by_size.setdefault(size, []).append(item)
+
+    dup_groups: list[list[Path]] = []
+    for size, files in by_size.items():
+        if len(files) < 2:
+            continue
+        by_hash: dict[str, list[Path]] = {}
+        for f in files:
+            try:
+                h = hashlib.md5(f.read_bytes()).hexdigest()
+            except Exception:
+                continue
+            by_hash.setdefault(h, []).append(f)
+        for group in by_hash.values():
+            if len(group) > 1:
+                dup_groups.append(group)
+    return dup_groups
+
+
+def remove_duplicates(folder: Path, dry_run: bool = False) -> dict:
+    groups = find_duplicates(folder)
+    removed = 0
+    freed = 0
+    details: list[str] = []
+    for group in groups:
+        # keep the first (by name), remove rest
+        keeper = min(group, key=lambda p: p.name)
+        for dup in group:
+            if dup == keeper:
+                continue
+            try:
+                size = dup.stat().st_size
+                if not dry_run:
+                    dup.unlink()
+                removed += 1
+                freed += size
+                details.append(f"Removed duplicate: {dup.relative_to(folder)} (kept {keeper.relative_to(folder)})")
+            except Exception as e:
+                details.append(f"Failed to remove {dup}: {e}")
+    return {"folder": str(folder), "groups": len(groups), "removed": removed, "freed_bytes": freed, "dry_run": dry_run, "details": details}
+
+
+def clean_empty_folders(folder: Path, dry_run: bool = False) -> dict:
+    removed = 0
+    details: list[str] = []
+    for root, dirs, files in os.walk(folder, topdown=False):
+        for d in dirs:
+            dir_path = Path(root) / d
+            try:
+                if not any(dir_path.iterdir()):
+                    if not dry_run:
+                        dir_path.rmdir()
+                    removed += 1
+                    details.append(f"Removed empty folder: {dir_path.relative_to(folder)}")
+            except Exception as e:
+                details.append(f"Failed to remove {dir_path}: {e}")
+    return {"folder": str(folder), "removed": removed, "dry_run": dry_run, "details": details}
 
 
 # --------------------------------------------------------------------------- #

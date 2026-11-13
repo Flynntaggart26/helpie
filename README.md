@@ -19,6 +19,7 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
+| Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |
 | Windows | Switches to a window by name, lists open windows, shows the desktop |
 | Clipboard | Reads the clipboard out loud, copies text to it |
 | System | Volume, brightness, media keys, screenshots, lock, shutdown, restart, sleep |
@@ -95,8 +96,25 @@ Helpie answers in English but understands Turkish commands as well.
 - `Good morning` / `Günaydın` for a quick briefing
 - `Open Chrome and search for cats` — chain commands with **and then**, **then**, **and**, **sonra** or **ve**
 - `Sesi kıs ve parlaklığı azalt`, `Lock the screen, then take a screenshot`
+- `Organize downloads by type` / `Organize desktop by date` — sort files into folders
+- `Organize all preview` — dry-run across Desktop, Downloads, Documents
+- `Remove duplicates in downloads` — delete duplicate files (keeps one copy)
+- `Clean empty folders` — remove empty subfolders
 
 A longer list is in the **Commands** tab.
+
+## File organizer
+
+Organize folders by **type** (Images, Documents, Audio, Video, Archives, Code, etc.) or by **date** (YYYY-MM folders).
+
+- `organize downloads by type` — moves files into category subfolders
+- `organize desktop by date` — groups by modification month
+- `organize all preview` — dry-run, shows what would move without doing it
+- `remove duplicates in downloads` — finds identical files (by content hash), keeps one, deletes rest
+- `clean empty folders` — recursively removes empty subdirectories
+
+Add `preview` or `dry run` to any command to see what would happen without making changes.
+Supports Turkish folder names: `masaüstü`, `indirilenler`, `belgeler`, `resimler`, `müzik`, `videolar`.
 
 ## Chained commands
 
