@@ -26,6 +26,7 @@ from voice import Listener, Speaker, WakeWordListener, list_microphones
 
 ROOT = config.APP_DIR
 UI_DIR = ROOT / "ui"
+TINY_W, TINY_H = 360, 180
 
 VOICES = [
     {"id": "en-US-AriaNeural", "label": "Aria — English (US, female)"},
@@ -66,6 +67,70 @@ class EventBus:
     def last_id(self) -> int:
         with self._lock:
             return self._items[-1]["id"] if self._items else 0
+
+
+# --------------------------------------------------------------------------- #
+#  Tiny window helper
+# --------------------------------------------------------------------------- #
+def open_tiny_window(port: int) -> None:
+    """Launch a small Edge app window near the cursor for wake-word interactions."""
+    try:
+        import ctypes
+        from pathlib import Path
+        import subprocess
+
+        EDGE_PATHS = [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ]
+        CHROME_PATHS = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ]
+
+        user32 = ctypes.windll.user32
+        try:
+            user32.SetProcessDPIAware()
+        except Exception:
+            pass
+        width = int(user32.GetSystemMetrics(0))
+        height = int(user32.GetSystemMetrics(1))
+
+        # Get cursor position
+        pt = ctypes.wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        cursor_x, cursor_y = pt.x, pt.y
+
+        x = min(cursor_x + 20, width - TINY_W - 20)
+        y = min(cursor_y + 20, height - TINY_H - 20)
+
+        profile = config.DATA_DIR / "browser"
+        profile.mkdir(parents=True, exist_ok=True)
+
+        executable = next((p for p in EDGE_PATHS if Path(p).exists()), None)
+        if executable is None:
+            executable = next((p for p in CHROME_PATHS if Path(p).exists()), None)
+
+        url = f"http://127.0.0.1:{port}/?view=tiny"
+        if executable:
+            subprocess.Popen([
+                executable,
+                f"--app={url}",
+                f"--window-size={TINY_W},{TINY_H}",
+                f"--window-position={x},{y}",
+                f"--user-data-dir={profile}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-sync",
+                "--no-service-autorun",
+                "--disable-notifications",
+                "--disable-features=msEdgeSyncPromo,msEdgeSplitScreen,msEdgeSidebar",
+            ])
+        else:
+            import webbrowser
+            webbrowser.open(url)
+    except Exception as e:
+        print(f"[TinyWindow] Failed to open: {e}")
 
 
 # --------------------------------------------------------------------------- #
@@ -111,9 +176,42 @@ class App:
 
     def _on_wake_word(self) -> None:
         """Called when wake word is detected."""
-        if not self._closing and not self._listen_lock.locked():
-            print("[WakeWord] Triggered -> starting listen")
-            self.listen_async("wake_word")
+        if self._closing or self._listen_lock.locked():
+            return
+        print("[WakeWord] Triggered -> opening tiny window, capturing screen, starting listen")
+
+        # Open tiny window near cursor
+        try:
+            open_tiny_window(self.port if hasattr(self, 'port') else 8765)
+        except Exception as e:
+            print(f"[WakeWord] Failed to open tiny window: {e}")
+
+        # Capture screen and analyze in background
+        threading.Thread(target=self._wake_word_screen_analysis, daemon=True).start()
+
+        # Start listening
+        self.listen_async("wake_word")
+
+    def _wake_word_screen_analysis(self) -> None:
+        """Capture screen and get AI analysis after wake word."""
+        try:
+            if not self.brain.llm.available:
+                return
+            if getattr(self.brain.llm, "provider", "gemini") != "gemini":
+                return
+
+            image = actions.capture_screen()
+            if not image:
+                return
+
+            answer = self.brain.llm.vision("What is on the user's screen right now? Describe briefly.", image)
+            if answer:
+                # Push to UI as a system message
+                self.bus.push({"type": "message", "role": "assistant", "text": f"👁️ {answer}"})
+                self.history.append("assistant", f"👁️ {answer}")
+                self.speaker.say(f"I see: {answer}")
+        except Exception as e:
+            print(f"[WakeWord] Screen analysis failed: {e}")
 
     def _stop_wake_word(self) -> None:
         try:

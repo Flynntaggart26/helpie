@@ -24,6 +24,7 @@ from server import App, free_port, serve  # noqa: E402
 
 WINDOW_TITLE = "Helpie"
 WIN_W, WIN_H = 1180, 780
+TINY_W, TINY_H = 360, 180
 
 EDGE_PATHS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -87,6 +88,46 @@ def open_window(url: str) -> None:
         webbrowser.open(url)
 
 
+def open_tiny_window(url: str) -> None:
+    """Open a small floating window near the mouse cursor for wake-word interactions."""
+    width, height = screen_size()
+    # Position near mouse cursor (bottom-right of cursor)
+    cursor_x, cursor_y = get_cursor_pos()
+    x = min(cursor_x + 20, width - TINY_W - 20)
+    y = min(cursor_y + 20, height - TINY_H - 20)
+    profile = config.DATA_DIR / "browser"
+    profile.mkdir(parents=True, exist_ok=True)
+
+    executable = next((p for p in EDGE_PATHS if Path(p).exists()), None)
+    if executable is None:
+        executable = next((p for p in CHROME_PATHS if Path(p).exists()), None)
+
+    if executable:
+        subprocess.Popen([
+            executable,
+            f"--app={url}",
+            f"--window-size={TINY_W},{TINY_H}",
+            f"--window-position={x},{y}",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-sync",
+            "--no-service-autorun",
+            "--disable-notifications",
+            "--disable-features=msEdgeSyncPromo,msEdgeSplitScreen,msEdgeSidebar",
+        ])
+    else:
+        import webbrowser
+        webbrowser.open(url)
+
+
+def get_cursor_pos() -> tuple[int, int]:
+    """Get current mouse cursor position."""
+    pt = ctypes.wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
+
 # --------------------------------------------------------------------------- #
 #  Single instance
 # --------------------------------------------------------------------------- #
@@ -118,6 +159,7 @@ def main() -> None:
 
     app = App()
     port = free_port()
+    app.port = port  # Store port for wake word tiny window
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     config.PORT_PATH.write_text(str(port), encoding="utf-8")
     serve(app, port)

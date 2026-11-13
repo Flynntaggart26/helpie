@@ -112,6 +112,7 @@ function setView(view) {
     reminders: ["Reminders", "Timers that survive a restart"],
     commands: ["Commands", "Examples you can say or type"],
     settings: ["Settings", "Voice, microphone and AI configuration"],
+    tiny: ["Helpie", "Listening…"],
   };
   $("view-title").textContent = titles[view][0];
   $("view-sub").textContent = titles[view][1];
@@ -120,6 +121,7 @@ function setView(view) {
     loadMemory();
   }
   if (view === "reminders") loadReminders();
+  if (view === "tiny") initTinyView();
 }
 
 function renderCommands() {
@@ -475,6 +477,7 @@ function handleEvent(event) {
       break;
     case "state":
       setStatus(event.value, event.detail);
+      if (state.view === "tiny") initTinyView();
       break;
     case "heard":
       $("status-text").textContent = "heard: " + event.text;
@@ -532,6 +535,37 @@ async function poll() {
     /* server may be restarting */
   }
   setTimeout(poll, 400);
+}
+
+function initTinyView() {
+  // Update tiny view status based on current state
+  const status = state.status || "idle";
+  const statusText = {
+    idle: "Ready",
+    listening: "Listening…",
+    hearing: "Hearing you…",
+    thinking: "Thinking…",
+    speaking: "Speaking…",
+  }[status] || "Ready";
+  $("tiny-status-text").textContent = statusText;
+  const dot = $("tiny-dot");
+  if (status === "listening" || status === "hearing") {
+    dot.style.background = "var(--accent)";
+    dot.style.animation = "pulse-glow 1.2s ease-in-out infinite";
+    dot.style.boxShadow = "0 0 12px var(--accent)";
+  } else if (status === "thinking") {
+    dot.style.background = "var(--amber)";
+    dot.style.animation = "pulse-glow 1s ease-in-out infinite";
+    dot.style.boxShadow = "0 0 10px var(--amber)";
+  } else if (status === "speaking") {
+    dot.style.background = "var(--green)";
+    dot.style.animation = "pulse-glow 1.5s ease-in-out infinite";
+    dot.style.boxShadow = "0 0 10px var(--green)";
+  } else {
+    dot.style.background = "var(--dim)";
+    dot.style.animation = "none";
+    dot.style.boxShadow = "none";
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -599,6 +633,24 @@ function bind() {
     event.preventDefault();
     window.open("https://console.picovoice.ai/", "_blank");
   });
+
+  // Tiny view handlers
+  $("tiny-close").addEventListener("click", () => {
+    setView("chat");
+  });
+  $("tiny-open-main").addEventListener("click", () => {
+    setView("chat");
+  });
+  $("tiny-mute").addEventListener("click", async () => {
+    try {
+      await api("/api/stop", { method: "POST", body: "{}" });
+      $("tiny-status-text").textContent = "Muted";
+      $("tiny-dot").style.background = "var(--red)";
+    } catch (error) {
+      toast("Could not mute.");
+    }
+  });
+
   $("mic-settings").addEventListener("click", (event) => {
     event.preventDefault();
     window.open("ms-settings:privacy-microphone", "_blank");

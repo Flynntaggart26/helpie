@@ -576,3 +576,88 @@ button, input, select, textarea { font-family: inherit; }
 /* key state */
 #key-state { font-weight: 500; color: var(--amber); }
 #key-state.has-key { color: var(--green); }
+
+/* ============================ TINY VIEW ============================ */
+.tiny-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(145deg, #0f141c, #0c131d);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+.tiny-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(77, 163, 255, 0.08);
+  border-bottom: 1px solid var(--line-soft);
+}
+.tiny-logo {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #2d6ce9, #1a3a74);
+  color: #e8f0ff;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 13px;
+  border: 1px solid #3a6db8;
+}
+.tiny-title { font-size: 13px; font-weight: 600; color: #f0f4fb; }
+.tiny-close {
+  margin-left: auto;
+  width: 24px; height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.tiny-close:hover { background: var(--red-soft); color: var(--red); }
+
+.tiny-status {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.tiny-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse-glow 1.2s ease-in-out infinite;
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.tiny-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px 14px;
+  justify-content: flex-end;
+}
+.tiny-btn {
+  width: 36px; height: 36px;
+  border: 1px solid var(--line);
+  background: #151e2c;
+  color: var(--muted);
+  border-radius: 10px;
+  font-size: 14px;
+  display: grid; place-items: center;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition), transform var(--transition);
+}
+.tiny-btn:hover { background: #1a2638; color: var(--text); border-color: #2a3a52; transform: translateY(-1px); }
+.tiny-btn:active { transform: translateY(0) scale(0.98); }
