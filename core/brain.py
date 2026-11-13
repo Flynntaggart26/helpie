@@ -22,7 +22,8 @@ HELP_TEXT = (
     "I can open and close apps without stealing your focus, set volume and brightness, "
     "search the web, take notes, set reminders, read or write the clipboard, switch windows, "
     "do math, take screenshots, summarise documents, remember things about you, look at your "
-    "screen and give you a morning briefing. Ask me anything else too and I will answer."
+    "screen and give you a morning briefing. You can chain commands with 'and then', like "
+    "'open Chrome and search for cats'. Ask me anything else too and I will answer."
 )
 
 INTRO = (
@@ -32,6 +33,21 @@ INTRO = (
 
 OPEN_VERBS = ("open", "launch", "start", "run", "aç", "başlat", "çalıştır")
 CLOSE_VERBS = ("close", "quit", "kill", "stop", "kapat", "sonlandır")
+
+STRONG_STEP_SEP = re.compile(
+    r"\s*,?\s*(?:and then|then|after that|afterwards|sonra|ardından|ondan sonra)\s*", re.I)
+WEAK_STEP_SEP = re.compile(r"\s+(and|ve)\s+", re.I)
+WEAK_SPLIT_ONLY = re.compile(r"\s+(?:and|ve)\s+", re.I)
+ACTION_WORDS = re.compile(
+    r"\b(open|close|launch|start|run|search|google|look up|play|pause|resume|next|previous|"
+    r"type|write|set|turn|lock|shut|restart|sleep|take|capture|screenshot|remind|timer|alarm|"
+    r"add|read|copy|show|switch|focus|summari[sz]e|sum up|remember|forget|calculate|compute|"
+    r"weather|brightness|volume|note|clipboard|briefing|read_screen|"
+    r"what time|what day|what is the date|saat kaç|hangi gün|"
+    r"aç|kapat|başlat|çalıştır|ara|çal|duraklat|yaz|ayarla|kıs|artır|azalt|kilitle|hatırlat|"
+    r"not al|oku|kopyala|göster|geç|özetle|unutma|hatırla|hesapla|hava|ses|parlaklık|brifing)\b",
+    re.I)
+MAX_PLAN_STEPS = 4
 
 FILLERS = re.compile(
     r"\b(helpie|please|just|hey|now|for me|can you|could you|would you|"
@@ -162,6 +178,7 @@ class Brain:
         self.llm = LlmBrain(cfg.get("api_key", ""), cfg.get("provider", "gemini"), cfg.get("model", ""))
         self.llm.memory_text = memory.as_prompt()
         self.pending: Optional[tuple[str, dict]] = None
+        self._in_plan = False
 
     def refresh(self, cfg: dict) -> None:
         self.cfg = cfg
@@ -173,6 +190,71 @@ class Brain:
     def _refresh_memory(self) -> None:
         self.llm.memory_text = memory.as_prompt()
         self.on_event({"type": "memory", "items": memory.list_items()})
+
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _split_plan(text: str) -> list[str]:
+        """Split 'open chrome and search for cats' into safe, actionable steps."""
+        text = (text or "").strip()
+        if not text or len(text) > 260:
+            return [text] if text else []
+
+        steps: list[str] = []
+        for chunk in STRONG_STEP_SEP.split(text):
+            chunk = chunk.strip(" ,.;")
+            if not chunk:
+                continue
+
+            # "open chrome and spotify" -> ["open chrome", "open spotify"]
+            match = re.match(r"(?i)^(open|launch|start|run|aç|başlat|çalıştır)\s+(.+)$", chunk)
+            if match and WEAK_SPLIT_ONLY.search(match.group(2)):
+                names = [n.strip(" ,.;") for n in WEAK_SPLIT_ONLY.split(match.group(2))]
+                if len(names) > 1 and all(
+                        0 < len(name.split()) <= 3 and not ACTION_WORDS.search(name)
+                        for name in names):
+                    steps.extend(f"{match.group(1)} {name}" for name in names)
+                    continue
+
+            tokens = WEAK_STEP_SEP.split(chunk)
+            merged: list[str] = [tokens[0].strip(" ,.;")] if tokens[0].strip(" ,.;") else []
+            for index in range(1, len(tokens), 2):
+                separator = tokens[index].lower()
+                piece = tokens[index + 1].strip(" ,.;") if index + 1 < len(tokens) else ""
+                if not piece:
+                    continue
+                if merged and not ACTION_WORDS.search(piece):
+                    merged[-1] = f"{merged[-1]} {separator} {piece}"
+                else:
+                    merged.append(piece)
+            steps.extend(merged)
+
+        steps = [step for step in steps if step]
+        if len(steps) < 2:
+            return [text]
+        if sum(1 for step in steps if ACTION_WORDS.search(step)) < 2:
+            return [text]
+        return steps[:MAX_PLAN_STEPS]
+
+    def _run_plan(self, steps: list[str]) -> str:
+        steps = [str(step).strip(" ,.;") for step in (steps or []) if str(step).strip(" ,.;")]
+        steps = steps[:MAX_PLAN_STEPS]
+        if not steps or self._in_plan:
+            return ""
+        self._in_plan = True
+        replies: list[str] = []
+        try:
+            for step in steps:
+                try:
+                    answer = self.handle(step)
+                except Exception:
+                    answer = ""
+                if answer:
+                    replies.append(answer)
+                if self.pending:
+                    break
+        finally:
+            self._in_plan = False
+        return " ".join(replies) or "I could not run those steps."
 
     # ------------------------------------------------------------------ #
     def handle(self, text: str) -> str:
@@ -190,6 +272,11 @@ class Brain:
                 return "Okay, cancelled."
             self.pending = pending
             return "I need a yes or a no to continue."
+
+        if not self._in_plan:
+            steps = self._split_plan(raw)
+            if len(steps) > 1:
+                return self._run_plan(steps)
 
         if re.search(r"\b(quit|exit|goodbye|good bye|see you|shut yourself down|"
                      r"kendini kapat|görüşürüz|helpie kapan)\b", t):
@@ -510,6 +597,7 @@ class Brain:
             "read_screen": lambda a: self._describe_screen(str(a.get("prompt", ""))),
             "summarize_file": lambda a: documents.summarize(str(a.get("query", "")), self.llm),
             "briefing": lambda a: actions.briefing(self.cfg.get("city", "")),
+            "plan": lambda a: self._run_plan(a.get("steps") or []),
             "power": lambda a: self._power(str(a.get("mode", "shutdown"))),
         }
         handler = handlers.get(name)

@@ -18,6 +18,7 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Documents | Summarises PDF, Word, PowerPoint and text files by name |
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
+| Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Windows | Switches to a window by name, lists open windows, shows the desktop |
 | Clipboard | Reads the clipboard out loud, copies text to it |
 | System | Volume, brightness, media keys, screenshots, lock, shutdown, restart, sleep |
@@ -83,8 +84,24 @@ Helpie answers in English but understands Turkish commands as well.
 - `What do you remember about me` / `Benim hakkımda ne hatırlıyorsun`
 - `Forget everything` / `Hafızayı temizle`
 - `Good morning` / `Günaydın` for a quick briefing
+- `Open Chrome and search for cats` — chain commands with **and then**, **then**, **and**, **sonra** or **ve**
+- `Sesi kıs ve parlaklığı azalt`, `Lock the screen, then take a screenshot`
 
 A longer list is in the **Commands** tab.
+
+## Chained commands
+
+One sentence can contain up to four actions:
+
+- `open Chrome and search for cats`
+- `open Notepad and take a screenshot`
+- `sesi kıs ve parlaklığı azalt`
+- `Chrome'u aç ve kedileri ara`
+- `open chrome and spotify` — opens both apps in the background
+
+Helpie splits the sentence only where both sides are real commands, so `take a note: milk and
+eggs` or `search for rock and roll` stay a single action. When a free Gemini key is set, the
+model can also emit a `plan` action with its own ordered steps.
 
 ## Background apps
 

@@ -33,6 +33,7 @@ const COMMANDS = [
   ["Documents", '"Summarize my thesis", "Report dosyasını özetle"'],
   ["Memory", '"Remember that I prefer short answers", "What do you remember about me"'],
   ["Briefing", '"Good morning", "Give me a briefing"'],
+  ["Chain commands", '"Open Chrome and search for cats", "Sesi kıs ve parlaklığı azalt", "Lock the screen, then take a screenshot"'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
   ["Reminders", '"Remind me in 10 minutes to stretch", "Remind me every day at 9 to drink water"'],
   ["Clipboard", '"What is on my clipboard", "Copy hello world to the clipboard"'],

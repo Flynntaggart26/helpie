@@ -38,7 +38,9 @@ Rules:
   read_screen {}                                    (look at what is currently on screen)
   summarize_file {"query": "report"}                (summarise a document by name)
   briefing {}
+  plan {"steps": ["open chrome", "search for cats"]} (up to 4 short commands, in order)
 - The action line is silent: never mention it in your spoken answer.
+- For multi-step requests use one plan action and do not add other actions.
 - Only add an action when the user actually asks for one."""
 
 VISION_PROMPT = """You look at a screenshot of the user's Windows desktop and describe it out loud.
