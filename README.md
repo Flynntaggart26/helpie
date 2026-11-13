@@ -44,7 +44,16 @@ so it behaves like a normal assistant app rather than a floating widget.
 Install the Python packages:
 
 ```powershell
-python -m pip install pyaudio speechrecognition edge-tts pygame requests pillow pypdf
+## Design refresh (v1.4.0)
+
+- New dark theme with deeper contrasts, refined accent blues and softer shadows
+- Sidebar: wider (260px), cleaner logo, animated nav indicator, improved recent-chats list
+- Messages: larger bubbles with asymmetric radii, subtle shadows, smoother enter animations
+- Composer: larger hit areas, focus ring with accent glow, auto-resizing textarea
+- Panels: consistent 16px radius, better typography hierarchy, hover lift on cards
+- Micro-interactions: pulse glow on status dot, slide-down banners, staggered fades
+- Accessibility: semantic roles, ARIA live regions, focus-visible outlines
+- Scrollbars: thinner, themed, hidden track
 ```
 
 ## Run
@@ -187,8 +196,8 @@ Releasing a new version:
 
 ```powershell
 # bump VERSION first, then
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.4.0
+git push origin v1.4.0
 ```
 
 ## Project layout
