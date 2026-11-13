@@ -19,6 +19,7 @@ import autostart
 import config
 import history
 import memory
+import plugins
 import reminders
 import updater
 from brain import Brain
@@ -159,11 +160,18 @@ class App:
         self.wake_word = WakeWordListener(on_wake=self._on_wake_word)
         self.brain = Brain(self.cfg, on_speak=self._speak, on_quit=self.shutdown,
                            on_event=self.bus.push)
+        self.brain._app = self  # Give brain access to app for plugin commands
         self.history = history.History()
         self.reminders = reminders.store
         self.reminders.on_fire = self._on_reminder
         self.reminders.start()
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
+        
+        # Initialize plugin manager
+        self.plugins = plugins.manager
+        self.plugins.set_core_api(self)
+        self.plugins.load_all()
+        
         self._start_wake_word()
 
     def _start_wake_word(self) -> None:
@@ -375,6 +383,10 @@ class App:
             pass
         self._stop_wake_word()
         try:
+            self.plugins.shutdown()
+        except Exception:
+            pass
+        try:
             import keyboard
 
             keyboard.unhook_all()
@@ -457,6 +469,7 @@ class Handler(BaseHTTPRequestHandler):
                     "chat": current,
                     "reminders": app.reminders.list(),
                     "memory": memory.list_items(),
+                    "plugins": app.plugins.list_plugins(),
                     "last_event": app.bus.last_id(),
                 })
                 return
@@ -489,6 +502,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/health":
                 self._json({"ok": True, "version": updater.current_version()})
+                return
+            if path == "/api/plugins":
+                self._json({"plugins": app.plugins.list_plugins()})
+                return
+            if path == "/api/plugins/discover":
+                self._json({"plugins": app.plugins.discover()})
                 return
             self._json({"error": "unknown endpoint"}, 404)
             return
@@ -590,6 +609,65 @@ class Handler(BaseHTTPRequestHandler):
             app.bus.push({"type": "memory", "items": []})
             self._json({"ok": True, "memory": []})
             return
+
+        # --- Plugins ---
+        if path == "/api/plugins":
+            self._json({"plugins": app.plugins.list_plugins()})
+            return
+        if path == "/api/plugins/discover":
+            self._json({"plugins": app.plugins.discover()})
+            return
+        if path == "/api/plugins/load":
+            name = str(body.get("name", "")).strip()
+            if not name:
+                self._json({"error": "name required"}, 400)
+                return
+            ok = app.plugins.enable(name)
+            self._json({"ok": ok, "plugins": app.plugins.list_plugins()})
+            return
+        if path == "/api/plugins/unload":
+            name = str(body.get("name", "")).strip()
+            if not name:
+                self._json({"error": "name required"}, 400)
+                return
+            ok = app.plugins.disable(name)
+            self._json({"ok": ok, "plugins": app.plugins.list_plugins()})
+            return
+        if path == "/api/plugins/reload":
+            name = str(body.get("name", "")).strip()
+            if not name:
+                self._json({"error": "name required"}, 400)
+                return
+            ok = app.plugins.reload(name)
+            self._json({"ok": ok, "plugins": app.plugins.list_plugins()})
+            return
+        if path == "/api/plugins/settings":
+            name = str(body.get("name", "")).strip()
+            if not name:
+                self._json({"error": "name required"}, 400)
+                return
+            plugin = app.plugins.get(name)
+            if not plugin:
+                self._json({"error": "plugin not found"}, 404)
+                return
+            if body.get("get"):
+                self._json({"settings": plugin.settings, "schema": plugin.manifest.settings_schema})
+            else:
+                key = str(body.get("key", "")).strip()
+                value = body.get("value")
+                if key:
+                    plugin.settings[key] = value
+                    # Save to file
+                    settings_file = plugin.manifest.path.parent / "settings.json"
+                    try:
+                        settings_file.write_text(json.dumps(plugin.settings, indent=2), encoding="utf-8")
+                    except Exception:
+                        pass
+                    self._json({"ok": True, "settings": plugin.settings})
+                else:
+                    self._json({"error": "key required"}, 400)
+            return
+
         if path == "/api/mic/test":
             try:
                 seconds = float(body.get("seconds", 4) or 4)

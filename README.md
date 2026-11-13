@@ -21,6 +21,7 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Wake word | "Hey Helpie" / "Jarvis" starts listening hands-free (Porcupine, free tier) |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |
+| Plugins | Extensible system with example plugins: Clipboard History, System Monitor, Weather Extended |
 | Windows | Switches to a window by name, lists open windows, shows the desktop |
 | Clipboard | Reads the clipboard out loud, copies text to it |
 | System | Volume, brightness, media keys, screenshots, lock, shutdown, restart, sleep |
@@ -143,6 +144,74 @@ Helpie splits the sentence only where both sides are real commands, so `take a n
 eggs` or `search for rock and roll` stay a single action. When a free Gemini key is set, the
 model can also emit a `plan` action with its own ordered steps.
 
+Helpie splits the sentence only where both sides are real commands, so `take a note: milk and
+eggs` or `search for rock and roll` stay a single action. When a free Gemini key is set, the
+model can also emit a `plan` action with its own ordered steps.
+
+## Plugin system
+
+Helpie has a built-in plugin system that lets you extend its capabilities without modifying the core code.
+
+### Included plugins
+
+| Plugin | Description | Example commands |
+|--------|-------------|------------------|
+| **Clipboard History** | Persistent clipboard history with pin/recall | `clipboard history`, `pin clipboard`, `recall clipboard` |
+| **System Monitor** | Real-time CPU, memory, disk, network, GPU stats | `system monitor`, `system stats`, `top processes`, `cpu usage`, `memory usage` |
+| **Weather Extended** | 3-day forecasts and weather alerts (needs OpenWeatherMap API key) | `weather forecast`, `weather forecast`, `weather alerts` |
+
+### Creating plugins
+
+1. Create a folder under `plugins/` (e.g., `plugins/my_plugin/`)
+2. Add `manifest.json` with name, version, entry point, permissions, and commands
+3. Create `plugin.py` with a `Plugin` class that has `init(api)` and optional `shutdown()` methods
+4. Restart Helpie — plugins are auto-discovered
+
+### Plugin manifest example
+
+```json
+{
+  "name": "my_plugin",
+  "display_name": "My Plugin",
+  "version": "1.0.0",
+  "description": "Does cool things",
+  "author": "Me",
+  "entry": "plugin.py",
+  "api_version": "1.0",
+  "permissions": ["fs.read", "net.request", "voice.speak", "commands.register"],
+  "commands": [
+    {
+      "name": "hello",
+      "description": "Say hello",
+      "handler": "say_hello",
+      "patterns": ["hello plugin", "say hello"]
+    }
+  ]
+}
+```
+
+### Plugin API
+
+Plugins receive an `api` object in their `init(api)` method with these capabilities:
+
+| Permission | Methods |
+|------------|---------|
+| `fs.read` / `fs.write` | `read_file(path)`, `write_file(path, content)` |
+| `net.request` | `http_get(url, headers)`, `http_post(url, data, headers)` |
+| `settings.read` / `settings.write` | `get_setting(key, default)`, `set_setting(key, value)` |
+| `voice.speak` | `speak(text)` |
+| `ui.render` | `show_toast(message)`, `add_sidebar_item(view_id, label, icon)` |
+| `commands.register` | `register_command(name, handler, description, patterns)` |
+| `system.exec` | `run_command(cmd_list)` |
+| `screen.capture` | `capture_screen()` |
+| `voice.speak` | `speak(text)` |
+
+### Managing plugins
+
+- **Settings → Plugins** tab (coming soon) — enable/disable/configure plugins
+- CLI: `POST /api/plugins/load {"name": "plugin_name"}`, `POST /api/plugins/unload {"name": "..."}`
+- Plugin settings: `POST /api/plugins/settings {"name": "...", "key": "...", "value": "..."}`
+
 ## Background apps
 
 Opening something no longer pulls you away from what you are doing. Helpie starts apps and
@@ -250,5 +319,7 @@ core/secrets.py       DPAPI protect / unprotect
 core/autostart.py     HKCU Run entry
 core/updater.py       GitHub release updater
 core/wintools.py      closes only Helpie's own browser window
+core/plugins.py       plugin manager, loader, API
+plugins/              plugin directory (example_weather, clipboard_history, system_monitor)
 ui/                   chat + sidebar interface
 ```

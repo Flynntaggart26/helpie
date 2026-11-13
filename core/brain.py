@@ -612,6 +612,11 @@ class Brain:
         if match:
             return actions.open_url(match.group(1))
 
+        # --- Plugin commands (before LLM fallback) ---
+        plugin_result = self._dispatch_plugin_command(t)
+        if plugin_result:
+            return plugin_result
+
         if self.llm.available:
             reply = self.llm.chat(raw)
             if reply:
@@ -705,6 +710,38 @@ class Brain:
         item = memory.add(text)
         self._refresh_memory()
         return memory.remember_reply(item)
+
+    def _dispatch_plugin_command(self, text: str) -> str:
+        """Check if any enabled plugin has a command matching the input."""
+        try:
+            # Get plugins from the app (if available)
+            if not hasattr(self, '_app') or not self._app:
+                return ""
+            plugins = self._app.plugins
+            if not plugins:
+                return ""
+            for plugin in plugins.plugins.values():
+                if not plugin.enabled or not plugin.instance:
+                    continue
+                # Check if plugin has get_commands method
+                if hasattr(plugin._api, 'get_commands'):
+                    commands = plugin._api.get_commands()
+                    for cmd_name, cmd_info in commands.items():
+                        patterns = cmd_info.get("patterns", [])
+                        for pattern in patterns:
+                            if re.search(pattern, text, re.I):
+                                # Found matching pattern, call the handler
+                                handler = cmd_info.get("handler")
+                                if handler and callable(handler):
+                                    # handler is a bound method, call with args keyword
+                                    try:
+                                        return handler(args={})
+                                    except TypeError:
+                                        # Fallback for handlers that don't accept args
+                                        return handler()
+        except Exception:
+            pass
+        return ""
 
     @staticmethod
     def _power(mode: str) -> str:
