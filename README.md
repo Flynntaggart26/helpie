@@ -103,6 +103,9 @@ Helpie answers in English but understands Turkish commands as well.
 - `Remove duplicates in downloads` — delete duplicate files (keeps one copy)
 - `Clean empty folders` — remove empty subfolders
 - `Hey Helpie` / `Jarvis` — wake word to start listening hands-free (needs Porcupine AccessKey)
+- `save routine morning with steps open chrome and search for cats`
+- `run morning` / `run routine morning with params app=edge`
+- `list routines` / `delete routine morning`
 
 A longer list is in the **Commands** tab.
 
@@ -144,9 +147,18 @@ Helpie splits the sentence only where both sides are real commands, so `take a n
 eggs` or `search for rock and roll` stay a single action. When a free Gemini key is set, the
 model can also emit a `plan` action with its own ordered steps.
 
-Helpie splits the sentence only where both sides are real commands, so `take a note: milk and
-eggs` or `search for rock and roll` stay a single action. When a free Gemini key is set, the
-model can also emit a `plan` action with its own ordered steps.
+## Routines / Macros
+
+Create reusable multi-step routines with parameter support:
+
+- `save routine morning with steps open chrome and search for rust and then what time is it`
+- `run morning` — runs the routine
+- `run morning with params app=edge` — substitutes `{app}` with `edge`
+- `run routine morning with params app=firefox` — full syntax with params
+- `list routines` — shows all saved routines
+- `delete routine morning` — removes a routine
+
+Routines support parameter substitution using `{placeholder}` syntax in step definitions.
 
 ## Plugin system
 
@@ -296,8 +308,8 @@ Releasing a new version:
 
 ```powershell
 # bump VERSION first, then
-git tag v1.4.0
-git push origin v1.4.0
+git tag v1.10.0
+git push origin v1.10.0
 ```
 
 ## Project layout

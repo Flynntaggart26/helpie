@@ -11,6 +11,7 @@ from typing import Callable, Optional
 import actions
 import documents
 import memory
+import routines
 import shutil
 from llm import Brain as LlmBrain
 
@@ -335,9 +336,11 @@ class Brain:
             return "I need a yes or a no to continue."
 
         if not self._in_plan:
-            steps = self._split_plan(raw)
-            if len(steps) > 1:
-                return self._run_plan(steps)
+            # Don't split routine commands into plans
+            if not re.search(r"\b(save routine|create routine|new routine|run routine|execute routine|delete routine|remove routine)\b", t):
+                steps = self._split_plan(raw)
+                if len(steps) > 1:
+                    return self._run_plan(steps)
 
         if re.search(r"\b(quit|exit|goodbye|good bye|see you|shut yourself down|"
                      r"kendini kapat|görüşürüz|helpie kapan)\b", t):
@@ -400,6 +403,96 @@ class Brain:
             match = re.search(r"^(.+?)\s+(?:dosyasını|dosyayı|belgeyi)?\s*özetle$", t)
         if match:
             return documents.summarize(match.group(1).strip(), self.llm)
+
+        # --- Routines (must be before time/weather to catch "save routine ... what time is it") ---
+        if re.search(r"\b(save routine|create routine|new routine)\b", t):
+            match = re.search(r"(?:save|create|new)\s+routine\s+(\w+)\s+(?:with\s+steps?\s+)?(.+)", t, re.I)
+            if match:
+                name = match.group(1)
+                steps_text = match.group(2).strip()
+                step_parts = re.split(r"\s+(?:and\s+then|then|after\s+that|sonra)\s+", steps_text, flags=re.I)
+                steps = []
+                for part in step_parts:
+                    part = part.strip()
+                    if not part:
+                        continue
+                    # Map natural language to handler names
+                    action_map = {
+                        "open": "open_app",
+                        "close": "close_app",
+                        "launch": "open_app",
+                        "what": "what_time",  # custom handler for time
+                        "time": "what_time",
+                        "search": "web_search",
+                        "google": "web_search",
+                        "youtube": "web_search",
+                        "volume": "volume",
+                        "brightness": "brightness",
+                        "screenshot": "screenshot",
+                        "lock": "lock_screen",
+                        "sleep": "sleep",
+                        "shutdown": "power",
+                        "restart": "power",
+                        "note": "add_note",
+                        "remind": "set_timer",
+                        "calculate": "calculate",
+                    }
+                    action_match = re.match(r"(\w+)\s+(.+)", part)
+                    if action_match:
+                        action, args_str = action_match.groups()
+                        handler_name = action_map.get(action.lower(), action.lower())
+                        if handler_name == "what_time":
+                            steps.append({"action": "what_time", "args": {"text": args_str}})
+                        elif handler_name in ("open_app", "close_app", "launch"):
+                            steps.append({"action": "open_app" if handler_name in ("open_app", "launch") else "close_app", "args": {"app": args_str}})
+                        elif handler_name == "volume":
+                            steps.append({"action": "volume", "args": {"direction": args_str}})
+                        elif handler_name == "brightness":
+                            steps.append({"action": "brightness", "args": {"direction": args_str}})
+                        elif handler_name == "web_search":
+                            steps.append({"action": "web_search", "args": {"query": args_str}})
+                        else:
+                            steps.append({"action": handler_name, "args": {"text": args_str}})
+                    else:
+                        steps.append({"action": part, "args": {}})
+                if steps:
+                    routines.save_routine(match.group(1), steps, f"Created from voice: {steps_text}")
+                    return f"Routine '{match.group(1)}' saved with {len(steps)} step(s)."
+
+        # Parse params from "with params key=value, key=value"
+        def _extract_params(text):
+            params = {}
+            # Match "with params key=value, key=value" or "params key=value"
+            param_match = re.search(r"\b(?:with\s+)?params?\s+(.+)$", text, re.I)
+            if param_match:
+                param_str = param_match.group(1)
+                # Split by comma or "and"
+                for pair in re.split(r"\s*,\s*|\s+and\s+", param_str):
+                    pair = pair.strip()
+                    if "=" in pair:
+                        key, value = pair.split("=", 1)
+                        params[key.strip()] = value.strip()
+            return params
+
+        if re.search(r"\b(run routine|execute routine)\b", t):
+            match = re.search(r"(?:run|execute)\s+routine\s+(\w+)", t)
+            if match:
+                params = _extract_params(t)
+                return self._run_routine(match.group(1), params)
+        # Also support "run <routine_name>" as shorthand
+        if re.search(r"^run\s+\w+", t):
+            match = re.search(r"^run\s+(\w+)", t)
+            if match:
+                params = _extract_params(t)
+                return self._run_routine(match.group(1), params)
+
+        if re.search(r"\b(delete routine|remove routine)\b", t):
+            match = re.search(r"(?:delete|remove)\s+routine\s+(\w+)", t)
+            if match:
+                return self._delete_routine(match.group(1))
+
+        if re.search(r"\b(list routines?|show routines?|my routines?)\b", t):
+            return self._list_routines()
 
         if re.search(r"\b(what time|the time|time is it|saat kaç)\b", t):
             return actions.now_time()
@@ -585,6 +678,16 @@ class Brain:
             result = actions.clean_empty_folders(folder, dry)
             return self._format_empty_folder_result(result, dry)
 
+        # --- Email & Calendar ---
+        if re.search(r"\b(read emails?|check emails?|show emails?|what emails?)\b", t):
+            return self._dispatch_plugin_command("read email")
+        if re.search(r"\b(send emails?|send mail|email to)\b", t):
+            return self._dispatch_plugin_command("send email")
+        if re.search(r"\b(calendar|upcoming events|my schedule|what meetings|ajanda|toplantılarım)\b", t):
+            return self._dispatch_plugin_command("calendar")
+        if re.search(r"\b(create event|schedule meeting|add to calendar)\b", t):
+            return self._dispatch_plugin_command("create event")
+
         site_key = next((s for s in actions.SITES if s in t), None)
         if site_key and re.search(r"\b(open|go to|launch|aç|git|gir)\b", t):
             return actions.open_site(site_key)
@@ -696,7 +799,13 @@ class Brain:
             "summarize_file": lambda a: documents.summarize(str(a.get("query", "")), self.llm),
             "briefing": lambda a: actions.briefing(self.cfg.get("city", "")),
             "plan": lambda a: self._run_plan(a.get("steps") or []),
+            "what_time": lambda a: actions.now_time(),
+            "plan": lambda a: self._run_plan(a.get("steps") or []),
             "power": lambda a: self._power(str(a.get("mode", "shutdown"))),
+            "run_routine": lambda a: self._run_routine(a.get("name", ""), a.get("params", {})),
+            "save_routine": lambda a: self._save_routine(a.get("name", ""), a.get("steps", []), a.get("description", "")),
+            "delete_routine": lambda a: self._delete_routine(a.get("name", "")),
+            "list_routines": lambda a: self._list_routines(),
         }
         handler = handlers.get(name)
         if not handler:
@@ -750,6 +859,40 @@ class Brain:
         if mode == "sleep":
             return actions.sleep_pc()
         return actions.shutdown_pc()
+
+    def _run_routine(self, name: str, params: dict = None) -> str:
+        if not hasattr(self, '_app') or not self._app:
+            return "Routines not available."
+        return routines.run_routine(name, params, executor=self._execute_routine_step)
+
+    def _execute_routine_step(self, step_name: str, step_args: dict) -> str:
+        # Reuse the existing _dispatch for routine steps
+        return self._dispatch(step_name, step_args)
+
+    def _save_routine(self, name: str, steps: list, description: str = "") -> str:
+        if not name:
+            return "Routine name required."
+        if not steps:
+            return "At least one step required."
+        if routines.save_routine(name, steps, description):
+            return f"Routine '{name}' saved."
+        return "Failed to save routine."
+
+    def _delete_routine(self, name: str) -> str:
+        if not name:
+            return "Routine name required."
+        if routines.delete_routine(name):
+            return f"Routine '{name}' deleted."
+        return f"Routine '{name}' not found."
+
+    def _list_routines(self) -> str:
+        items = routines.list_routines()
+        if not items:
+            return "No routines saved. Say 'save routine ...' to create one."
+        lines = ["📋 Saved routines:"]
+        for r in items:
+            lines.append(f"  • {r['name']}: {r['description']} ({len(r['steps'])} steps)")
+        return "\n".join(lines)
 
     def summary(self) -> str:
         now = dt.datetime.now()

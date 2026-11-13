@@ -21,6 +21,7 @@ import history
 import memory
 import plugins
 import reminders
+import routines
 import updater
 from brain import Brain
 from voice import Listener, Speaker, WakeWordListener, list_microphones
@@ -509,6 +510,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/plugins/discover":
                 self._json({"plugins": app.plugins.discover()})
                 return
+            if path == "/api/routines":
+                self._json({"routines": routines.list_routines()})
+                return
             self._json({"error": "unknown endpoint"}, 404)
             return
 
@@ -666,6 +670,51 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": True, "settings": plugin.settings})
                 else:
                     self._json({"error": "key required"}, 400)
+            return
+
+        # --- Routines ---
+        if path == "/api/routines":
+            self._json({"routines": routines.list_routines()})
+            return
+        if path == "/api/routines/save":
+            name = str(body.get("name", "")).strip()
+            steps = body.get("steps", [])
+            description = str(body.get("description", ""))
+            if not name:
+                self._json({"error": "name required"}, 400)
+                return
+            if not steps:
+                self._json({"error": "steps required"}, 400)
+                return
+            ok = routines.save_routine(name, steps, description)
+            self._json({"ok": ok})
+            return
+        if path == "/api/routines/delete":
+            name = str(body.get("name", "")).strip()
+            if not name:
+                self._json({"error": "name required"}, 400)
+                return
+            ok = routines.delete_routine(name)
+            self._json({"ok": ok})
+            return
+        if path == "/api/routines/run":
+            name = str(body.get("name", "")).strip()
+            params = body.get("params", {}) or {}
+            if not name:
+                self._json({"error": "name required"}, 400)
+                return
+            # Run in background to avoid blocking
+            threading.Thread(target=lambda: app.brain._run_routine(name, params), daemon=True).start()
+            self._json({"ok": True, "message": f"Running routine '{name}'..."})
+            return
+        if path == "/api/routines/template":
+            name = str(body.get("name", "")).strip()
+            template = str(body.get("template", "")).strip()
+            if not name or not template:
+                self._json({"error": "name and template required"}, 400)
+                return
+            ok = routines.create_routine_from_template(name, template)
+            self._json({"ok": ok})
             return
 
         if path == "/api/mic/test":

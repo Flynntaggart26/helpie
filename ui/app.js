@@ -36,6 +36,8 @@ const COMMANDS = [
   ["Chain commands", '"Open Chrome and search for cats", "Sesi kıs ve parlaklığı azalt", "Lock the screen, then take a screenshot"'],
   ["Organize files", '"Organize downloads by type", "Organize desktop by date", "Organize all preview", "Remove duplicates in downloads", "Clean empty folders"'],
   ["Wake word", '"Hey Helpie" / "Jarvis" — starts listening without Ctrl+H (needs Porcupine AccessKey)'],
+  ["Routines", '"Run start_work routine", "Save routine my_morning", "Run routine with params", "List routines"'],
+  ["Email & Calendar", '"Read emails", "Send email to john@doe.com", "Show calendar", "Create meeting tomorrow 10am"'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
   ["Reminders", '"Remind me in 10 minutes to stretch", "Remind me every day at 9 to drink water"'],
   ["Clipboard", '"What is on my clipboard", "Copy hello world to the clipboard"'],
@@ -68,9 +70,10 @@ function toast(message) {
 }
 
 function escapeHtml(text) {
-  return String(text).replace(/[&<>"']/g, (char) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]
-  ));
+  return String(text).replace(/[&<>"']/g, (char) => {
+    const map = { "&": "&", "<": "<", ">": ">", '"': '"', "'": "'" };
+    return map[char];
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -121,7 +124,6 @@ function setView(view) {
     loadMemory();
   }
   if (view === "reminders") loadReminders();
-  if (view === "tiny") initTinyView();
 }
 
 function renderCommands() {
@@ -136,7 +138,7 @@ async function loadNotes() {
     const list = data.notes || [];
     $("note-list").innerHTML = list.length
       ? list.map((note) => `<div class="note"><time>${escapeHtml(note.time || "")}</time><span>${escapeHtml(note.text)}</span></div>`).join("")
-      : `<div class="empty">No notes yet. Say “take a note: …” and it will show up here.</div>`;
+      : `<div class="empty">No notes yet. Say "take a note: ..." and it will show up here.</div>`;
   } catch (error) {
     toast("Could not load notes.");
   }
@@ -148,7 +150,7 @@ function renderMemory(items) {
   if (!node) return;
   const list = state.memory || [];
   if (!list.length) {
-    node.innerHTML = `<div class="empty">Nothing remembered yet. Say “remember that I …” and it stays here.</div>`;
+    node.innerHTML = `<div class="empty">Nothing remembered yet. Say "remember that I ..." and it stays here.</div>`;
     return;
   }
   node.innerHTML = list.map((item) => (
@@ -177,75 +179,6 @@ async function loadMemory() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  History                                                            */
-/* ------------------------------------------------------------------ */
-function renderRecent(chats) {
-  if (chats) state.chats = chats;
-  const node = $("recent");
-  if (!node) return;
-  if (!state.chats.length) {
-    node.innerHTML = `<div class="recent-empty">No chats yet</div>`;
-    return;
-  }
-  node.innerHTML = state.chats.map((chat) => {
-    const active = chat.id === state.currentChat ? " active" : "";
-    return `<button class="recent-item${active}" data-chat="${escapeHtml(chat.id)}" title="${escapeHtml(chat.updated)}">` +
-      `<span class="recent-title">${escapeHtml(chat.title || "Chat")}</span>` +
-      `<span class="recent-del" data-del="${escapeHtml(chat.id)}" title="Delete chat">×</span></button>`;
-  }).join("");
-  node.querySelectorAll("[data-chat]").forEach((item) => {
-    item.addEventListener("click", (event) => {
-      if (event.target.dataset.del) return;
-      openChat(item.dataset.chat);
-    });
-  });
-  node.querySelectorAll("[data-del]").forEach((item) => {
-    item.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      try {
-        await api("/api/history/delete", { method: "POST", body: JSON.stringify({ id: item.dataset.del }) });
-        if (item.dataset.del === state.currentChat) {
-          state.currentChat = null;
-          $("messages").innerHTML = "";
-        }
-      } catch (error) {
-        toast("Could not delete that chat.");
-      }
-    });
-  });
-}
-
-function showChat(chat) {
-  state.currentChat = chat.id;
-  $("messages").innerHTML = "";
-  (chat.messages || []).forEach((message) => addMessage(message.role, message.text));
-}
-
-async function openChat(id) {
-  try {
-    const data = await api("/api/history/select", { method: "POST", body: JSON.stringify({ id }) });
-    showChat(data.chat);
-    setView("chat");
-    $("input").focus();
-  } catch (error) {
-    toast("Could not open that chat.");
-  }
-}
-
-async function newChat() {
-  $("messages").innerHTML = "";
-  state.currentChat = null;
-  setView("chat");
-  $("input").focus();
-  try {
-    const data = await api("/api/new_chat", { method: "POST", body: "{}" });
-    if (data.chat) state.currentChat = data.chat.id;
-  } catch (error) {
-    toast("Could not start a new chat.");
-  }
-}
-
-/* ------------------------------------------------------------------ */
 /*  Reminders                                                          */
 /* ------------------------------------------------------------------ */
 function renderReminders(items) {
@@ -254,7 +187,7 @@ function renderReminders(items) {
   const node = $("reminder-list");
   if (!node) return;
   if (!list.length) {
-    node.innerHTML = `<div class="empty">No reminders yet. Say “remind me in 10 minutes to stretch”.</div>`;
+    node.innerHTML = `<div class="empty">No reminders yet. Say "remind me in 10 minutes to stretch".</div>`;
     return;
   }
   node.innerHTML = list.map((reminder) => {
@@ -318,7 +251,7 @@ async function testMic() {
     const result = await api("/api/mic/test", { method: "POST", body: JSON.stringify({ seconds: 4 }) });
     showMicResult(result);
   } catch (error) {
-    $("mic-verdict").textContent = "Microphone test failed.";
+    toast("Could not test microphone.");
   } finally {
     state.micTesting = false;
     button.disabled = false;
@@ -352,6 +285,58 @@ async function startListening() {
   } catch (error) {
     toast("Could not start the microphone.");
   }
+}
+
+function showChat(chat) {
+  state.currentChat = chat.id;
+  $("messages").innerHTML = "";
+  (chat.messages || []).forEach((msg) => addMessage(msg.role, msg.text));
+  setStatus("idle");
+  const requested = new URLSearchParams(location.search).get("view");
+  if (requested && document.getElementById("view-" + requested)) setView(requested);
+  else setView("chat");
+}
+
+async function newChat() {
+  state.currentChat = null;
+  setView("chat");
+  $("input").focus();
+  try {
+    const data = await api("/api/new_chat", { method: "POST", body: "{}" });
+    if (data.chat) state.currentChat = data.chat.id;
+  } catch (error) {
+    toast("Could not start a new chat.");
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  History                                                            */
+/* ------------------------------------------------------------------ */
+function renderRecent(chats) {
+  if (chats) state.chats = chats;
+  const node = $("recent");
+  if (!node) return;
+  if (!state.chats.length) {
+    node.innerHTML = `<div class="recent-empty">No chats yet</div>`;
+    return;
+  }
+  node.innerHTML = state.chats.map((chat) => {
+    const preview = (chat.messages?.[0]?.text || "").slice(0, 40);
+    const active = state.currentChat === chat.id ? "active" : "";
+    return `<button class="recent-item ${active}" data-id="${chat.id}">` +
+      `<span class="recent-title">${escapeHtml(preview || "New chat")}</span>` +
+      `<span class="recent-del" title="Delete">×</span></button>`;
+  }).join("");
+  node.querySelectorAll(".recent-item").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const chat = await api("/api/history/select", { method: "POST", body: JSON.stringify({ id: btn.dataset.id }) });
+      if (chat) showChat(chat);
+    });
+    btn.querySelector(".recent-del").addEventListener("click", (e) => {
+      e.stopPropagation();
+      api("/api/history/delete", { method: "POST", body: JSON.stringify({ id: btn.dataset.id }) });
+    });
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -429,21 +414,15 @@ async function saveSettings() {
 /* ------------------------------------------------------------------ */
 /*  Updates                                                            */
 /* ------------------------------------------------------------------ */
-async function checkUpdates(manual = true) {
-  if (manual) toast("Checking for updates…");
+async function checkUpdates(manual = false) {
   try {
-    const result = await api("/api/update/check");
-    if (result.error) {
-      if (manual) toast(result.error);
-      return;
-    }
-    if (result.available && result.url) {
-      state.update = result;
-      $("update-banner-text").textContent = `Helpie ${result.latest} is available (you have ${result.current}).`;
+    const data = await api("/api/update/check");
+    if (data.available) {
+      state.update = data;
+      $("update-banner-text").textContent = `Helpie ${data.version} is available (you have ${data.current}).`;
       $("update-banner").hidden = false;
-      if (manual) toast("Update available: v" + result.latest);
     } else if (manual) {
-      toast("You are on the latest version (" + result.current + ").");
+      toast("You are on the latest version.");
     }
   } catch (error) {
     if (manual) toast("Could not check for updates.");
@@ -451,19 +430,12 @@ async function checkUpdates(manual = true) {
 }
 
 async function installUpdate() {
-  if (!state.update || !state.update.url) return;
-  $("update-install").disabled = true;
-  $("update-install").textContent = "Installing…";
+  if (!state.update) return;
   try {
-    const result = await api("/api/update/apply", {
-      method: "POST",
-      body: JSON.stringify({ url: state.update.url }),
-    });
-    toast(result.message || (result.ok ? "Updated. Restarting…" : "Update failed."));
+    const result = await api("/api/update/apply", { method: "POST", body: JSON.stringify({ url: state.update.url }) });
+    if (result.ok) toast("Update installed. Restarting…");
   } catch (error) {
     toast("Update failed.");
-    $("update-install").disabled = false;
-    $("update-install").textContent = "Install";
   }
 }
 
@@ -633,6 +605,10 @@ function bind() {
     event.preventDefault();
     window.open("https://console.picovoice.ai/", "_blank");
   });
+  $("mic-settings").addEventListener("click", (event) => {
+    event.preventDefault();
+    window.open("ms-settings:privacy-microphone", "_blank");
+  });
 
   // Tiny view handlers
   $("tiny-close").addEventListener("click", () => {
@@ -649,11 +625,6 @@ function bind() {
     } catch (error) {
       toast("Could not mute.");
     }
-  });
-
-  $("mic-settings").addEventListener("click", (event) => {
-    event.preventDefault();
-    window.open("ms-settings:privacy-microphone", "_blank");
   });
 
   document.addEventListener("keydown", (event) => {
