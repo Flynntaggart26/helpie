@@ -171,6 +171,11 @@ Helpie has a built-in plugin system that lets you extend its capabilities withou
 | **Clipboard History** | Persistent clipboard history with pin/recall | `clipboard history`, `pin clipboard`, `recall clipboard` |
 | **System Monitor** | Real-time CPU, memory, disk, network, GPU stats | `system monitor`, `system stats`, `top processes`, `cpu usage`, `memory usage` |
 | **Weather Extended** | 3-day forecasts and weather alerts (needs OpenWeatherMap API key) | `weather forecast`, `weather forecast`, `weather alerts` |
+| **Spotify** | Playback control, search, playlists | `spotify play`, `spotify pause`, `spotify next`, `spotify playlists` |
+| **Notion** | Create pages, search, append to databases | `notion create page`, `notion search`, `notion read` |
+| **Home Assistant** | Lights, switches, climate, sensors | `turn on lights`, `set light brightness 50`, `set climate 22` |
+| **Ollama (Local LLM)** | Offline chat, embeddings, model management | `ollama chat hello`, `ollama list models`, `ollama pull llama3.2` |
+| **GitHub** | Issues, PRs, repos, search | `github issues`, `create issue`, `list prs`, `github search` |
 
 ### Creating plugins
 
@@ -308,8 +313,8 @@ Releasing a new version:
 
 ```powershell
 # bump VERSION first, then
-git tag v1.10.0
-git push origin v1.10.0
+git tag v1.11.0
+git push origin v1.11.0
 ```
 
 ## Project layout
