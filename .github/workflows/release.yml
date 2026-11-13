@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version matches tag
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -and $tag -ne "v$version") {
+            throw "VERSION ($version) does not match tag ($tag). Bump VERSION before tagging."
+          }
+          Write-Host "Version $version"
+
+      - name: Build update package
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          $name = "helpie-v$version.zip"
+          git archive --format=zip --output=$name HEAD
+          "ZIP_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Created $name"
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME $env:ZIP_NAME `
+            --title "Helpie $env:GITHUB_REF_NAME" `
+            --notes "Helpie $env:GITHUB_REF_NAME`n`nRun ``basla.bat`` after extracting. Existing installs update themselves from Settings, or automatically on startup when a newer release exists."

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Helpie</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">H</div>
+        <div class="brand-text">
+          <div class="brand-name">Helpie</div>
+          <div class="brand-sub">Desktop assistant</div>
+        </div>
+      </div>
+
+      <button class="new-chat" id="new-chat">
+        <span class="plus">+</span> New chat
+      </button>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="chat"><span class="ico">▤</span> Chat</button>
+        <button class="nav-item" data-view="notes"><span class="ico">✎</span> Notes</button>
+        <button class="nav-item" data-view="commands"><span class="ico">⌘</span> Commands</button>
+        <button class="nav-item" data-view="settings"><span class="ico">⚙</span> Settings</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="chip" id="mic-chip"><span class="dot"></span> Microphone</div>
+        <div class="chip" id="model-chip"><span class="dot"></span> AI: not connected</div>
+        <button class="link" id="update-check">Check for updates</button>
+        <div class="foot-row">
+          <span class="version" id="version">v1.0.0</span>
+          <button class="link danger" id="quit-btn">Quit</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="main-head">
+        <div>
+          <h1 id="view-title">Chat</h1>
+          <p id="view-sub">Press Ctrl + H to speak</p>
+        </div>
+        <div class="head-right">
+          <div class="status-pill" id="status-pill"><span class="pulse"></span><span id="status-text">starting</span></div>
+        </div>
+      </header>
+
+      <section class="view active" id="view-chat">
+        <div class="banner" id="update-banner" hidden>
+          <span id="update-banner-text">Update available</span>
+          <button class="mini" id="update-install">Install</button>
+        </div>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="composer">
+          <button class="mic-btn" id="mic-btn" title="Listen (Ctrl + H)">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" fill="currentColor"/>
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <textarea id="input" rows="1" placeholder="Ask anything, or press Ctrl + H to speak…"></textarea>
+          <button class="send-btn" id="send-btn" title="Send">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M4 12l16-8-6 8 6 8z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+        <div class="hint" id="hint" hidden></div>
+      </section>
+
+      <section class="view" id="view-notes">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Notes</h2>
+            <button class="ghost" id="notes-clear">Clear all</button>
+          </div>
+          <div class="note-list" id="note-list"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-commands">
+        <div class="panel">
+          <h2>What you can say</h2>
+          <div class="cmd-grid" id="cmd-grid"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="panel">
+          <h2>Settings</h2>
+
+          <div class="form-grid">
+            <label class="field">
+              <span>Your name</span>
+              <input id="set-name" type="text" placeholder="How should I call you?" />
+            </label>
+
+            <label class="field">
+              <span>Microphone</span>
+              <select id="set-mic"></select>
+            </label>
+
+            <label class="field">
+              <span>Speech recognition language</span>
+              <select id="set-language"></select>
+            </label>
+
+            <label class="field">
+              <span>Voice</span>
+              <select id="set-voice"></select>
+            </label>
+
+            <label class="field">
+              <span>Speaking speed</span>
+              <select id="set-rate">
+                <option value="-20%">Slow</option>
+                <option value="+0%">Normal</option>
+                <option value="+15%">Fast</option>
+                <option value="+30%">Very fast</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>City for weather</span>
+              <input id="set-city" type="text" placeholder="Empty = automatic" />
+            </label>
+          </div>
+
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="set-autolisten" /> Listen automatically when Helpie starts</label>
+            <label class="check"><input type="checkbox" id="set-continuous" /> Keep listening after each answer</label>
+            <label class="check"><input type="checkbox" id="set-updates" /> Check for updates on startup</label>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>AI brain</h3>
+          <p class="muted">
+            Free-form conversation needs a Gemini API key. Without it, Helpie still runs every built-in command.
+            Get one free at
+            <a href="#" id="get-key">aistudio.google.com/app/apikey</a>.
+          </p>
+          <div class="form-grid">
+            <label class="field">
+              <span>Gemini API key <em id="key-state">not set</em></span>
+              <input id="set-key" type="password" placeholder="AIza…" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="ghost" id="test-voice">Test voice</button>
+            <button class="primary" id="save-settings">Save settings</button>
+          </div>
+
+          <div class="divider"></div>
+          <p class="muted">
+            Global shortcut: <b>Ctrl + H</b> focuses Helpie and starts listening.
+            If the mic is blocked, open <a href="#" id="mic-settings">Windows microphone settings</a>.
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
