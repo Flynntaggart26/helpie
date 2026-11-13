@@ -109,7 +109,8 @@ def running_port() -> int | None:
 def main() -> None:
     existing = running_port()
     if existing:
-        focus_window()
+        if not focus_window():
+            open_window(f"http://127.0.0.1:{existing}/")
         print(f"Helpie is already running on port {existing}.")
         return
 
@@ -125,7 +126,8 @@ def main() -> None:
 
     # global hotkey: Ctrl+H -> focus window + listen
     def hotkey() -> None:
-        focus_window()
+        if not focus_window():
+            open_window(url)
         app.listen_async("manual")
 
     try:

@@ -120,6 +120,12 @@ def apply(url: str) -> dict:
 
 
 def _restart() -> None:
+    try:
+        import wintools
+
+        wintools.close_browser_window()
+    except Exception:
+        pass
     python = Path(sys.executable)
     windowed = python.with_name("pythonw.exe")
     executable = windowed if windowed.exists() else python

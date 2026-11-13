@@ -224,6 +224,12 @@ class App:
             keyboard.unhook_all()
         except Exception:
             pass
+        try:
+            import wintools
+
+            wintools.close_browser_window()
+        except Exception:
+            pass
         threading.Timer(0.3, lambda: os._exit(0)).start()
 
 
