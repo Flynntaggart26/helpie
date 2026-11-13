@@ -18,6 +18,7 @@ import actions
 import autostart
 import config
 import history
+import memory
 import reminders
 import updater
 from brain import Brain
@@ -96,6 +97,7 @@ class App:
         self.reminders = reminders.store
         self.reminders.on_fire = self._on_reminder
         self.reminders.start()
+        actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
 
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
@@ -227,13 +229,14 @@ class App:
     def update_settings(self, patch: dict) -> dict:
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "auto_listen", "continuous", "auto_turns",
-                   "city", "check_updates"}
+                   "city", "check_updates", "background_apps"}
         for key, value in (patch or {}).items():
             if key in allowed:
                 self.cfg[key] = value
         if isinstance(patch, dict) and "autostart" in patch:
             autostart.set_enabled(bool(patch.get("autostart")))
         config.save(self.cfg)
+        actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
         self.brain.refresh(self.cfg)
         self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"))
         self.bus.push({"type": "settings", "value": self.public_cfg()})
@@ -328,6 +331,7 @@ class Handler(BaseHTTPRequestHandler):
                     "current_chat": current["id"],
                     "chat": current,
                     "reminders": app.reminders.list(),
+                    "memory": memory.list_items(),
                     "last_event": app.bus.last_id(),
                 })
                 return
@@ -344,6 +348,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/reminders":
                 self._json({"reminders": app.reminders.list()})
+                return
+            if path == "/api/memory":
+                self._json({"memory": memory.list_items()})
                 return
             if path == "/api/events":
                 after = int(query.get("after", ["0"])[0] or 0)
@@ -435,6 +442,28 @@ class Handler(BaseHTTPRequestHandler):
             item = app.reminders.add_in(minutes * 60, text)
             app.bus.push({"type": "reminders", "reminders": app.reminders.list()})
             self._json({"ok": True, "reminder": item})
+            return
+        if path == "/api/memory":
+            text = str(body.get("text", "")).strip()
+            item = memory.add(text)
+            if not item:
+                self._json({"error": "text is required"}, 400)
+                return
+            app.brain.llm.memory_text = memory.as_prompt()
+            app.bus.push({"type": "memory", "items": memory.list_items()})
+            self._json({"ok": True, "item": item, "memory": memory.list_items()})
+            return
+        if path == "/api/memory/delete":
+            removed = memory.remove(str(body.get("text", "")))
+            app.brain.llm.memory_text = memory.as_prompt()
+            app.bus.push({"type": "memory", "items": memory.list_items()})
+            self._json({"ok": removed, "memory": memory.list_items()})
+            return
+        if path == "/api/memory/clear":
+            memory.clear()
+            app.brain.llm.memory_text = memory.as_prompt()
+            app.bus.push({"type": "memory", "items": []})
+            self._json({"ok": True, "memory": []})
             return
         if path == "/api/mic/test":
             try:

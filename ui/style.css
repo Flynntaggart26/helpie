@@ -420,6 +420,25 @@ button, input, select, textarea { font-family: inherit; }
 .recent-empty { color: var(--dim); font-size: 12px; padding: 4px 8px; }
 
 /* ---------------------------- microphone test -------------------------- */
+.memory-form {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0;
+}
+.memory-form input {
+  flex: 1;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0c131d;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.memory-form input:focus { border-color: #31527c; }
+.memory-form .primary { height: 34px; }
+
 .mic-test {
   display: flex;
   align-items: center;

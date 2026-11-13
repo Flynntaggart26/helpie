@@ -6,6 +6,7 @@ import datetime as dt
 import os
 import re
 import subprocess
+import threading
 import time
 import webbrowser
 from ctypes import wintypes
@@ -114,6 +115,161 @@ VK_MEDIA_NEXT, VK_MEDIA_PREV, VK_MEDIA_PLAY = 0xB0, 0xB1, 0xB3
 
 
 # --------------------------------------------------------------------------- #
+#  Quiet launching (open apps without yanking them in front of you)
+# --------------------------------------------------------------------------- #
+BACKGROUND_APPS = True
+SW_SHOWMINNOACTIVE = 7
+SW_MINIMIZE = 6
+BROWSER_PROCESSES = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe",
+                     "opera.exe", "vivaldi.exe", "iexplore.exe"}
+
+_user32 = ctypes.windll.user32
+_kernel32 = ctypes.windll.kernel32
+_shell32 = ctypes.windll.shell32
+
+_kernel32.OpenProcess.restype = wintypes.HANDLE
+_kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+_kernel32.QueryFullProcessImageNameW.argtypes = [
+    wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+_kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+_shell32.ShellExecuteW.restype = wintypes.HINSTANCE
+_shell32.ShellExecuteW.argtypes = [
+    wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.LPCWSTR,
+    wintypes.LPCWSTR, ctypes.c_int,
+]
+
+_ENUM_WINDOWS = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+
+def set_background_mode(enabled: bool) -> None:
+    """Turn the 'open apps in the background' behaviour on or off at runtime."""
+    global BACKGROUND_APPS
+    BACKGROUND_APPS = bool(enabled)
+
+
+def _foreground_hwnd() -> int:
+    try:
+        return int(_user32.GetForegroundWindow() or 0)
+    except Exception:
+        return 0
+
+
+def _visible_hwnds() -> set[int]:
+    found: set[int] = set()
+
+    def _callback(hwnd, _lparam):
+        if _user32.IsWindowVisible(hwnd):
+            found.add(int(hwnd))
+        return True
+
+    try:
+        _user32.EnumWindows(_ENUM_WINDOWS(_callback), 0)
+    except Exception:
+        pass
+    return found
+
+
+def _window_pid(hwnd: int) -> int:
+    pid = wintypes.DWORD(0)
+    try:
+        _user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
+    except Exception:
+        return 0
+    return int(pid.value)
+
+
+def _process_name(pid: int) -> str:
+    if not pid:
+        return ""
+    handle = _kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ""
+    try:
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if _kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return os.path.basename(buffer.value).lower()
+    except Exception:
+        pass
+    finally:
+        _kernel32.CloseHandle(handle)
+    return ""
+
+
+def _shell_open(target: str, params: Optional[str] = None, show: int = SW_SHOWMINNOACTIVE) -> bool:
+    try:
+        result = _shell32.ShellExecuteW(None, "open", target, params, None, show)
+        return int(result or 0) > 32
+    except Exception:
+        return False
+
+
+def _minimize(hwnd: int) -> None:
+    try:
+        _user32.ShowWindow(wintypes.HWND(hwnd), SW_MINIMIZE)
+    except Exception:
+        pass
+
+
+def _restore(hwnd: int) -> None:
+    if not hwnd:
+        return
+    try:
+        _user32.SetForegroundWindow(wintypes.HWND(hwnd))
+    except Exception:
+        pass
+
+
+def _watch_launch(process_names: set[str], before: set[int], previous: int,
+                  timeout: float = 8.0) -> None:
+    """Keep a freshly launched app out of the foreground.
+
+    New windows that belong to the launched process are minimised, and if it still
+    grabs focus the previously focused window is put back in front.
+    """
+    names = {name.lower() for name in process_names if name}
+    end = time.time() + timeout
+    while time.time() < end:
+        current = _foreground_hwnd()
+        if current and current != previous:
+            name = _process_name(_window_pid(current))
+            if name in names or current not in before:
+                if current not in before:
+                    _minimize(current)
+                _restore(previous)
+
+        for hwnd in _visible_hwnds() - before:
+            if _process_name(_window_pid(hwnd)) in names:
+                _minimize(hwnd)
+        time.sleep(0.2)
+
+
+def _launch(target: str, process_names: Optional[list[str]] = None) -> bool:
+    """Start a program or URI. Returns True when it was started successfully."""
+    if not BACKGROUND_APPS:
+        if _shell_open(target, show=5):  # SW_SHOW
+            return True
+        return False
+
+    previous = _foreground_hwnd()
+    before = _visible_hwnds()
+    started = _shell_open(target)
+    if not started:
+        return False
+    names = set(process_names or [])
+    if re.match(r"(?i)^(https?://|www\.)", target):
+        names |= BROWSER_PROCESSES
+    watcher = threading.Thread(
+        target=_watch_launch,
+        args=(names, before, previous),
+        daemon=True,
+        name="helpie-launch-watch",
+    )
+    watcher.start()
+    return True
+
+
+# --------------------------------------------------------------------------- #
 #  Apps
 # --------------------------------------------------------------------------- #
 def resolve_app(text: str) -> Optional[str]:
@@ -128,21 +284,26 @@ def open_app(name: str) -> str:
     key = resolve_app(name)
     if key:
         target = APPS[key]["run"]
+        proc = APPS[key].get("proc")
         try:
-            if target.endswith(":"):
-                os.startfile(target)
-            else:
-                subprocess.Popen(["cmd", "/c", "start", "", target], creationflags=CREATE_NO_WINDOW)
-            return f"Opening {key}."
+            if _launch(target, [proc] if proc else []):
+                return f"Opening {key} in the background." if BACKGROUND_APPS else f"Opening {key}."
         except Exception:
-            return f"Could not open {key}."
+            pass
+        return f"Could not open {key}."
     cleaned = re.sub(r"(app|application|program|uygulamasını|programını)\s*$", "", name.strip()).strip()
     cleaned = re.sub(r"['’]s?$", "", cleaned).strip()
     if not cleaned:
         return "Which app should I open?"
     try:
-        subprocess.Popen(["cmd", "/c", "start", "", cleaned], creationflags=CREATE_NO_WINDOW)
-        return f"Opening {cleaned}."
+        if not _launch(cleaned):
+            previous = _foreground_hwnd()
+            before = _visible_hwnds()
+            subprocess.Popen(["cmd", "/c", "start", "", cleaned], creationflags=CREATE_NO_WINDOW)
+            if BACKGROUND_APPS:
+                threading.Thread(target=_watch_launch, args=(set(), before, previous),
+                                 daemon=True, name="helpie-launch-watch").start()
+        return f"Opening {cleaned} in the background." if BACKGROUND_APPS else f"Opening {cleaned}."
     except Exception:
         return f"I could not find an app called {cleaned}."
 
@@ -260,18 +421,24 @@ def brightness(direction: str, step: int = 10) -> str:
 def open_url(url: str) -> str:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
-    webbrowser.open(url)
-    return "Opened it."
+    if not _launch(url):
+        webbrowser.open(url)
+    return "Opened it" + (" in the background." if BACKGROUND_APPS else ".")
 
 
 def web_search(query: str, engine: str = "google") -> str:
     from urllib.parse import quote_plus
 
+    suffix = " in the background" if BACKGROUND_APPS else ""
     if engine == "youtube":
-        webbrowser.open(f"https://www.youtube.com/results?search_query={quote_plus(query)}")
-        return f"Searching YouTube for {query}."
-    webbrowser.open(f"https://www.google.com/search?q={quote_plus(query)}")
-    return f"Searching the web for {query}."
+        url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+        message = f"Searching YouTube for {query}{suffix}."
+    else:
+        url = f"https://www.google.com/search?q={quote_plus(query)}"
+        message = f"Searching the web for {query}{suffix}."
+    if not _launch(url):
+        webbrowser.open(url)
+    return message
 
 
 def open_site(name: str) -> str:
@@ -284,8 +451,9 @@ def open_site(name: str) -> str:
                 break
     if not url:
         return f"I do not know the site {name}."
-    webbrowser.open(url)
-    return f"Opening {key}."
+    if not _launch(url):
+        webbrowser.open(url)
+    return f"Opening {key}" + (" in the background." if BACKGROUND_APPS else ".")
 
 
 def weather(city: str = "") -> str:
@@ -358,6 +526,62 @@ def screenshot() -> str:
     path = folder / f"shot_{dt.datetime.now():%Y%m%d_%H%M%S}.png"
     ImageGrab.grab(all_screens=True).save(path)
     return f"Screenshot saved as {path.name}."
+
+
+def capture_screen(max_width: int = 1600) -> Optional[bytes]:
+    """Grab the current screen as a downscaled PNG (for the vision model)."""
+    try:
+        import io
+
+        from PIL import ImageGrab
+
+        image = ImageGrab.grab(all_screens=True)
+        if image.width > max_width:
+            height = max(1, int(image.height * max_width / image.width))
+            image = image.resize((max_width, height))
+        buffer = io.BytesIO()
+        image.convert("RGB").save(buffer, format="PNG", optimize=True)
+        return buffer.getvalue()
+    except Exception:
+        return None
+
+
+def briefing(city: str = "") -> str:
+    """A short spoken overview: time, weather, battery, reminders and recent notes."""
+    now = dt.datetime.now()
+    if now.hour < 12:
+        hello = "Good morning"
+    elif now.hour < 18:
+        hello = "Good afternoon"
+    else:
+        hello = "Good evening"
+    parts = [f"{hello}. It is {now.hour:02d}:{now.minute:02d} on "
+             f"{DAYS[now.weekday()]}, {now.day} {MONTHS[now.month - 1]}."]
+
+    forecast = weather(city)
+    if forecast and "could not" not in forecast.lower():
+        parts.append(f"Weather: {forecast}.")
+
+    power = battery()
+    if "percent" in power:
+        parts.append(power)
+
+    upcoming = reminders.store.list()[:3]
+    if upcoming:
+        items = []
+        for item in upcoming:
+            when = dt.datetime.fromisoformat(item["due"])
+            items.append(f"{when:%H:%M} {item['text']}")
+        parts.append("Next reminders: " + ", ".join(items) + ".")
+
+    recent_notes = notes_list()[-2:]
+    if recent_notes:
+        parts.append("Recent note: " + recent_notes[-1]["text"] + ".")
+
+    items = reminders.store.list()
+    parts.append(f"You have {len(items)} reminder{'s' if len(items) != 1 else ''} saved." if items
+                 else "You have no reminders waiting.")
+    return " ".join(parts)
 
 
 def lock_screen() -> str:
@@ -479,7 +703,7 @@ def press_key(keys: str) -> str:
 # --------------------------------------------------------------------------- #
 #  Files
 # --------------------------------------------------------------------------- #
-def find_file(query: str) -> Optional[Path]:
+def find_file(query: str, suffixes: Optional[set[str]] = None) -> Optional[Path]:
     query = query.lower().strip()
     if not query:
         return None
@@ -496,12 +720,23 @@ def find_file(query: str) -> Optional[Path]:
             dirs[:] = [d for d in dirs if d not in
                        {"AppData", "node_modules", ".git", "__pycache__", ".venv", "venv", "$RECYCLE.BIN"}]
             for filename in files:
+                if suffixes and Path(filename).suffix.lower() not in suffixes:
+                    continue
                 name = filename.lower()
                 if query in name:
                     score = len(query) * 2
                 else:
-                    tokens = [t for t in re.split(r"\W+", query) if len(t) > 2]
-                    score = sum(1 for t in tokens if t in name) * max(1, len(tokens))
+                    tokens = [t for t in re.split(r"\W+", query)
+                              if len(t) > 2 and t not in
+                              {"the", "file", "files", "document", "documents",
+                               "dosya", "dosyayı", "belge", "belgeyi"}]
+                    score = 0
+                    for token in tokens:
+                        if token not in name:
+                            continue
+                        whole = re.search(rf"(?:^|[\s._\-]){re.escape(token)}(?:[\s._\-]|$)", name)
+                        if len(token) >= 4 or whole:
+                            score += len(token) * max(1, len(tokens))
                 if score and (best is None or score > best[0]):
                     best = (score, Path(walk_root) / filename)
     return best[1] if best else None

@@ -12,6 +12,7 @@ const state = {
   chats: [],
   currentChat: null,
   reminders: [],
+  memory: [],
   micTesting: false,
 };
 
@@ -28,6 +29,10 @@ const COMMANDS = [
   ["Volume", '"Volume to 40", "Mute", "Turn the volume up"'],
   ["Brightness", '"Brightness 60", "Dim the screen"'],
   ["Search", '"Search the web for Mars", "YouTube lo-fi beats"'],
+  ["Screen", '"What is on my screen", "Explain this error", "Ekranda ne var"'],
+  ["Documents", '"Summarize my thesis", "Report dosyasını özetle"'],
+  ["Memory", '"Remember that I prefer short answers", "What do you remember about me"'],
+  ["Briefing", '"Good morning", "Give me a briefing"'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
   ["Reminders", '"Remind me in 10 minutes to stretch", "Remind me every day at 9 to drink water"'],
   ["Clipboard", '"What is on my clipboard", "Copy hello world to the clipboard"'],
@@ -107,7 +112,10 @@ function setView(view) {
   };
   $("view-title").textContent = titles[view][0];
   $("view-sub").textContent = titles[view][1];
-  if (view === "notes") loadNotes();
+  if (view === "notes") {
+    loadNotes();
+    loadMemory();
+  }
   if (view === "reminders") loadReminders();
 }
 
@@ -126,6 +134,40 @@ async function loadNotes() {
       : `<div class="empty">No notes yet. Say “take a note: …” and it will show up here.</div>`;
   } catch (error) {
     toast("Could not load notes.");
+  }
+}
+
+function renderMemory(items) {
+  if (items) state.memory = items;
+  const node = $("memory-list");
+  if (!node) return;
+  const list = state.memory || [];
+  if (!list.length) {
+    node.innerHTML = `<div class="empty">Nothing remembered yet. Say “remember that I …” and it stays here.</div>`;
+    return;
+  }
+  node.innerHTML = list.map((item) => (
+    `<div class="note"><time>${escapeHtml((item.time || "").replace("T", " "))}</time>` +
+    `<span>${escapeHtml(item.text)}</span>` +
+    `<button class="mini del" data-memory="${escapeHtml(item.text)}">Forget</button></div>`
+  )).join("");
+  node.querySelectorAll("[data-memory]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await api("/api/memory/delete", { method: "POST", body: JSON.stringify({ text: button.dataset.memory }) });
+      } catch (error) {
+        toast("Could not forget that.");
+      }
+    });
+  });
+}
+
+async function loadMemory() {
+  try {
+    const data = await api("/api/memory");
+    renderMemory(data.memory || []);
+  } catch (error) {
+    toast("Could not load your memory.");
   }
 }
 
@@ -335,6 +377,7 @@ function applySettings() {
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
+  $("set-background").checked = s.background_apps !== false;
   $("set-autostart").checked = !!s.autostart;
 
   $("key-state").textContent = s.has_key ? "connected (" + s.key_hint + ")" : "not set";
@@ -354,6 +397,7 @@ async function saveSettings() {
     auto_listen: $("set-autolisten").checked,
     continuous: $("set-continuous").checked,
     check_updates: $("set-updates").checked,
+    background_apps: $("set-background").checked,
     autostart: $("set-autostart").checked,
   };
   const key = $("set-key").value.trim();
@@ -443,6 +487,9 @@ function handleEvent(event) {
     case "reminders":
       renderReminders(event.reminders || []);
       break;
+    case "memory":
+      renderMemory(event.items || []);
+      break;
     case "miclevel":
       $("level-fill").style.width = Math.round((event.value || 0) * 100) + "%";
       break;
@@ -513,6 +560,22 @@ function bind() {
     await api("/api/reminders/clear", { method: "POST", body: "{}" });
     renderReminders([]);
   });
+  $("memory-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const field = $("memory-text");
+    const text = field.value.trim();
+    if (!text) return;
+    try {
+      await api("/api/memory", { method: "POST", body: JSON.stringify({ text }) });
+      field.value = "";
+    } catch (error) {
+      toast("Could not save that.");
+    }
+  });
+  $("memory-clear").addEventListener("click", async () => {
+    await api("/api/memory/clear", { method: "POST", body: "{}" });
+    renderMemory([]);
+  });
   $("update-check").addEventListener("click", () => checkUpdates(true));
   $("update-install").addEventListener("click", installUpdate);
   $("quit-btn").addEventListener("click", () => api("/api/quit", { method: "POST", body: "{}" }));
@@ -549,12 +612,14 @@ async function boot() {
     state.chats = data.chats || [];
     state.currentChat = data.current_chat || null;
     state.reminders = data.reminders || [];
+    state.memory = data.memory || [];
     state.lastEvent = data.last_event || 0;
     $("version").textContent = "v" + data.version;
     applySettings();
     setStatus(data.state || "idle");
     renderRecent(state.chats);
     renderReminders(state.reminders);
+    renderMemory(state.memory);
     if (data.chat && data.chat.messages && data.chat.messages.length) {
       showChat(data.chat);
     }

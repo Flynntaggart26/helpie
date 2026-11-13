@@ -34,8 +34,23 @@ Rules:
   weather {}
   battery {}
   system_info {}
+  remember {"text": "..."}                          (save a lasting fact about the user)
+  read_screen {}                                    (look at what is currently on screen)
+  summarize_file {"query": "report"}                (summarise a document by name)
+  briefing {}
 - The action line is silent: never mention it in your spoken answer.
 - Only add an action when the user actually asks for one."""
+
+VISION_PROMPT = """You look at a screenshot of the user's Windows desktop and describe it out loud.
+- Answer in English, 2-4 short sentences, no markdown.
+- Focus on the active window and anything the user asked about.
+- If the user asks about an error, read the exact error text and explain it briefly.
+- Never invent text that is not visible."""
+
+SUMMARY_PROMPT = """You summarise documents for a desktop assistant whose answer is read out loud.
+- Answer in English, 3-6 short sentences, plain prose, no markdown or lists.
+- Start with the main point, then the most important details or numbers.
+- Keep names, dates and figures accurate. Do not invent anything."""
 
 
 class Brain:
@@ -43,6 +58,7 @@ class Brain:
         self.api_key = (api_key or "").strip()
         self.provider = provider or "gemini"
         self.model = model or ""
+        self.memory_text = ""
         self.history: list[dict] = []
         self._model_index = 0
 
@@ -52,6 +68,11 @@ class Brain:
 
     def reset(self) -> None:
         self.history.clear()
+
+    def _system(self) -> str:
+        if self.memory_text:
+            return f"{SYSTEM_PROMPT}\n\n{self.memory_text}"
+        return SYSTEM_PROMPT
 
     def _models(self) -> list[str]:
         if self.provider == "gemini":
@@ -75,10 +96,17 @@ class Brain:
             for item in self.history
         ]
         payload = {
-            "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "system_instruction": {"parts": [{"text": self._system()}]},
             "contents": contents,
             "generationConfig": {"temperature": 0.75, "maxOutputTokens": 500},
         }
+        reply = self._gemini_request(payload)
+        if reply:
+            self.history.append({"role": "model", "text": reply})
+        return reply
+
+    def _gemini_request(self, payload: dict) -> Optional[str]:
+        """POST a payload to Gemini, trying the configured model and free fallbacks."""
         models = self._models()
         for index in range(len(models)):
             model = models[(self._model_index + index) % len(models)]
@@ -87,7 +115,7 @@ class Brain:
                     GEMINI_URL.format(model=model),
                     headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
                     json=payload,
-                    timeout=30,
+                    timeout=45,
                 )
             except requests.RequestException:
                 return None
@@ -99,18 +127,76 @@ class Brain:
                 reply = "".join(part.get("text", "") for part in parts).strip()
                 if reply:
                     self._model_index = (self._model_index + index) % len(models)
-                    self.history.append({"role": "model", "text": reply})
                     return reply
                 return None
             if response.status_code not in (400, 403, 404, 429):
                 return None
         return None
 
+    def vision(self, prompt: str, image_bytes: bytes, mime: str = "image/png") -> Optional[str]:
+        """Ask Gemini about a screenshot. Does not touch the chat history."""
+        if not self.api_key or not image_bytes or self.provider != "gemini":
+            return None
+        import base64
+
+        payload = {
+            "system_instruction": {"parts": [{"text": VISION_PROMPT}]},
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"text": prompt or "What is on my screen right now?"},
+                    {"inline_data": {"mime_type": mime,
+                                     "data": base64.b64encode(image_bytes).decode("ascii")}},
+                ],
+            }],
+            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 700},
+        }
+        return self._gemini_request(payload)
+
+    def summarize(self, text: str, name: str = "") -> Optional[str]:
+        """Summarise a document without polluting the conversation history."""
+        text = (text or "").strip()
+        if not text or not self.api_key:
+            return None
+        prompt = (f"Document name: {name or 'untitled'}\n"
+                  f"Summarise it for the user.\n\n{text[:20000]}")
+        if self.provider == "gemini":
+            payload = {
+                "system_instruction": {"parts": [{"text": SUMMARY_PROMPT}]},
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.3, "maxOutputTokens": 600},
+            }
+            return self._gemini_request(payload)
+        base = self.model if self.model.startswith("http") else "https://api.groq.com/openai/v1"
+        base = base.rstrip("/")
+        model = "llama-3.3-70b-versatile" if "groq" in base else "gpt-4o-mini"
+        try:
+            response = requests.post(
+                f"{base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "system", "content": SUMMARY_PROMPT},
+                                 {"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 600,
+                },
+                timeout=45,
+            )
+        except requests.RequestException:
+            return None
+        if response.status_code != 200:
+            return None
+        try:
+            return response.json()["choices"][0]["message"]["content"].strip() or None
+        except (KeyError, IndexError):
+            return None
+
     def _openai_like(self) -> Optional[str]:
         base = self.model if self.model.startswith("http") else "https://api.groq.com/openai/v1"
         base = base.rstrip("/")
         model = "llama-3.3-70b-versatile" if "groq" in base else "gpt-4o-mini"
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": self._system()}]
         messages += [{"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]}
                      for m in self.history]
         try:

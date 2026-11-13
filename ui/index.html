@@ -89,6 +89,21 @@
           </div>
           <div class="note-list" id="note-list"></div>
         </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Memory</h2>
+            <button class="ghost" id="memory-clear">Forget all</button>
+          </div>
+          <p class="muted">
+            Lasting facts Helpie keeps about you. Say “remember that …” or add one here.
+          </p>
+          <form class="memory-form" id="memory-form">
+            <input id="memory-text" type="text" placeholder="I like short answers, my cat is named Miso…" />
+            <button class="primary" type="submit">Remember</button>
+          </form>
+          <div class="note-list" id="memory-list"></div>
+        </div>
       </section>
 
       <section class="view" id="view-commands">
@@ -157,6 +172,7 @@
             <label class="check"><input type="checkbox" id="set-autolisten" /> Listen automatically when Helpie starts</label>
             <label class="check"><input type="checkbox" id="set-continuous" /> Keep listening after each answer</label>
             <label class="check"><input type="checkbox" id="set-updates" /> Check for updates on startup</label>
+            <label class="check"><input type="checkbox" id="set-background" /> Open apps and links in the background (don't jump in front)</label>
             <label class="check"><input type="checkbox" id="set-autostart" /> Start Helpie with Windows (silent, Ctrl + H to talk)</label>
           </div>
 

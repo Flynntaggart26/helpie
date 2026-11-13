@@ -29,6 +29,7 @@ DEFAULTS = {
     "hotkey": "ctrl+h",
     "auto_listen": True,
     "continuous": True,
+    "background_apps": True,
     "auto_turns": 3,
     "city": "",
     "check_updates": True,

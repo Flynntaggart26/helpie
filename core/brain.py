@@ -8,6 +8,8 @@ import re
 from typing import Callable, Optional
 
 import actions
+import documents
+import memory
 from llm import Brain as LlmBrain
 
 GREETINGS = [
@@ -17,9 +19,10 @@ GREETINGS = [
 ]
 
 HELP_TEXT = (
-    "I can open and close apps, set volume and brightness, search the web, take notes, "
-    "set reminders, read or write the clipboard, switch windows, do math, take screenshots, "
-    "open files and lock the computer. Ask me anything else too and I will answer."
+    "I can open and close apps without stealing your focus, set volume and brightness, "
+    "search the web, take notes, set reminders, read or write the clipboard, switch windows, "
+    "do math, take screenshots, summarise documents, remember things about you, look at your "
+    "screen and give you a morning briefing. Ask me anything else too and I will answer."
 )
 
 INTRO = (
@@ -157,6 +160,7 @@ class Brain:
         self.on_quit = on_quit or (lambda: None)
         self.on_event = on_event or (lambda _event: None)
         self.llm = LlmBrain(cfg.get("api_key", ""), cfg.get("provider", "gemini"), cfg.get("model", ""))
+        self.llm.memory_text = memory.as_prompt()
         self.pending: Optional[tuple[str, dict]] = None
 
     def refresh(self, cfg: dict) -> None:
@@ -164,6 +168,11 @@ class Brain:
         self.llm.api_key = (cfg.get("api_key") or "").strip()
         self.llm.provider = cfg.get("provider") or "gemini"
         self.llm.model = cfg.get("model") or ""
+        self.llm.memory_text = memory.as_prompt()
+
+    def _refresh_memory(self) -> None:
+        self.llm.memory_text = memory.as_prompt()
+        self.on_event({"type": "memory", "items": memory.list_items()})
 
     # ------------------------------------------------------------------ #
     def handle(self, text: str) -> str:
@@ -187,6 +196,11 @@ class Brain:
             self.on_quit()
             return "See you! Open Helpie again whenever you need me."
 
+        if re.fullmatch(r"(good morning|morning|günaydın)[!. ]*", t) or \
+                re.search(r"\b(morning briefing|daily briefing|brief me|briefing|"
+                          r"günlük brifing|güne başla)\b", t):
+            return actions.briefing(self.cfg.get("city", ""))
+
         if re.fullmatch(r"(hi|hello|hey|yo|good morning|good afternoon|good evening|"
                         r"merhaba|selam|selamlar|günaydın)[!. ]*", t):
             return random.choice(GREETINGS)
@@ -196,6 +210,48 @@ class Brain:
         if re.search(r"\b(what can you do|help me|show commands|commands|abilities|"
                      r"ne yapabilirsin|yardım)\b", t):
             return HELP_TEXT
+
+        # memory
+        if re.search(r"\b(what do you (remember|know) about me|what do you remember|"
+                     r"benim hakkımda ne (hatırlıyorsun|biliyorsun)|hafızanda ne var|"
+                     r"ne hatırlıyorsun)\b", t):
+            return memory.memory_summary()
+        if re.search(r"\b(forget (everything|all|it all|me)|clear (your )?memory|"
+                     r"wipe (your )?memory|hafızayı (temizle|sil)|her şeyi unut|unut beni)\b", t):
+            count = memory.clear()
+            self._refresh_memory()
+            return f"Memory cleared. I forgot {count} thing{'s' if count != 1 else ''}."
+        match = re.search(r"^(?:please\s+)?(?:forget(?: that)?|unut)\s+(.+)$", raw, re.I)
+        if match:
+            removed = memory.remove(match.group(1))
+            self._refresh_memory()
+            return "Forgotten." if removed else "I could not find that in my memory."
+        match = re.search(r"^(?:please\s+)?(?:remember(?: that)?|keep in mind that|"
+                          r"don'?t forget that)\s+(.+)$", raw, re.I)
+        if not match:
+            match = re.search(r"^(?:hatırla|unutma|aklında tut)[:\s]+(.+)$", raw, re.I)
+        if not match:
+            match = re.search(r"^(.+?)\s+(?:unutma|aklında tut|hatırla)$", raw, re.I)
+        if match:
+            item = memory.add(match.group(1))
+            self._refresh_memory()
+            return memory.remember_reply(item)
+
+        # what is on the screen
+        if re.search(r"\b(what'?s? (on|in) my screen|what is on my screen|read my screen|"
+                     r"look at my screen|describe my screen|explain (this|the) (error|screen)|"
+                     r"what am i looking at)\b|"
+                     r"\b(ekranda ne var|ekran[ıi] oku|ekran[ıi] (anlat|incele)|"
+                     r"bu hatay[ıi] (açıkla|oku))\b", t):
+            return self._describe_screen(raw)
+
+        # document summaries
+        match = re.search(r"^(?:please\s+)?(?:summari[sz]e|sum up|give me a summary of)\s+"
+                          r"(?:the\s+)?(?:document\s+|file\s+|pdf\s+|word\s+)?(.+)$", t)
+        if not match:
+            match = re.search(r"^(.+?)\s+(?:dosyasını|dosyayı|belgeyi)?\s*özetle$", t)
+        if match:
+            return documents.summarize(match.group(1).strip(), self.llm)
 
         if re.search(r"\b(what time|the time|time is it|saat kaç)\b", t):
             return actions.now_time()
@@ -393,6 +449,19 @@ class Brain:
         return "Sorry, something went wrong while answering."
 
     # ------------------------------------------------------------------ #
+    def _describe_screen(self, prompt: str) -> str:
+        if not self.llm.available:
+            return ("I can look at your screen once you add a free Gemini API key in Settings.")
+        if getattr(self.llm, "provider", "gemini") != "gemini":
+            return "Screen reading works with the Gemini brain. Switch the provider in Settings."
+        image = actions.capture_screen()
+        if not image:
+            return "I could not capture the screen."
+        answer = self.llm.vision(prompt, image)
+        if not answer:
+            return "I could not read your screen right now."
+        return answer
+
     @staticmethod
     def _extract_action(reply: str) -> tuple[str, Optional[tuple[str, dict]]]:
         match = re.search(r"\[\[ACTION\]\]\s*(\{.*?\})\s*$", reply, re.S)
@@ -437,6 +506,10 @@ class Brain:
             "weather": lambda a: actions.weather(self.cfg.get("city", "")),
             "battery": lambda a: actions.battery(),
             "system_info": lambda a: actions.system_info(),
+            "remember": lambda a: self._remember(str(a.get("text", ""))),
+            "read_screen": lambda a: self._describe_screen(str(a.get("prompt", ""))),
+            "summarize_file": lambda a: documents.summarize(str(a.get("query", "")), self.llm),
+            "briefing": lambda a: actions.briefing(self.cfg.get("city", "")),
             "power": lambda a: self._power(str(a.get("mode", "shutdown"))),
         }
         handler = handlers.get(name)
@@ -446,6 +519,11 @@ class Brain:
             return handler(args)
         except Exception:
             return "Something went wrong while doing that."
+
+    def _remember(self, text: str) -> str:
+        item = memory.add(text)
+        self._refresh_memory()
+        return memory.remember_reply(item)
 
     @staticmethod
     def _power(mode: str) -> str:

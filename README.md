@@ -13,7 +13,11 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | --- | --- |
 | Voice | Global hotkey, speech recognition, natural neural voice replies |
 | Chat | Chat window with sidebar, saved history you can reopen and delete |
-| Apps | Opens and closes Chrome, Spotify, Notepad, VS Code, Word, Explorer, Terminal… |
+| Apps | Opens and closes Chrome, Spotify, Notepad, VS Code, Word, Explorer, Terminal… without stealing focus |
+| Screen | Reads the current screen (including error messages) with the Gemini vision model |
+| Documents | Summarises PDF, Word, PowerPoint and text files by name |
+| Memory | Remembers lasting facts about you and uses them in conversation |
+| Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
 | Windows | Switches to a window by name, lists open windows, shows the desktop |
 | Clipboard | Reads the clipboard out loud, copies text to it |
 | System | Volume, brightness, media keys, screenshots, lock, shutdown, restart, sleep |
@@ -32,13 +36,14 @@ so it behaves like a normal assistant app rather than a floating widget.
 ## Requirements
 
 - Windows 10/11
-- Python 3.10+ with `pyaudio`, `speechrecognition`, `edge-tts`, `pygame`, `requests`
+- Python 3.10+ with `pyaudio`, `speechrecognition`, `edge-tts`, `pygame`, `requests`,
+  `pillow` and `pypdf`
 - Microsoft Edge (used as the app window) — preinstalled on Windows
 
 Install the Python packages:
 
 ```powershell
-python -m pip install pyaudio speechrecognition edge-tts pygame requests
+python -m pip install pyaudio speechrecognition edge-tts pygame requests pillow pypdf
 ```
 
 ## Run
@@ -72,8 +77,38 @@ Helpie answers in English but understands Turkish commands as well.
 - `Screenshot`, `Lock the screen`, `Battery status`
 - `What time is it`, `What is 15 percent of 240`
 - `Close Spotify`, `Open downloads`, `Type hello there`
+- `What is on my screen` / `Ekranda ne var`, `Explain this error`
+- `Summarize my thesis` / `Rapor dosyasını özetle`
+- `Remember that I prefer short answers` / `Toplantı yarın, unutma`
+- `What do you remember about me` / `Benim hakkımda ne hatırlıyorsun`
+- `Forget everything` / `Hafızayı temizle`
+- `Good morning` / `Günaydın` for a quick briefing
 
 A longer list is in the **Commands** tab.
+
+## Background apps
+
+Opening something no longer pulls you away from what you are doing. Helpie starts apps and
+links minimised (`SW_SHOWMINNOACTIVE`) and, if the app still grabs the foreground, a watcher
+thread puts the previous window back in front. Turn it off with
+**Settings → Open apps and links in the background**.
+
+## Screen and documents
+
+Screen reading and document summaries use Gemini vision, so they need a free API key.
+
+- **Screen** — `What is on my screen`, `Explain this error`, `Ekranda ne var`. Helpie takes
+  a downscaled screenshot, sends it to Gemini and answers out loud. DRM video players may
+  appear black, and the window must not be minimised.
+- **Documents** — `Summarize report`, `<name> dosyasını özetle`. Helpie finds the file on
+  the Desktop, Documents or Downloads, extracts text from PDF/DOCX/PPTX/TXT and summarises
+  it. Without an API key it falls back to a short extractive summary.
+
+## Memory
+
+Facts are stored in `data/memory.json` and appended to the model's system prompt, so Helpie
+naturally remembers preferences across restarts. Manage them in **Notes → Memory**:
+add a fact, forget one, or clear everything.
 
 ## Reminders
 
@@ -135,8 +170,8 @@ Releasing a new version:
 
 ```powershell
 # bump VERSION first, then
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 ## Project layout
@@ -145,9 +180,11 @@ git push origin v1.1.0
 helpie.py             launcher: server, browser window, global hotkey, --hidden mode
 core/config.py        settings and paths, DPAPI-encrypted API key
 core/voice.py         microphone capture (VAD + level + probe) and neural TTS
-core/actions.py       Windows actions, clipboard and window helpers
+core/actions.py       Windows actions, clipboard, windows, quiet background launching
 core/brain.py         intent rules + LLM handoff
-core/llm.py           Gemini / OpenAI-compatible client
+core/llm.py           Gemini / OpenAI-compatible client, vision and summaries
+core/documents.py     PDF/DOCX/PPTX/text extraction and summaries
+core/memory.py        persistent facts (data/memory.json)
 core/server.py        local HTTP server and JSON API
 core/history.py       saved chats (data/history.json)
 core/reminders.py     persistent scheduler (data/reminders.json)
