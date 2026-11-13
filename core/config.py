@@ -1,9 +1,14 @@
-"""Settings load/save."""
+"""Settings load/save (the API key is encrypted with Windows DPAPI)."""
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
+
+try:  # core/secrets.py (DPAPI), not the stdlib module
+    import secrets as dpapi
+except Exception:  # pragma: no cover
+    dpapi = None
 
 APP_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = APP_DIR / "data"
@@ -45,11 +50,24 @@ def _merge(base: dict, extra: dict) -> dict:
 def load() -> dict:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     cfg = dict(DEFAULTS)
+    raw: dict = {}
     if SETTINGS_PATH.exists():
         try:
-            cfg = _merge(cfg, json.loads(SETTINGS_PATH.read_text(encoding="utf-8")))
+            raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            cfg = _merge(cfg, raw)
         except (json.JSONDecodeError, OSError):
-            pass
+            raw = {}
+
+    encrypted = str(raw.get("api_key_enc") or "")
+    plaintext = str(cfg.get("api_key") or "")
+    if encrypted and dpapi:
+        decrypted = dpapi.unprotect(encrypted)
+        if decrypted:
+            cfg["api_key"] = decrypted
+    elif plaintext and dpapi:
+        # Migrate an old plaintext key to DPAPI on first run.
+        save(cfg)
+
     if not cfg.get("api_key"):
         cfg["api_key"] = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("HELPIE_API_KEY", "")
     return cfg
@@ -59,6 +77,20 @@ def save(cfg: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     clean = dict(cfg)
     clean.pop("_mics", None)
+    clean.pop("_has_key", None)
+    clean.pop("key_hint", None)
+
+    key = str(clean.pop("api_key", "") or "").strip()
+    if key:
+        token = dpapi.protect(key) if dpapi else ""
+        if token:
+            clean["api_key_enc"] = token
+            clean.pop("api_key", None)
+        else:
+            clean["api_key"] = key
+    else:
+        clean.pop("api_key_enc", None)
+
     SETTINGS_PATH.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

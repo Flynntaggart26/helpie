@@ -6,14 +6,15 @@ import datetime as dt
 import os
 import re
 import subprocess
-import threading
 import time
 import webbrowser
 from ctypes import wintypes
 from pathlib import Path
 from typing import Callable, Optional
 
+import clipboard
 import config
+import reminders
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -609,12 +610,140 @@ def now_date() -> str:
 
 def set_timer(seconds: float, label: str, on_fire: Callable[[str], None]) -> str:
     seconds = max(1.0, float(seconds))
-
-    def _fire():
-        on_fire(f"Reminder: {label.strip() or 'your timer is done'}")
-
-    timer = threading.Timer(seconds, _fire)
-    timer.daemon = True
-    timer.start()
+    text = (label or "").strip() or "your timer is done"
+    if reminders.store.on_fire is None:
+        reminders.store.on_fire = lambda item: on_fire(f"Reminder: {item['text']}")
+    reminders.store.start()
+    reminders.store.add_in(seconds, text)
     span = f"{int(seconds)} seconds" if seconds < 60 else f"{seconds / 60:.0f} minutes"
     return f"Timer set for {span}."
+
+
+# --------------------------------------------------------------------------- #
+#  Reminders
+# --------------------------------------------------------------------------- #
+def add_reminder(text: str, due: dt.datetime, repeat: str = "none") -> str:
+    item = reminders.store.add(text, due, repeat)
+    when = dt.datetime.fromisoformat(item["due"])
+    pretty = when.strftime("%H:%M") if when.date() == dt.date.today() else when.strftime("%a %d %b, %H:%M")
+    if repeat == "daily":
+        return f"Okay. I will remind you every day at {pretty[-5:]} to {item['text']}."
+    if repeat == "weekdays":
+        return f"Okay. I will remind you on weekdays at {pretty[-5:]} to {item['text']}."
+    if repeat == "weekly":
+        return f"Okay. I will remind you every week on {pretty} to {item['text']}."
+    return f"Okay. I will remind you at {pretty} to {item['text']}."
+
+
+def read_reminders() -> str:
+    items = reminders.store.list()
+    if not items:
+        return "You have no reminders."
+    parts = []
+    for item in items[:6]:
+        when = dt.datetime.fromisoformat(item["due"])
+        stamp = when.strftime("%a %H:%M")
+        repeat = "" if item["repeat"] == "none" else f" ({item['repeat']})"
+        parts.append(f"{stamp}{repeat}: {item['text']}")
+    return "Reminders: " + " | ".join(parts) + "."
+
+
+def clear_reminders() -> str:
+    count = reminders.store.clear()
+    return f"Cleared {count} reminder{'s' if count != 1 else ''}."
+
+
+# --------------------------------------------------------------------------- #
+#  Clipboard
+# --------------------------------------------------------------------------- #
+def read_clipboard() -> str:
+    text = clipboard.get_text()
+    if not text.strip():
+        return "The clipboard is empty."
+    clean = re.sub(r"\s+", " ", text).strip()
+    if len(clean) > 400:
+        clean = clean[:400] + "…"
+    return f"The clipboard says: {clean}"
+
+
+def write_clipboard(text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return "What should I copy?"
+    if clipboard.set_text(text):
+        return "Copied to the clipboard."
+    return "I could not write to the clipboard."
+
+
+# --------------------------------------------------------------------------- #
+#  Windows
+# --------------------------------------------------------------------------- #
+class _WindowInfo:
+    __slots__ = ("hwnd", "title")
+
+    def __init__(self, hwnd: int, title: str) -> None:
+        self.hwnd = hwnd
+        self.title = title
+
+
+def list_windows() -> list[_WindowInfo]:
+    user32 = ctypes.windll.user32
+    found: list[_WindowInfo] = []
+    ignore = {"Program Manager", "Windows Input Experience", "Settings", "Hepsini Simge Durumuna Küçült"}
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _callback(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        title = buffer.value.strip()
+        if title and title not in ignore:
+            found.append(_WindowInfo(hwnd, title))
+        return True
+
+    try:
+        user32.EnumWindows(_callback, 0)
+    except Exception:
+        pass
+    return found
+
+
+def window_titles() -> str:
+    titles = [window.title for window in list_windows()]
+    if not titles:
+        return "I cannot see any open windows."
+    unique = list(dict.fromkeys(titles))[:8]
+    return "Open windows: " + " | ".join(unique) + "."
+
+
+def switch_window(name: str) -> str:
+    query = (name or "").lower().strip()
+    if not query:
+        return "Which window should I switch to?"
+    windows = list_windows()
+    match = next((w for w in windows if query in w.title.lower()), None)
+    if match is None:
+        aliases = {"chrome": "chrome", "spotify": "spotify", "notepad": "notepad",
+                   "code": "visual studio code", "word": "word", "excel": "excel",
+                   "explorer": "file explorer", "edge": "edge", "terminal": "terminal"}
+        wanted = aliases.get(query, query)
+        match = next((w for w in windows if wanted in w.title.lower()), None)
+    if match is None:
+        return f"I could not find a window called {name}."
+    user32 = ctypes.windll.user32
+    try:
+        user32.ShowWindow(match.hwnd, 9)
+        user32.SwitchToThisWindow(match.hwnd, True)
+    except Exception:
+        pass
+    return f"Switched to {match.title}."
+
+
+def show_desktop() -> str:
+    press_key("win+d")
+    return "Showing the desktop."
+

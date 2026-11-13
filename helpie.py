@@ -107,10 +107,12 @@ def running_port() -> int | None:
 #  Main
 # --------------------------------------------------------------------------- #
 def main() -> None:
+    hidden = "--hidden" in sys.argv
     existing = running_port()
     if existing:
-        if not focus_window():
-            open_window(f"http://127.0.0.1:{existing}/")
+        if not hidden:
+            if not focus_window():
+                open_window(f"http://127.0.0.1:{existing}/")
         print(f"Helpie is already running on port {existing}.")
         return
 
@@ -121,7 +123,8 @@ def main() -> None:
     serve(app, port)
 
     url = f"http://127.0.0.1:{port}/"
-    open_window(url)
+    if not hidden:
+        open_window(url)
     print(f"Helpie running at {url}  (version {updater.current_version()})")
 
     # global hotkey: Ctrl+H -> focus window + listen
@@ -139,9 +142,14 @@ def main() -> None:
 
     # greeting + automatic listening
     def start_flow() -> None:
+        if hidden:
+            if app.cfg.get("check_updates", True):
+                threading.Thread(target=silent_update_check, args=(app,), daemon=True).start()
+            return
         time.sleep(2.5)
         greeting = app.brain.summary()
         app.bus.push({"type": "message", "role": "assistant", "text": greeting})
+        app.history.append("assistant", greeting)
         app.speaker.say(greeting)
         app.speaker.wait_idle(25)
         if app.cfg.get("auto_listen", True):

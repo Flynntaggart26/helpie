@@ -9,6 +9,10 @@ const state = {
   busy: false,
   update: null,
   view: "chat",
+  chats: [],
+  currentChat: null,
+  reminders: [],
+  micTesting: false,
 };
 
 const STATUS = {
@@ -25,11 +29,13 @@ const COMMANDS = [
   ["Brightness", '"Brightness 60", "Dim the screen"'],
   ["Search", '"Search the web for Mars", "YouTube lo-fi beats"'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
-  ["Reminders", '"Remind me in 10 minutes to stretch"'],
+  ["Reminders", '"Remind me in 10 minutes to stretch", "Remind me every day at 9 to drink water"'],
+  ["Clipboard", '"What is on my clipboard", "Copy hello world to the clipboard"'],
+  ["Windows", '"Switch to Chrome", "List my windows", "Show the desktop"'],
   ["System", '"Screenshot", "Lock the screen", "Battery status"'],
   ["Math", '"Calculate 12 times 8", "What is 15 percent of 240"'],
   ["Time", '"What time is it", "What is the date"'],
-  ["Turkish works too", '"Chrome\'u aç", "Sesi kıs", "Ekran görüntüsü al"'],
+  ["Turkish works too", '"Chrome\'u aç", "Sesi kıs", "Panoyu oku"'],
 ];
 
 /* ------------------------------------------------------------------ */
@@ -95,12 +101,14 @@ function setView(view) {
   const titles = {
     chat: ["Chat", "Press Ctrl + H to speak"],
     notes: ["Notes", "Everything you asked Helpie to remember"],
+    reminders: ["Reminders", "Timers that survive a restart"],
     commands: ["Commands", "Examples you can say or type"],
     settings: ["Settings", "Voice, microphone and AI configuration"],
   };
   $("view-title").textContent = titles[view][0];
   $("view-sub").textContent = titles[view][1];
   if (view === "notes") loadNotes();
+  if (view === "reminders") loadReminders();
 }
 
 function renderCommands() {
@@ -122,6 +130,156 @@ async function loadNotes() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  History                                                            */
+/* ------------------------------------------------------------------ */
+function renderRecent(chats) {
+  if (chats) state.chats = chats;
+  const node = $("recent");
+  if (!node) return;
+  if (!state.chats.length) {
+    node.innerHTML = `<div class="recent-empty">No chats yet</div>`;
+    return;
+  }
+  node.innerHTML = state.chats.map((chat) => {
+    const active = chat.id === state.currentChat ? " active" : "";
+    return `<button class="recent-item${active}" data-chat="${escapeHtml(chat.id)}" title="${escapeHtml(chat.updated)}">` +
+      `<span class="recent-title">${escapeHtml(chat.title || "Chat")}</span>` +
+      `<span class="recent-del" data-del="${escapeHtml(chat.id)}" title="Delete chat">×</span></button>`;
+  }).join("");
+  node.querySelectorAll("[data-chat]").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.dataset.del) return;
+      openChat(item.dataset.chat);
+    });
+  });
+  node.querySelectorAll("[data-del]").forEach((item) => {
+    item.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      try {
+        await api("/api/history/delete", { method: "POST", body: JSON.stringify({ id: item.dataset.del }) });
+        if (item.dataset.del === state.currentChat) {
+          state.currentChat = null;
+          $("messages").innerHTML = "";
+        }
+      } catch (error) {
+        toast("Could not delete that chat.");
+      }
+    });
+  });
+}
+
+function showChat(chat) {
+  state.currentChat = chat.id;
+  $("messages").innerHTML = "";
+  (chat.messages || []).forEach((message) => addMessage(message.role, message.text));
+}
+
+async function openChat(id) {
+  try {
+    const data = await api("/api/history/select", { method: "POST", body: JSON.stringify({ id }) });
+    showChat(data.chat);
+    setView("chat");
+    $("input").focus();
+  } catch (error) {
+    toast("Could not open that chat.");
+  }
+}
+
+async function newChat() {
+  $("messages").innerHTML = "";
+  state.currentChat = null;
+  setView("chat");
+  $("input").focus();
+  try {
+    const data = await api("/api/new_chat", { method: "POST", body: "{}" });
+    if (data.chat) state.currentChat = data.chat.id;
+  } catch (error) {
+    toast("Could not start a new chat.");
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reminders                                                          */
+/* ------------------------------------------------------------------ */
+function renderReminders(items) {
+  if (items) state.reminders = items;
+  const list = state.reminders || [];
+  const node = $("reminder-list");
+  if (!node) return;
+  if (!list.length) {
+    node.innerHTML = `<div class="empty">No reminders yet. Say “remind me in 10 minutes to stretch”.</div>`;
+    return;
+  }
+  node.innerHTML = list.map((reminder) => {
+    let when = reminder.due || "";
+    try {
+      when = new Date(reminder.due).toLocaleString(undefined, {
+        weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+      });
+    } catch (error) { /* keep raw text */ }
+    const repeat = reminder.repeat && reminder.repeat !== "none" ? ` · ${reminder.repeat}` : "";
+    return `<div class="note"><time>${escapeHtml(when)}${escapeHtml(repeat)}</time>` +
+      `<span>${escapeHtml(reminder.text)}</span>` +
+      `<button class="mini del" data-reminder="${escapeHtml(reminder.id)}">Delete</button></div>`;
+  }).join("");
+  node.querySelectorAll("[data-reminder]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await api("/api/reminders/delete", { method: "POST", body: JSON.stringify({ id: button.dataset.reminder }) });
+      } catch (error) {
+        toast("Could not delete that reminder.");
+      }
+    });
+  });
+}
+
+async function loadReminders() {
+  try {
+    const data = await api("/api/reminders");
+    renderReminders(data.reminders || []);
+  } catch (error) {
+    toast("Could not load reminders.");
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Microphone test                                                    */
+/* ------------------------------------------------------------------ */
+function showMicResult(result) {
+  const verdicts = {
+    good: "Good — the microphone is picking up your voice.",
+    low: "Very quiet. Move closer or raise the input level in Windows.",
+    silent: "No sound at all. Unmute the mic or pick another device.",
+    "no-device": "Could not open the microphone. Check that it is connected.",
+  };
+  const node = $("mic-verdict");
+  node.textContent = verdicts[result.verdict] || "Test finished.";
+  node.className = "mic-verdict " + (result.verdict || "");
+  $("level-fill").style.width = Math.round((result.peak || 0) * 100) + "%";
+}
+
+async function testMic() {
+  if (state.micTesting) return;
+  state.micTesting = true;
+  const button = $("test-mic");
+  button.disabled = true;
+  button.textContent = "Listening…";
+  $("mic-verdict").textContent = "Speak now…";
+  $("mic-verdict").className = "mic-verdict";
+  $("level-fill").style.width = "0%";
+  try {
+    const result = await api("/api/mic/test", { method: "POST", body: JSON.stringify({ seconds: 4 }) });
+    showMicResult(result);
+  } catch (error) {
+    $("mic-verdict").textContent = "Microphone test failed.";
+  } finally {
+    state.micTesting = false;
+    button.disabled = false;
+    button.textContent = "Test mic";
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Chat                                                               */
 /* ------------------------------------------------------------------ */
 async function send() {
@@ -130,7 +288,6 @@ async function send() {
   if (!text || state.busy) return;
   input.value = "";
   input.style.height = "auto";
-  addMessage("user", text);
   state.busy = true;
   try {
     await api("/api/ask", { method: "POST", body: JSON.stringify({ text }) });
@@ -178,6 +335,7 @@ function applySettings() {
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
+  $("set-autostart").checked = !!s.autostart;
 
   $("key-state").textContent = s.has_key ? "connected (" + s.key_hint + ")" : "not set";
   $("model-chip").className = "chip " + (s.has_key ? "on" : "off");
@@ -196,6 +354,7 @@ async function saveSettings() {
     auto_listen: $("set-autolisten").checked,
     continuous: $("set-continuous").checked,
     check_updates: $("set-updates").checked,
+    autostart: $("set-autostart").checked,
   };
   const key = $("set-key").value.trim();
   if (key) patch.api_key = key;
@@ -263,7 +422,7 @@ function handleEvent(event) {
       setStatus(event.value, event.detail);
       break;
     case "heard":
-      addMessage("user", event.text);
+      $("status-text").textContent = "heard: " + event.text;
       break;
     case "hint":
       $("hint").textContent = event.text;
@@ -277,6 +436,22 @@ function handleEvent(event) {
     case "settings":
       state.settings = event.value;
       applySettings();
+      break;
+    case "history":
+      renderRecent(event.chats || []);
+      break;
+    case "reminders":
+      renderReminders(event.reminders || []);
+      break;
+    case "miclevel":
+      $("level-fill").style.width = Math.round((event.value || 0) * 100) + "%";
+      break;
+    case "mictest":
+      $("level-fill").style.width = "0%";
+      $("mic-verdict").textContent = "Speak now…";
+      break;
+    case "micresult":
+      showMicResult(event);
       break;
     case "update":
       state.update = event;
@@ -319,24 +494,24 @@ function bind() {
   });
 
   $("mic-btn").addEventListener("click", startListening);
-  $("new-chat").addEventListener("click", () => {
-    $("messages").innerHTML = "";
-    setView("chat");
-    $("input").focus();
-    api("/api/new_chat", { method: "POST", body: "{}" }).catch(() => {});
-  });
+  $("new-chat").addEventListener("click", newChat);
 
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.addEventListener("click", () => setView(item.dataset.view));
   });
 
   $("save-settings").addEventListener("click", saveSettings);
+  $("test-mic").addEventListener("click", testMic);
   $("test-voice").addEventListener("click", async () => {
     await api("/api/test_voice", { method: "POST", body: JSON.stringify({ text: "Hi, I'm Helpie. This is how I sound." }) });
   });
   $("notes-clear").addEventListener("click", async () => {
     await api("/api/notes/clear", { method: "POST", body: "{}" });
     loadNotes();
+  });
+  $("reminders-clear").addEventListener("click", async () => {
+    await api("/api/reminders/clear", { method: "POST", body: "{}" });
+    renderReminders([]);
   });
   $("update-check").addEventListener("click", () => checkUpdates(true));
   $("update-install").addEventListener("click", installUpdate);
@@ -371,9 +546,20 @@ async function boot() {
     state.mics = data.mics || [];
     state.voices = data.voices || [];
     state.languages = data.languages || [];
+    state.chats = data.chats || [];
+    state.currentChat = data.current_chat || null;
+    state.reminders = data.reminders || [];
+    state.lastEvent = data.last_event || 0;
     $("version").textContent = "v" + data.version;
     applySettings();
     setStatus(data.state || "idle");
+    renderRecent(state.chats);
+    renderReminders(state.reminders);
+    if (data.chat && data.chat.messages && data.chat.messages.length) {
+      showChat(data.chat);
+    }
+    const requested = new URLSearchParams(location.search).get("view");
+    if (requested && document.getElementById("view-" + requested)) setView(requested);
   } catch (error) {
     toast("Could not connect to Helpie's local server.");
   }

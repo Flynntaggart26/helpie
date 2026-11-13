@@ -21,9 +21,15 @@
         <span class="plus">+</span> New chat
       </button>
 
+      <div class="recent-wrap">
+        <div class="recent-head">Recent</div>
+        <div class="recent" id="recent"></div>
+      </div>
+
       <nav class="nav">
         <button class="nav-item active" data-view="chat"><span class="ico">▤</span> Chat</button>
         <button class="nav-item" data-view="notes"><span class="ico">✎</span> Notes</button>
+        <button class="nav-item" data-view="reminders"><span class="ico">◷</span> Reminders</button>
         <button class="nav-item" data-view="commands"><span class="ico">⌘</span> Commands</button>
         <button class="nav-item" data-view="settings"><span class="ico">⚙</span> Settings</button>
       </nav>
@@ -92,6 +98,20 @@
         </div>
       </section>
 
+      <section class="view" id="view-reminders">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Reminders</h2>
+            <button class="ghost" id="reminders-clear">Clear all</button>
+          </div>
+          <p class="muted">
+            Say “remind me in 10 minutes to stretch” or “remind me every day at 9 to drink water”.
+            Reminders keep running after a restart and show a Windows notification.
+          </p>
+          <div class="note-list" id="reminder-list"></div>
+        </div>
+      </section>
+
       <section class="view" id="view-settings">
         <div class="panel">
           <h2>Settings</h2>
@@ -137,7 +157,18 @@
             <label class="check"><input type="checkbox" id="set-autolisten" /> Listen automatically when Helpie starts</label>
             <label class="check"><input type="checkbox" id="set-continuous" /> Keep listening after each answer</label>
             <label class="check"><input type="checkbox" id="set-updates" /> Check for updates on startup</label>
+            <label class="check"><input type="checkbox" id="set-autostart" /> Start Helpie with Windows (silent, Ctrl + H to talk)</label>
           </div>
+
+          <div class="divider"></div>
+
+          <h3>Microphone test</h3>
+          <p class="muted">Press the button, then speak for a few seconds. The bar shows what Helpie hears.</p>
+          <div class="mic-test">
+            <button class="ghost" id="test-mic">Test mic</button>
+            <div class="level-track"><div class="level-fill" id="level-fill"></div></div>
+          </div>
+          <div class="mic-verdict" id="mic-verdict">Not tested yet.</div>
 
           <div class="divider"></div>
 

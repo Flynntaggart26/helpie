@@ -169,6 +169,67 @@ class Listener:
             except Exception:
                 pass
 
+    # -- mikrofon testi ----------------------------------------------------- #
+    def probe(self, mic_index: Optional[int] = None, seconds: float = 4.0,
+              on_level: Optional[Callable[[float], None]] = None) -> dict:
+        """Kısa bir kayıt yapıp mikrofonun ses alıp almadığını bildirir."""
+        result = {"ok": False, "peak": 0.0, "average": 0.0, "verdict": "no-device", "error": ""}
+        pa = None
+        stream = None
+        rate = RATE
+        try:
+            pa, stream = self._open(mic_index, rate)
+        except Exception:
+            if pa:
+                pa.terminate()
+            rate = 44100
+            try:
+                pa, stream = self._open(mic_index, rate)
+            except Exception as exc:
+                result["error"] = type(exc).__name__
+                return result
+
+        levels: list[float] = []
+        try:
+            end = time.time() + max(1.5, float(seconds))
+            while time.time() < end:
+                try:
+                    data = stream.read(CHUNK, exception_on_overflow=False)
+                except Exception:
+                    break
+                rms = self._rms(data)
+                levels.append(rms)
+                if on_level:
+                    on_level(min(1.0, rms / 6000.0))
+        finally:
+            try:
+                if stream is not None:
+                    stream.stop_stream()
+                    stream.close()
+            except Exception:
+                pass
+            try:
+                if pa is not None:
+                    pa.terminate()
+            except Exception:
+                pass
+
+        peak = max(levels) if levels else 0.0
+        average = (sum(levels) / len(levels)) if levels else 0.0
+        if peak < 50:
+            verdict = "silent"
+        elif peak < 400:
+            verdict = "low"
+        else:
+            verdict = "good"
+        return {
+            "ok": bool(levels),
+            "peak": round(min(1.0, peak / 6000.0), 3),
+            "average": round(min(1.0, average / 6000.0), 3),
+            "verdict": verdict,
+            "error": "",
+        }
+
     # -- metne çevirme ------------------------------------------------------ #
     def transcribe(self, wav: bytes, language: str = "tr-TR") -> str:
         audio = sr.AudioData(wav, RATE, WIDTH)

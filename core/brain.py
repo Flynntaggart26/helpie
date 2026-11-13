@@ -18,8 +18,8 @@ GREETINGS = [
 
 HELP_TEXT = (
     "I can open and close apps, set volume and brightness, search the web, take notes, "
-    "set reminders, do math, take screenshots, open files and lock the computer. "
-    "Ask me anything else too and I will answer."
+    "set reminders, read or write the clipboard, switch windows, do math, take screenshots, "
+    "open files and lock the computer. Ask me anything else too and I will answer."
 )
 
 INTRO = (
@@ -56,6 +56,90 @@ def _clean_query(text: str) -> str:
     q = re.sub(r"\b(search|look up|find|ara|araştır|bul|bak|bilgi ver|tell me)\b", " ", q)
     q = re.sub(r"\b(about|hakkında|ile ilgili)\b", " ", q)
     return re.sub(r"\s+", " ", q).strip(" ?!.,'\"")
+
+
+WEEKDAY_NAMES = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+    "pazartesi": 0, "salı": 1, "sali": 1, "çarşamba": 2, "carsamba": 2,
+    "perşembe": 3, "persembe": 3, "cuma": 4, "cumartesi": 5, "pazar": 6,
+}
+
+
+def _parse_repeat(text: str) -> Optional[tuple[str, int, int, Optional[int], int]]:
+    """Find a repeating reminder schedule: (repeat, hour, minute, weekday, end)."""
+    schedule: Optional[str] = None
+    weekday: Optional[int] = None
+    if re.search(r"\b(every\s+day|daily|each day|her\s+g[üu]n)\b", text):
+        schedule = "daily"
+    elif re.search(r"\b(every\s+weekday|weekdays|hafta\s+i[çc]i|her\s+hafta\s+i[çc]i)\b", text):
+        schedule = "weekdays"
+    else:
+        match = re.search(r"\bevery\s+([a-zçğıöşü]+)\b|her\s+([a-zçğıöşü]+)\b", text)
+        if match:
+            name = (match.group(1) or match.group(2) or "").lower()
+            if name in WEEKDAY_NAMES:
+                schedule = "weekly"
+                weekday = WEEKDAY_NAMES[name]
+    if not schedule:
+        return None
+
+    clock = re.search(r"(?:\bat|\bsaat)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?", text)
+    if not clock:
+        clock = re.search(r"\b(\d{1,2}):(\d{2})\b", text)
+    if not clock:
+        return None
+    hour = int(clock.group(1))
+    minute = int(clock.group(2) or 0)
+    suffix = (clock.group(3) or "").lower()
+    if suffix == "pm" and hour < 12:
+        hour += 12
+    if suffix == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return schedule, hour, minute, weekday, clock.end()
+
+
+def _next_due(hour: int, minute: int, repeat: str, weekday: Optional[int] = None) -> dt.datetime:
+    now = dt.datetime.now().replace(second=0, microsecond=0)
+    target = now.replace(hour=hour, minute=minute)
+    if target <= now:
+        target += dt.timedelta(days=1)
+    if repeat == "weekdays":
+        while target.weekday() >= 5:
+            target += dt.timedelta(days=1)
+    elif repeat == "weekly" and weekday is not None:
+        while target.weekday() != weekday:
+            target += dt.timedelta(days=1)
+    return target
+
+
+def _reminder_label(text: str, start: int) -> str:
+    tail = text[start:].strip(" ,.'\"")
+    tail = re.sub(r"^'?d[ae]\b\s*", "", tail)
+    tail = re.sub(r"^(to|that i (?:should|need to|have to)|i should|i need to|için|ki)\s+", "", tail)
+    tail = re.sub(r"\b(remind me|reminder|hatırlatır mısın|hatırlat|kur|set)\b", " ", tail)
+    tail = re.sub(r"(may[ıi]|meyi|mam[ıi]|memi)\s*$", "", tail)
+    tail = re.sub(r"\s+", " ", tail).strip(" .,'\u2019")
+    return tail or "your reminder"
+
+
+def _parse_clock(text: str) -> Optional[tuple[dt.datetime, int]]:
+    """One-off 'at 18:30' style time. Returns (due, end position)."""
+    match = re.search(r"(?:\bat|\bsaat)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?", text)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    suffix = (match.group(3) or "").lower()
+    if suffix == "pm" and hour < 12:
+        hour += 12
+    if suffix == "am" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return _next_due(hour, minute, "none"), match.end()
 
 
 class Brain:
@@ -188,6 +272,53 @@ class Brain:
         if re.search(r"\b(clear|delete|erase)\b.*\bnotes\b|\bnotlarımı sil\b", t):
             return actions.clear_notes()
 
+        # clipboard
+        if re.search(r"\bclipboard\b|\bpanoda\b|\bpanoyu\b|\bpanoya\b", t):
+            reading = re.search(r"(read|show|what'?s? (?:on|in)|what is (?:on|in)|oku|göster|ne var)", t)
+            writing = re.search(r"(copy|write|put|add|kopyala|yaz)", t)
+            if reading and not writing:
+                return actions.read_clipboard()
+            match = re.search(
+                r"(?:copy|put|write|add)\s+(.+?)\s+(?:to|into|in|on)\s+(?:the\s+|my\s+)?clipboard", t)
+            if not match:
+                match = re.search(
+                    r"(?:copy|write|add|put)\s+(?:this\s+)?(?:to\s+|into\s+)?(?:the\s+|my\s+)?clipboard[:\s]+(.+)$", t)
+            if not match:
+                match = re.search(r"(.+?)\s+(?:panoya|panoyu)\s*(?:kopyala|yaz)", t)
+            if match:
+                return actions.write_clipboard(match.group(1).strip())
+            return actions.read_clipboard()
+
+        # windows
+        if re.search(r"\b(show (?:the )?desktop|minimize everything|minimize all|masaüstünü göster)\b", t):
+            return actions.show_desktop()
+        if re.search(r"\b(list|show|what)\b.*\bwindows\b|\bopen windows\b|\baçık pencereler\b", t):
+            return actions.window_titles()
+        match = re.search(r"^(?:switch to|focus|activate|bring up|go to the)\s+(?:the\s+)?(.+?)(?:\s+window)?$", t)
+        if match:
+            return actions.switch_window(match.group(1))
+        match = re.search(r"^(.+?)(?:'?[ae])?\s+(?:penceresine|penceresini)?\s*(?:geç|getir)$", t)
+        if match:
+            return actions.switch_window(match.group(1))
+
+        # reminders (repeating or absolute time)
+        schedule_match = _parse_repeat(t)
+        if schedule_match and re.search(r"(remind|reminder|timer|alarm|hatırlat|hatırlatıcı)", t):
+            schedule, hour, minute, weekday, end = schedule_match
+            due = _next_due(hour, minute, schedule, weekday)
+            return actions.add_reminder(_reminder_label(t, end), due, schedule)
+        if re.search(r"(remind|reminder|hatırlat)", t):
+            clock = _parse_clock(t)
+            if clock:
+                due, end = clock
+                return actions.add_reminder(_reminder_label(t, end), due, "none")
+        if re.search(r"\b(show|list|read|what are)\b.*\breminders?\b"
+                     r"|\bhatırlatıcılar[ıi]m[ıi]?\b|\bhatırlatıcıları (göster|oku)\b", t):
+            return actions.read_reminders()
+        if re.search(r"\b(clear|delete|cancel|remove)\b.*\breminders?\b"
+                     r"|\bhatırlatıcıları (sil|temizle)\b", t):
+            return actions.clear_reminders()
+
         # timers
         match = re.search(
             r"(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|saniye|dakika|saat)\b(.*)", t)
@@ -295,6 +426,12 @@ class Brain:
             "type_text": lambda a: actions.type_text(str(a.get("text", ""))),
             "screenshot": lambda a: actions.screenshot(),
             "set_timer": lambda a: actions.set_timer(minutes * 60, str(a.get("label", "")), self.on_speak),
+            "set_reminder": lambda a: actions.set_timer(minutes * 60, str(a.get("label", "")), self.on_speak),
+            "read_clipboard": lambda a: actions.read_clipboard(),
+            "write_clipboard": lambda a: actions.write_clipboard(str(a.get("text", ""))),
+            "switch_window": lambda a: actions.switch_window(str(a.get("name", ""))),
+            "show_desktop": lambda a: actions.show_desktop(),
+            "read_reminders": lambda a: actions.read_reminders(),
             "lock_screen": lambda a: actions.lock_screen(),
             "calculate": lambda a: actions.calculate(str(a.get("expression", ""))),
             "weather": lambda a: actions.weather(self.cfg.get("city", "")),

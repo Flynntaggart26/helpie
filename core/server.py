@@ -15,7 +15,10 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 import actions
+import autostart
 import config
+import history
+import reminders
 import updater
 from brain import Brain
 from voice import Listener, Speaker, list_microphones
@@ -59,6 +62,10 @@ class EventBus:
         with self._lock:
             return [item for item in self._items if item["id"] > after]
 
+    def last_id(self) -> int:
+        with self._lock:
+            return self._items[-1]["id"] if self._items else 0
+
 
 # --------------------------------------------------------------------------- #
 #  Application
@@ -85,6 +92,10 @@ class App:
         self.listener = Listener()
         self.brain = Brain(self.cfg, on_speak=self._speak, on_quit=self.shutdown,
                            on_event=self.bus.push)
+        self.history = history.History()
+        self.reminders = reminders.store
+        self.reminders.on_fire = self._on_reminder
+        self.reminders.start()
 
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
@@ -109,6 +120,7 @@ class App:
     # -- conversation ---------------------------------------------------- #
     def reply(self, user_text: str) -> str:
         self.bus.push({"type": "message", "role": "user", "text": user_text})
+        self.history.append("user", user_text)
         self.push_state("thinking")
         try:
             answer = self.brain.handle(user_text)
@@ -116,8 +128,18 @@ class App:
             traceback.print_exc()
             answer = "Something went wrong on my side, but I'm still here."
         self.bus.push({"type": "message", "role": "assistant", "text": answer})
+        self.history.append("assistant", answer)
+        self.bus.push({"type": "history", "chats": self.history.list_chats()})
         self.speaker.say(answer)
         return answer
+
+    def _on_reminder(self, item: dict) -> None:
+        text = str(item.get("text") or "Reminder")
+        line = f"Reminder: {text}"
+        self.bus.push({"type": "message", "role": "assistant", "text": line})
+        self.history.append("assistant", line)
+        self.bus.push({"type": "reminders", "reminders": self.reminders.list()})
+        self.speaker.say(line)
 
     def listen(self, reason: str = "manual") -> None:
         if not self._listen_lock.acquire(blocking=False):
@@ -196,6 +218,10 @@ class App:
         safe = {k: v for k, v in self.cfg.items() if k != "api_key"}
         safe["has_key"] = bool(self.cfg.get("api_key"))
         safe["key_hint"] = ("•" * 6 + self.cfg["api_key"][-4:]) if self.cfg.get("api_key") else ""
+        try:
+            safe["autostart"] = autostart.enabled()
+        except Exception:
+            safe["autostart"] = False
         return safe
 
     def update_settings(self, patch: dict) -> dict:
@@ -205,6 +231,8 @@ class App:
         for key, value in (patch or {}).items():
             if key in allowed:
                 self.cfg[key] = value
+        if isinstance(patch, dict) and "autostart" in patch:
+            autostart.set_enabled(bool(patch.get("autostart")))
         config.save(self.cfg)
         self.brain.refresh(self.cfg)
         self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"))
@@ -288,6 +316,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/"):
             if path == "/api/init":
+                current = app.history.current_chat()
                 self._json({
                     "settings": app.public_cfg(),
                     "mics": list_microphones(),
@@ -295,7 +324,26 @@ class Handler(BaseHTTPRequestHandler):
                     "languages": LANGUAGES,
                     "version": updater.current_version(),
                     "state": app.state,
+                    "chats": app.history.list_chats(),
+                    "current_chat": current["id"],
+                    "chat": current,
+                    "reminders": app.reminders.list(),
+                    "last_event": app.bus.last_id(),
                 })
+                return
+            if path == "/api/history":
+                chat_id = (query.get("chat", [""])[0] or "").strip()
+                if chat_id:
+                    chat = app.history.get(chat_id)
+                    if not chat:
+                        self._json({"error": "chat not found"}, 404)
+                        return
+                    self._json({"chat": chat})
+                    return
+                self._json({"chats": app.history.list_chats()})
+                return
+            if path == "/api/reminders":
+                self._json({"reminders": app.reminders.list()})
                 return
             if path == "/api/events":
                 after = int(query.get("after", ["0"])[0] or 0)
@@ -349,7 +397,62 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/new_chat":
             app.brain.llm.reset()
             app.brain.pending = None
-            self._json({"ok": True})
+            chat = app.history.new_chat()
+            app.bus.push({"type": "history", "chats": app.history.list_chats()})
+            self._json({"ok": True, "chat": chat})
+            return
+        if path == "/api/history/select":
+            chat = app.history.select(str(body.get("id", "")))
+            if not chat:
+                self._json({"error": "chat not found"}, 404)
+                return
+            app.brain.llm.reset()
+            app.brain.pending = None
+            app.bus.push({"type": "history", "chats": app.history.list_chats()})
+            self._json({"ok": True, "chat": chat})
+            return
+        if path == "/api/history/delete":
+            removed = app.history.delete(str(body.get("id", "")))
+            app.bus.push({"type": "history", "chats": app.history.list_chats()})
+            self._json({"ok": removed})
+            return
+        if path == "/api/reminders/delete":
+            removed = app.reminders.remove(str(body.get("id", "")))
+            app.bus.push({"type": "reminders", "reminders": app.reminders.list()})
+            self._json({"ok": removed})
+            return
+        if path == "/api/reminders/clear":
+            app.reminders.clear()
+            app.bus.push({"type": "reminders", "reminders": app.reminders.list()})
+            self._json({"ok": True, "reminders": []})
+            return
+        if path == "/api/reminders":
+            text = str(body.get("text", "")).strip()
+            minutes = float(body.get("minutes", 0) or 0)
+            if not text or minutes <= 0:
+                self._json({"error": "text and minutes are required"}, 400)
+                return
+            item = app.reminders.add_in(minutes * 60, text)
+            app.bus.push({"type": "reminders", "reminders": app.reminders.list()})
+            self._json({"ok": True, "reminder": item})
+            return
+        if path == "/api/mic/test":
+            try:
+                seconds = float(body.get("seconds", 4) or 4)
+            except (TypeError, ValueError):
+                seconds = 4.0
+            app.bus.push({"type": "mictest", "value": "start"})
+            last_push = [0.0]
+
+            def on_level(value: float) -> None:
+                now = time.time()
+                if now - last_push[0] > 0.07:
+                    last_push[0] = now
+                    app.bus.push({"type": "miclevel", "value": round(value, 3)})
+
+            result = app.listener.probe(app.cfg.get("mic_index"), seconds, on_level)
+            app.bus.push({"type": "micresult", **result})
+            self._json(result)
             return
         if path == "/api/update/apply":
             result = updater.apply(str(body.get("url", "")))
