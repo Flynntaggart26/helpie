@@ -19,6 +19,7 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
+| Wake word | "Hey Helpie" / "Jarvis" starts listening hands-free (Porcupine, free tier) |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |
 | Windows | Switches to a window by name, lists open windows, shows the desktop |
 | Clipboard | Reads the clipboard out loud, copies text to it |
@@ -100,8 +101,20 @@ Helpie answers in English but understands Turkish commands as well.
 - `Organize all preview` — dry-run across Desktop, Downloads, Documents
 - `Remove duplicates in downloads` — delete duplicate files (keeps one copy)
 - `Clean empty folders` — remove empty subfolders
+- `Hey Helpie` / `Jarvis` — wake word to start listening hands-free (needs Porcupine AccessKey)
 
 A longer list is in the **Commands** tab.
+
+## Wake word (hands-free)
+
+Say **“Hey Helpie”** or **“Jarvis”** and Helpie starts listening — no hotkey needed.
+
+- Uses **Picovoice Porcupine** (runs locally, no cloud).
+- Built-in keywords on free tier: **"Jarvis"**, **"Computer"**.
+- Get a free AccessKey at <https://console.picovoice.ai/> and paste it in **Settings → Porcupine AccessKey**.
+- Toggle with **Settings → Wake word: "Hey Helpie" / "Jarvis"**.
+- Works alongside Ctrl+H; both trigger the same listening flow.
+- Low CPU: runs in a background thread, only processes audio for keyword detection.
 
 ## File organizer
 

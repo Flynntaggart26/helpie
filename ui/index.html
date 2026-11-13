@@ -173,7 +173,22 @@
             <label class="check"><input type="checkbox" id="set-continuous" /> Keep listening after each answer</label>
             <label class="check"><input type="checkbox" id="set-updates" /> Check for updates on startup</label>
             <label class="check"><input type="checkbox" id="set-background" /> Open apps and links in the background (don't jump in front)</label>
+            <label class="check"><input type="checkbox" id="set-wake-word" /> Wake word: "Hey Helpie" / "Jarvis" (always listening)</label>
             <label class="check"><input type="checkbox" id="set-autostart" /> Start Helpie with Windows (silent, Ctrl + H to talk)</label>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>Wake word (Porcupine)</h3>
+          <p class="muted">
+            Uses Picovoice Porcupine (built-in keywords: "Jarvis", "Computer"). 
+            Free tier at <a href="#" id="get-porcupine">console.picovoice.ai</a> — copy your AccessKey below.
+          </p>
+          <div class="form-grid">
+            <label class="field">
+              <span>Porcupine AccessKey <em id="porcupine-key-state">not set</em></span>
+              <input id="set-porcupine-key" type="password" placeholder="AccessKey from Picovoice Console…" />
+            </label>
           </div>
 
           <div class="divider"></div>

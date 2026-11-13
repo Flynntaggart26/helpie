@@ -35,6 +35,7 @@ const COMMANDS = [
   ["Briefing", '"Good morning", "Give me a briefing"'],
   ["Chain commands", '"Open Chrome and search for cats", "Sesi kıs ve parlaklığı azalt", "Lock the screen, then take a screenshot"'],
   ["Organize files", '"Organize downloads by type", "Organize desktop by date", "Organize all preview", "Remove duplicates in downloads", "Clean empty folders"'],
+  ["Wake word", '"Hey Helpie" / "Jarvis" — starts listening without Ctrl+H (needs Porcupine AccessKey)'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
   ["Reminders", '"Remind me in 10 minutes to stretch", "Remind me every day at 9 to drink water"'],
   ["Clipboard", '"What is on my clipboard", "Copy hello world to the clipboard"'],
@@ -380,11 +381,16 @@ function applySettings() {
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
   $("set-background").checked = s.background_apps !== false;
+  $("set-wake-word").checked = !!s.wake_word;
   $("set-autostart").checked = !!s.autostart;
 
   $("key-state").textContent = s.has_key ? "connected (" + s.key_hint + ")" : "not set";
   $("model-chip").className = "chip " + (s.has_key ? "on" : "off");
   $("model-chip").innerHTML = `<span class="dot"></span> AI: ${s.has_key ? "Gemini connected" : "commands only"}`;
+
+  const pk = s.wake_word_access_key || "";
+  $("porcupine-key-state").textContent = pk ? "connected (" + pk.slice(-4).padStart(4, "•") + ")" : "not set";
+  $("porcupine-key-state").className = pk ? "has-key" : "";
 }
 
 async function saveSettings() {
@@ -400,6 +406,8 @@ async function saveSettings() {
     continuous: $("set-continuous").checked,
     check_updates: $("set-updates").checked,
     background_apps: $("set-background").checked,
+    wake_word: $("set-wake-word").checked,
+    wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
     autostart: $("set-autostart").checked,
   };
   const key = $("set-key").value.trim();
@@ -408,6 +416,7 @@ async function saveSettings() {
     const data = await api("/api/settings", { method: "POST", body: JSON.stringify(patch) });
     state.settings = data.settings;
     $("set-key").value = "";
+    $("set-porcupine-key").value = "";
     applySettings();
     toast("Settings saved.");
   } catch (error) {
@@ -585,6 +594,10 @@ function bind() {
   $("get-key").addEventListener("click", (event) => {
     event.preventDefault();
     window.open("https://aistudio.google.com/app/apikey", "_blank");
+  });
+  $("get-porcupine").addEventListener("click", (event) => {
+    event.preventDefault();
+    window.open("https://console.picovoice.ai/", "_blank");
   });
   $("mic-settings").addEventListener("click", (event) => {
     event.preventDefault();

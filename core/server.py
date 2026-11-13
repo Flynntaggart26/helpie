@@ -22,7 +22,7 @@ import memory
 import reminders
 import updater
 from brain import Brain
-from voice import Listener, Speaker, list_microphones
+from voice import Listener, Speaker, WakeWordListener, list_microphones
 
 ROOT = config.APP_DIR
 UI_DIR = ROOT / "ui"
@@ -91,6 +91,7 @@ class App:
             on_end=self._on_speak_end,
         )
         self.listener = Listener()
+        self.wake_word = WakeWordListener(on_wake=self._on_wake_word)
         self.brain = Brain(self.cfg, on_speak=self._speak, on_quit=self.shutdown,
                            on_event=self.bus.push)
         self.history = history.History()
@@ -98,6 +99,27 @@ class App:
         self.reminders.on_fire = self._on_reminder
         self.reminders.start()
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
+        self._start_wake_word()
+
+    def _start_wake_word(self) -> None:
+        if self.cfg.get("wake_word", True):
+            access_key = self.cfg.get("wake_word_access_key", "")
+            mic_index = self.cfg.get("mic_index")
+            ok = self.wake_word.start(access_key=access_key, mic_index=mic_index)
+            if not ok:
+                print("[WakeWord] Could not start (pvporcupine not installed or no access key)")
+
+    def _on_wake_word(self) -> None:
+        """Called when wake word is detected."""
+        if not self._closing and not self._listen_lock.locked():
+            print("[WakeWord] Triggered -> starting listen")
+            self.listen_async("wake_word")
+
+    def _stop_wake_word(self) -> None:
+        try:
+            self.wake_word.stop()
+        except Exception:
+            pass
 
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
@@ -229,7 +251,7 @@ class App:
     def update_settings(self, patch: dict) -> dict:
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "auto_listen", "continuous", "auto_turns",
-                   "city", "check_updates", "background_apps"}
+                   "city", "check_updates", "background_apps", "wake_word", "wake_word_access_key"}
         for key, value in (patch or {}).items():
             if key in allowed:
                 self.cfg[key] = value
@@ -237,6 +259,10 @@ class App:
             autostart.set_enabled(bool(patch.get("autostart")))
         config.save(self.cfg)
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
+        # Restart wake word if settings changed
+        if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch:
+            self._stop_wake_word()
+            self._start_wake_word()
         self.brain.refresh(self.cfg)
         self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"))
         self.bus.push({"type": "settings", "value": self.public_cfg()})
@@ -249,6 +275,7 @@ class App:
             self.speaker.close()
         except Exception:
             pass
+        self._stop_wake_word()
         try:
             import keyboard
 

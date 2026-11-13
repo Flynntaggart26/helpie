@@ -35,6 +35,8 @@ DEFAULTS = {
     "check_updates": True,
     "window": {"x": None, "y": None},
     "first_run": True,
+    "wake_word": True,
+    "wake_word_access_key": "",
 }
 
 
