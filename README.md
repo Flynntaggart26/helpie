@@ -77,9 +77,34 @@ Use **↑ ↓** and **Enter**, or click an entry. **Esc** closes it.
 ## Requirements
 
 - Windows 10/11
-- Python 3.10+ with `pyaudio`, `speechrecognition`, `edge-tts`, `pygame`, `requests`,
-  `pillow` and `pypdf`
+- Python 3.10+ with all dependencies in `requirements.txt`
 - Microsoft Edge (used as the app window) — preinstalled on Windows
+
+## Installation
+
+1. Install Python 3.10+ from https://www.python.org/downloads/
+   - **Important:** Check "Add python.exe to PATH" during installation
+2. Download Helpie from https://github.com/Flynntaggart26/helpie
+3. Double-click `setup.bat` to install all dependencies
+   - If PyAudio fails: `pip install pipwin && pipwin install pyaudio`
+   - If pvporcupine fails, you can skip it (wake word will be disabled)
+4. Double-click `basla.bat` to start Helpie
+5. The first launch creates `data/settings.json`
+
+## Running on other devices
+
+Helpie is designed for Windows. To run on a different PC:
+
+1. Install Python 3.10+ and Microsoft Edge
+2. Copy the Helpie folder to the new PC
+3. Run `setup.bat` to install dependencies
+4. Run `basla.bat` to start
+
+**Note:** The global hotkey (Ctrl+H) requires running as Administrator on some systems.
+Right-click `basla.bat` → "Run as administrator" if the hotkey doesn't work.
+
+**Note:** If you forked this repo, update `REPO` in `core/updater.py` or set the
+`HELPIE_REPO` environment variable so self-updates point to your fork.
 
 Install the Python packages:
 

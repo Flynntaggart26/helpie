@@ -7,3 +7,4 @@ err.log
 .venv/
 venv/
 plugins/clipboard_history/history.json
+.env

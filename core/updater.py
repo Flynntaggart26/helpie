@@ -22,7 +22,11 @@ from typing import Optional
 
 import requests
 
-REPO = "Flynntaggart26/helpie"
+import os
+
+# Override with the HELPIE_REPO environment variable (e.g. "owner/helpie") when
+# running a fork. Defaults to the upstream repository.
+REPO = os.environ.get("HELPIE_REPO", "Flynntaggart26/helpie")
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 APP_DIR = Path(__file__).resolve().parent.parent
 VERSION_FILE = APP_DIR / "VERSION"
