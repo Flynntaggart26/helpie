@@ -346,9 +346,19 @@ class App:
 
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
-        safe = {k: v for k, v in self.cfg.items() if k != "api_key"}
+        safe = {k: v for k, v in self.cfg.items() if k not in ("api_key", "openai_key")}
         safe["has_key"] = bool(self.cfg.get("api_key"))
         safe["key_hint"] = ("•" * 6 + self.cfg["api_key"][-4:]) if self.cfg.get("api_key") else ""
+        # Ollama settings
+        safe["ollama_url"] = self.cfg.get("ollama_url", "http://localhost:11434")
+        safe["ollama_model"] = self.cfg.get("ollama_model", "llama3.2")
+        # OpenAI-compatible settings
+        safe["openai_url"] = self.cfg.get("openai_url", "")
+        safe["openai_model"] = self.cfg.get("openai_model", "")
+        # OpenAI key hint
+        openai_key = self.cfg.get("openai_key", "")
+        safe["openai_key_hint"] = ("•" * 6 + openai_key[-4:]) if openai_key else ""
+        safe["has_openai_key"] = bool(openai_key)
         try:
             safe["autostart"] = autostart.enabled()
         except Exception:
@@ -358,7 +368,8 @@ class App:
     def update_settings(self, patch: dict) -> dict:
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "auto_listen", "continuous", "auto_turns",
-                   "city", "check_updates", "background_apps", "wake_word", "wake_word_access_key"}
+                   "city", "check_updates", "background_apps", "wake_word", "wake_word_access_key",
+                   "ollama_url", "ollama_model", "openai_url", "openai_key", "openai_model"}
         for key, value in (patch or {}).items():
             if key in allowed:
                 self.cfg[key] = value

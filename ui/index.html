@@ -149,90 +149,169 @@
         <div class="panel">
           <h2>Settings</h2>
 
-          <div class="form-grid">
-            <label class="field">
-              <span>Your name</span>
-              <input id="set-name" type="text" placeholder="How should I call you?" />
-            </label>
+          <!-- General -->
+          <div class="settings-section">
+            <h3>General</h3>
+            <div class="form-grid">
+              <label class="field">
+                <span>Your name</span>
+                <input id="set-name" type="text" placeholder="How should I call you?" />
+              </label>
 
-            <label class="field">
-              <span>Microphone</span>
-              <select id="set-mic"></select>
-            </label>
+              <label class="field">
+                <span>City for weather</span>
+                <input id="set-city" type="text" placeholder="Empty = automatic" />
+              </label>
+            </div>
 
-            <label class="field">
-              <span>Speech recognition language</span>
-              <select id="set-language"></select>
-            </label>
-
-            <label class="field">
-              <span>Voice</span>
-              <select id="set-voice"></select>
-            </label>
-
-            <label class="field">
-              <span>Speaking speed</span>
-              <select id="set-rate">
-                <option value="-20%">Slow</option>
-                <option value="+0%">Normal</option>
-                <option value="+15%">Fast</option>
-                <option value="+30%">Very fast</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>City for weather</span>
-              <input id="set-city" type="text" placeholder="Empty = automatic" />
-            </label>
-          </div>
-
-          <div class="checks">
-            <label class="check"><input type="checkbox" id="set-autolisten" /> Listen automatically when Helpie starts</label>
-            <label class="check"><input type="checkbox" id="set-continuous" /> Keep listening after each answer</label>
-            <label class="check"><input type="checkbox" id="set-updates" /> Check for updates on startup</label>
-            <label class="check"><input type="checkbox" id="set-background" /> Open apps and links in the background (don't jump in front)</label>
-            <label class="check"><input type="checkbox" id="set-wake-word" /> Wake word: "Hey Helpie" / "Jarvis" (always listening)</label>
-            <label class="check"><input type="checkbox" id="set-autostart" /> Start Helpie with Windows (silent, Ctrl + H to talk)</label>
+            <div class="checks">
+              <label class="check"><input type="checkbox" id="set-autolisten" /> Listen automatically when Helpie starts</label>
+              <label class="check"><input type="checkbox" id="set-continuous" /> Keep listening after each answer</label>
+              <label class="check"><input type="checkbox" id="set-updates" /> Check for updates on startup</label>
+              <label class="check"><input type="checkbox" id="set-background" /> Open apps and links in the background (don't jump in front)</label>
+              <label class="check"><input type="checkbox" id="set-autostart" /> Start Helpie with Windows (silent, Ctrl + H to talk)</label>
+            </div>
           </div>
 
           <div class="divider"></div>
 
-          <h3>Wake word (Porcupine)</h3>
-          <p class="muted">
-            Uses Picovoice Porcupine (built-in keywords: "Jarvis", "Computer"). 
-            Free tier at <a href="#" id="get-porcupine">console.picovoice.ai</a> — copy your AccessKey below.
-          </p>
-          <div class="form-grid">
-            <label class="field">
-              <span>Porcupine AccessKey <em id="porcupine-key-state">not set</em></span>
-              <input id="set-porcupine-key" type="password" placeholder="AccessKey from Picovoice Console…" />
-            </label>
+          <!-- Voice -->
+          <div class="settings-section">
+            <h3>Voice</h3>
+            <div class="form-grid">
+              <label class="field">
+                <span>Microphone</span>
+                <select id="set-mic"></select>
+              </label>
+
+              <label class="field">
+                <span>Speech recognition language</span>
+                <select id="set-language"></select>
+              </label>
+
+              <label class="field">
+                <span>Voice</span>
+                <select id="set-voice"></select>
+              </label>
+
+              <label class="field">
+                <span>Speaking speed</span>
+                <select id="set-rate">
+                  <option value="-20%">Slow</option>
+                  <option value="+0%">Normal</option>
+                  <option value="+15%">Fast</option>
+                  <option value="+30%">Very fast</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="checks">
+              <label class="check"><input type="checkbox" id="set-autolisten" /> Listen automatically when Helpie starts</label>
+              <label class="check"><input type="checkbox" id="set-continuous" /> Keep listening after each answer</label>
+            </div>
           </div>
 
           <div class="divider"></div>
 
-          <h3>Microphone test</h3>
-          <p class="muted">Press the button, then speak for a few seconds. The bar shows what Helpie hears.</p>
-          <div class="mic-test">
-            <button class="ghost" id="test-mic">Test mic</button>
-            <div class="level-track"><div class="level-fill" id="level-fill"></div></div>
+          <!-- Wake Word -->
+          <div class="settings-section">
+            <h3>Wake Word</h3>
+            <p class="muted">
+              Uses Picovoice Porcupine (built-in keywords: "Jarvis", "Computer"). 
+              Free tier at <a href="#" id="get-porcupine">console.picovoice.ai</a> — copy your AccessKey below.
+            </p>
+            <div class="checks">
+              <label class="check"><input type="checkbox" id="set-wake-word" /> Wake word: "Hey Helpie" / "Jarvis" (always listening)</label>
+            </div>
+            <div class="form-grid">
+              <label class="field">
+                <span>Porcupine AccessKey <em id="porcupine-key-state">not set</em></span>
+                <input id="set-porcupine-key" type="password" placeholder="AccessKey from Picovoice Console…" />
+              </label>
+            </div>
+
+            <div class="divider"></div>
+
+            <h3>Microphone test</h3>
+            <p class="muted">Press the button, then speak for a few seconds. The bar shows what Helpie hears.</p>
+            <div class="mic-test">
+              <button class="ghost" id="test-mic">Test mic</button>
+              <div class="level-track"><div class="level-fill" id="level-fill"></div></div>
+            </div>
+            <div class="mic-verdict" id="mic-verdict">Not tested yet.</div>
           </div>
-          <div class="mic-verdict" id="mic-verdict">Not tested yet.</div>
 
           <div class="divider"></div>
 
-          <h3>AI brain</h3>
-          <p class="muted">
-            Free-form conversation needs a Gemini API key. Without it, Helpie still runs every built-in command.
-            Get one free at
-            <a href="#" id="get-key">aistudio.google.com/app/apikey</a>.
-          </p>
-          <div class="form-grid">
-            <label class="field">
-              <span>Gemini API key <em id="key-state">not set</em></span>
-              <input id="set-key" type="password" placeholder="AIza…" />
-            </label>
+          <!-- AI Providers -->
+          <div class="settings-section">
+            <h3>AI Providers</h3>
+            <p class="muted">
+              Configure API keys for AI providers. Built-in commands work without keys.
+            </p>
+            
+            <div class="provider-card">
+              <h4>Gemini (Google)</h4>
+              <p class="muted">
+                Free-form conversation needs a Gemini API key. Without it, Helpie still runs every built-in command.
+                Get one free at
+                <a href="#" id="get-key">aistudio.google.com/app/apikey</a>.
+              </p>
+              <div class="form-grid">
+                <label class="field">
+                  <span>Gemini API key <em id="key-state">not set</em></span>
+                  <input id="set-key" type="password" placeholder="AIza…" />
+                </label>
+              </div>
+            </div>
+
+            <div class="provider-card">
+              <h4>Ollama (Local LLM)</h4>
+              <p class="muted">
+                Run models locally via Ollama. No API key needed, just run Ollama locally.
+              </p>
+              <div class="form-grid">
+                <label class="field">
+                  <span>Ollama URL</span>
+                  <input id="set-ollama-url" type="text" placeholder="http://localhost:11434" />
+                </label>
+                <label class="field">
+                  <span>Default model</span>
+                  <input id="set-ollama-model" type="text" placeholder="llama3.2" />
+                </label>
+              </div>
+            </div>
+
+            <div class="provider-card">
+              <h4>Custom OpenAI-compatible</h4>
+              <p class="muted">Any OpenAI-compatible endpoint (Groq, Together, etc.)</p>
+              <div class="form-grid">
+                <label class="field">
+                  <span>Base URL</span>
+                  <input id="set-openai-url" type="text" placeholder="https://api.groq.com/openai/v1" />
+                </label>
+                <label class="field">
+                  <span>API Key</span>
+                  <input id="set-openai-key" type="password" placeholder="sk-…" />
+                </label>
+                <label class="field">
+                  <span>Model</span>
+                  <input id="set-openai-model" type="text" placeholder="llama-3.3-70b-versatile" />
+                </label>
+              </div>
+            </div>
           </div>
+
+          <div class="divider"></div>
+
+          <!-- Plugins -->
+          <div class="settings-section">
+            <h3>Plugins</h3>
+            <p class="muted">Manage installed plugins. Enable/disable or configure each plugin.</p>
+            <div id="plugins-list" class="plugins-list"></div>
+          </div>
+
+          <div class="divider"></div>
 
           <div class="actions">
             <button class="ghost" id="test-voice">Test voice</button>

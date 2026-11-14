@@ -33,6 +33,7 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Privacy | The API key is encrypted with Windows DPAPI, never stored as plain text |
 | Autostart | Optional silent start with Windows; Ctrl + H opens the window |
 | Auto-update | Checks GitHub Releases, installs new versions in place |
+| Settings UI | Organized sections: General, Voice, Wake Word, AI Providers, Plugins |
 
 The UI is a small chat window with a sidebar (Chat, Notes, Reminders, Commands, Settings),
 so it behaves like a normal assistant app rather than a floating widget.
@@ -225,7 +226,7 @@ Plugins receive an `api` object in their `init(api)` method with these capabilit
 
 ### Managing plugins
 
-- **Settings → Plugins** tab (coming soon) — enable/disable/configure plugins
+- **Settings → Plugins** tab — enable/disable/configure plugins
 - CLI: `POST /api/plugins/load {"name": "plugin_name"}`, `POST /api/plugins/unload {"name": "..."}`
 - Plugin settings: `POST /api/plugins/settings {"name": "...", "key": "...", "value": "..."}`
 
@@ -313,8 +314,8 @@ Releasing a new version:
 
 ```powershell
 # bump VERSION first, then
-git tag v1.11.0
-git push origin v1.11.0
+git tag v1.12.0
+git push origin v1.12.0
 ```
 
 ## Project layout

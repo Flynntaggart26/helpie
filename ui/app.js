@@ -371,13 +371,34 @@ function applySettings() {
   $("set-wake-word").checked = !!s.wake_word;
   $("set-autostart").checked = !!s.autostart;
 
+  // Voice settings
+  $("set-voice").value = s.voice || "";
+  $("set-language").value = s.language || "";
+  $("set-rate").value = s.rate || "+0%";
+
+  // Wake word
+  $("set-wake-word").checked = !!s.wake_word;
+  const pk = s.wake_word_access_key || "";
+  $("porcupine-key-state").textContent = pk ? "connected (" + pk.slice(-4).padStart(4, "•") + ")" : "not set";
+  $("porcupine-key-state").className = pk ? "has-key" : "";
+
+  // AI Providers
+  $("set-key").value = "";
   $("key-state").textContent = s.has_key ? "connected (" + s.key_hint + ")" : "not set";
   $("model-chip").className = "chip " + (s.has_key ? "on" : "off");
   $("model-chip").innerHTML = `<span class="dot"></span> AI: ${s.has_key ? "Gemini connected" : "commands only"}`;
 
-  const pk = s.wake_word_access_key || "";
-  $("porcupine-key-state").textContent = pk ? "connected (" + pk.slice(-4).padStart(4, "•") + ")" : "not set";
-  $("porcupine-key-state").className = pk ? "has-key" : "";
+  // Ollama settings
+  $("set-ollama-url").value = s.ollama_url || "http://localhost:11434";
+  $("set-ollama-model").value = s.ollama_model || "llama3.2";
+
+  // OpenAI-compatible settings
+  $("set-openai-url").value = s.openai_url || "";
+  $("set-openai-key").value = "";
+  $("set-openai-model").value = s.openai_model || "";
+
+  // Plugins
+  renderPlugins();
 }
 
 async function saveSettings() {
@@ -396,14 +417,26 @@ async function saveSettings() {
     wake_word: $("set-wake-word").checked,
     wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
     autostart: $("set-autostart").checked,
+    // Voice
+    voice: $("set-voice").value,
+    language: $("set-language").value,
+    rate: $("set-rate").value,
+    // Wake word
+    wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
+    // AI Providers
+    api_key: $("set-key").value.trim() || undefined,
+    ollama_url: $("set-ollama-url").value.trim() || "http://localhost:11434",
+    ollama_model: $("set-ollama-model").value.trim() || "llama3.2",
+    openai_url: $("set-openai-url").value.trim() || undefined,
+    openai_key: $("set-openai-key").value.trim() || undefined,
+    openai_model: $("set-openai-model").value.trim() || undefined,
   };
-  const key = $("set-key").value.trim();
-  if (key) patch.api_key = key;
   try {
     const data = await api("/api/settings", { method: "POST", body: JSON.stringify(patch) });
     state.settings = data.settings;
     $("set-key").value = "";
     $("set-porcupine-key").value = "";
+    $("set-openai-key").value = "";
     applySettings();
     toast("Settings saved.");
   } catch (error) {
@@ -412,6 +445,62 @@ async function saveSettings() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Plugins                                                            */
+/* ------------------------------------------------------------------ */
+async function renderPlugins() {
+  const container = $("plugins-list");
+  if (!container) return;
+  try {
+    const data = await api("/api/plugins");
+    const plugins = data.plugins || [];
+    if (!plugins.length) {
+      container.innerHTML = `<div class="muted">No plugins found.</div>`;
+      return;
+    }
+    container.innerHTML = plugins.map((p) => `
+      <div class="plugin-card">
+        <div class="plugin-header">
+          <div>
+            <strong>${escapeHtml(p.display_name || p.name)}</strong>
+            <span class="plugin-version">v${escapeHtml(p.version)}</span>
+          </div>
+          <label class="check">
+            <input type="checkbox" ${p.enabled ? "checked" : ""} data-plugin="${escapeHtml(p.name)}" />
+            Enabled
+          </label>
+        </div>
+        <p class="plugin-desc muted">${escapeHtml(p.description)}</p>
+        <div class="plugin-commands">
+          <strong>Commands:</strong>
+          <span class="muted">${p.commands.map(escapeHtml).join(", ")}</span>
+        </div>
+        ${p.error ? `<div class="plugin-error muted">${escapeHtml(p.error)}</div>` : ""}
+        <div class="plugin-actions">
+          <button class="ghost" data-action="configure" data-plugin="${escapeHtml(p.name)}" ${!p.enabled ? "disabled" : ""}>Configure</button>
+          <button class="ghost" data-action="${p.enabled ? "disable" : "enable"}" data-plugin="${escapeHtml(p.name)}">${p.enabled ? "Disable" : "Enable"}</button>
+        </div>
+      </div>
+    `).join("");
+
+    container.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const action = btn.dataset.action;
+        const name = btn.dataset.plugin;
+        try {
+          if (action === "enable" || action === "disable") {
+            await api("/api/plugins/" + action, { method: "POST", body: JSON.stringify({ name }) });
+          }
+          renderPlugins();
+        } catch (error) {
+          toast("Could not " + action + " plugin.");
+        }
+      });
+    });
+  } catch (error) {
+    container.innerHTML = `<div class="muted">Could not load plugins.</div>`;
+  }
+}
+  /* ------------------------------------------------------------------ */
 /*  Updates                                                            */
 /* ------------------------------------------------------------------ */
 async function checkUpdates(manual = false) {
