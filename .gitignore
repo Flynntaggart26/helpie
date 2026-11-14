@@ -8,3 +8,7 @@ err.log
 venv/
 plugins/clipboard_history/history.json
 .env
+
+dist/
+build/
+*.spec
