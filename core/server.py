@@ -524,6 +524,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/routines":
                 self._json({"routines": routines.list_routines()})
                 return
+            if path == "/api/routines/templates":
+                self._json({"templates": routines.list_templates()})
+                return
             self._json({"error": "unknown endpoint"}, 404)
             return
 
@@ -686,6 +689,9 @@ class Handler(BaseHTTPRequestHandler):
         # --- Routines ---
         if path == "/api/routines":
             self._json({"routines": routines.list_routines()})
+            return
+        if path == "/api/routines/templates":
+            self._json({"templates": routines.list_templates()})
             return
         if path == "/api/routines/save":
             name = str(body.get("name", "")).strip()

@@ -28,15 +28,50 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Web | Google / YouTube search, direct site shortcuts |
 | Notes | Saves notes to `data/notes.md`, list and clear from the UI |
 | Reminders | One-off timers plus repeating reminders (daily / weekdays / weekly) that survive a restart and show a Windows notification |
+| Routines | Saved multi-step command sequences, with one-click Run, templates and a visual builder |
+| Palette | **Ctrl + Space** fuzzy launcher for actions, routines, chats and settings pages |
 | Math | "What is 15 percent of 240" |
 | Chat | Free-form answers with a free Gemini API key |
 | Privacy | The API key is encrypted with Windows DPAPI, never stored as plain text |
 | Autostart | Optional silent start with Windows; Ctrl + H opens the window |
 | Auto-update | Checks GitHub Releases, installs new versions in place |
-| Settings UI | Organized sections: General, Voice, Wake Word, AI Providers, Plugins |
+| Settings UI | Full-window settings with icon rail, search, breadcrumbs and plugin configuration |
 
-The UI is a small chat window with a sidebar (Chat, Notes, Reminders, Commands, Settings),
+The UI is a small chat window with a sidebar (Chat, Notes, Reminders, Routines, Commands, Settings),
 so it behaves like a normal assistant app rather than a floating widget.
+
+## Routines
+
+Routines are named sequences of commands you can fire with one click, one voice line or the
+command palette.
+
+Open the **Routines** tab to:
+
+- see every saved routine with its numbered steps
+- **Run** or **Delete** a routine
+- **New routine** — name it, describe it, then type one step per line
+  (`open chrome`, `set volume 30`, `what time is it`)
+- start from a built-in template: **start work**, **end work**, **meeting prep**, **focus mode**
+
+By voice:
+
+- `save routine morning with steps open chrome and then what time is it`
+- `run morning`, `list routines`, `delete routine morning`
+
+Routines live in `data/routines/routines.json` and support `{placeholder}` parameters,
+e.g. `run morning with params app=edge`.
+
+## Command palette
+
+Press **Ctrl + Space** anywhere and start typing. The palette fuzzy-matches:
+
+- **Go** — jump to Chat, Notes, Reminders, Routines, Commands or Settings
+- **Action** — screenshot, lock, mute, volume, brightness, battery, briefing, notes…
+- **Routine** — run any saved routine
+- **Settings** — open a specific settings page
+- **Chat** — reopen a recent conversation
+
+Use **↑ ↓** and **Enter**, or click an entry. **Esc** closes it.
 
 ## Requirements
 
@@ -155,11 +190,12 @@ Create reusable multi-step routines with parameter support:
 - `save routine morning with steps open chrome and search for rust and then what time is it`
 - `run morning` — runs the routine
 - `run morning with params app=edge` — substitutes `{app}` with `edge`
-- `run routine morning with params app=firefox` — full syntax with params
+- `run routine morning with params firefox` — full syntax with params
 - `list routines` — shows all saved routines
 - `delete routine morning` — removes a routine
 
 Routines support parameter substitution using `{placeholder}` syntax in step definitions.
+The **Routines** tab does the same visually — see [Routines](#routines).
 
 ## Plugin system
 
@@ -229,6 +265,22 @@ Plugins receive an `api` object in their `init(api)` method with these capabilit
 - **Settings → Plugins** tab — enable/disable/configure plugins
 - CLI: `POST /api/plugins/load {"name": "plugin_name"}`, `POST /api/plugins/unload {"name": "..."}`
 - Plugin settings: `POST /api/plugins/settings {"name": "...", "key": "...", "value": "..."}`
+
+## Settings
+
+Settings opens as its own full-window surface (the chat sidebar hides while it is open):
+
+- **Search pill** at the top — `Ctrl + K` focuses it and filters the navigation; `Esc` closes settings
+- **Left rail** with a scope picker (`All settings`, `AI models`, `Plugins`) and grouped pages:
+  General, Voice, Wake Word, **AI Providers** (Gemini · Ollama · Custom OpenAI), Plugins,
+  Shortcuts, About
+- **Breadcrumb** (`Settings › AI Providers › Gemini`) replaces page headings
+- Fields are stacked and full width, toggles sit on the right of their description
+- **Plugins** page: enable/disable, filter by state, reload, and **Configure** — a form built from
+  each plugin's `settings_schema` (for example Spotify client id / secret / device / refresh token)
+- **Save settings** in the footer applies everything
+
+Pages are deep-linkable: `?view=settings&page=plugins`.
 
 ## Background apps
 
@@ -314,8 +366,8 @@ Releasing a new version:
 
 ```powershell
 # bump VERSION first, then
-git tag v1.12.0
-git push origin v1.12.0
+git tag v1.13.0
+git push origin v1.13.0
 ```
 
 ## Project layout
@@ -332,6 +384,7 @@ core/memory.py        persistent facts (data/memory.json)
 core/server.py        local HTTP server and JSON API
 core/history.py       saved chats (data/history.json)
 core/reminders.py     persistent scheduler (data/reminders.json)
+core/routines.py      saved multi-step routines and templates (data/routines/)
 core/notify.py        Windows notification balloons
 core/secrets.py       DPAPI protect / unprotect
 core/autostart.py     HKCU Run entry

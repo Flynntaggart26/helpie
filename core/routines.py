@@ -117,42 +117,49 @@ ROUTINE_ACTIONS = {
 }
 
 
+TEMPLATES = {
+    "start_work": {
+        "description": "Open work apps and set environment",
+        "steps": [
+            {"action": "open_app", "args": {"app": "code"}},
+            {"action": "open_app", "args": {"app": "chrome"}},
+            {"action": "set_volume", "args": {"percent": 30}},
+        ],
+    },
+    "end_work": {
+        "description": "Close work apps and cleanup",
+        "steps": [
+            {"action": "close_app", "args": {"app": "code"}},
+            {"action": "close_app", "args": {"app": "chrome"}},
+            {"action": "set_volume", "args": {"percent": 50}},
+        ],
+    },
+    "meeting_prep": {
+        "description": "Prepare for a meeting",
+        "steps": [
+            {"action": "open_app", "args": {"app": "chrome"}},
+            {"action": "set_volume", "args": {"percent": 50}},
+            {"action": "screenshot", "args": {}},
+        ],
+    },
+    "focus_mode": {
+        "description": "Minimize distractions",
+        "steps": [
+            {"action": "set_volume", "args": {"percent": 20}},
+            {"action": "brightness", "args": {"direction": "down"}},
+        ],
+    },
+}
+
+
+def list_templates() -> dict[str, dict]:
+    """Built-in routine templates, available to the UI."""
+    return {name: {"description": t["description"], "steps": t["steps"]} for name, t in TEMPLATES.items()}
+
+
 def create_routine_from_template(name: str, template: str, params: dict = None) -> bool:
     """Create a routine from a built-in template."""
-    templates = {
-        "start_work": {
-            "description": "Open work apps and set environment",
-            "steps": [
-                {"action": "open_app", "args": {"app": "code"}},
-                {"action": "open_app", "args": {"app": "chrome"}},
-                {"action": "set_volume", "args": {"percent": 30}},
-            ],
-        },
-        "end_work": {
-            "description": "Close work apps and cleanup",
-            "steps": [
-                {"action": "close_app", "args": {"app": "code"}},
-                {"action": "close_app", "args": {"app": "chrome"}},
-                {"action": "set_volume", "args": {"percent": 50}},
-            ],
-        },
-        "meeting_prep": {
-            "description": "Prepare for a meeting",
-            "steps": [
-                {"action": "open_app", "args": {"app": "chrome"}},
-                {"action": "set_volume", "args": {"percent": 50}},
-                {"action": "screenshot", "args": {}},
-            ],
-        },
-        "focus_mode": {
-            "description": "Minimize distractions",
-            "steps": [
-                {"action": "set_volume", "args": {"percent": 20}},
-                {"action": "brightness", "args": {"direction": "down"}},
-            ],
-        },
-    }
-    tpl = templates.get(template)
+    tpl = TEMPLATES.get(template)
     if not tpl:
         return False
     return save_routine(name, tpl["steps"], tpl["description"])

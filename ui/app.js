@@ -12,8 +12,30 @@ const state = {
   chats: [],
   currentChat: null,
   reminders: [],
+  routines: [],
   memory: [],
   micTesting: false,
+  settingsPage: "general",
+  pluginFilter: "all",
+  scope: "all",
+};
+
+const SETTINGS_PAGES = {
+  general: ["General"],
+  voice: ["Voice"],
+  wakeword: ["Wake Word"],
+  "provider-gemini": ["AI Providers", "Gemini"],
+  "provider-ollama": ["AI Providers", "Ollama"],
+  "provider-custom": ["AI Providers", "Custom OpenAI"],
+  plugins: ["Plugins"],
+  shortcuts: ["Shortcuts"],
+  about: ["About"],
+};
+
+const SCOPE_PAGES = {
+  all: null,
+  ai: ["provider-gemini", "provider-ollama", "provider-custom"],
+  plugins: ["plugins"],
 };
 
 const STATUS = {
@@ -113,17 +135,67 @@ function setView(view) {
     chat: ["Chat", "Press Ctrl + H to speak"],
     notes: ["Notes", "Everything you asked Helpie to remember"],
     reminders: ["Reminders", "Timers that survive a restart"],
+    routines: ["Routines", "Saved sequences of commands"],
     commands: ["Commands", "Examples you can say or type"],
     settings: ["Settings", "Voice, microphone and AI configuration"],
     tiny: ["Helpie", "Listening…"],
   };
   $("view-title").textContent = titles[view][0];
   $("view-sub").textContent = titles[view][1];
+  document.body.classList.toggle("settings-mode", view === "settings");
   if (view === "notes") {
     loadNotes();
     loadMemory();
   }
   if (view === "reminders") loadReminders();
+  if (view === "routines") {
+    loadRoutines();
+    loadTemplates();
+  }
+  if (view === "settings") {
+    setSettingsPage(state.settingsPage || "general");
+    refreshNav();
+  }
+}
+
+function setSettingsPage(page) {
+  if (!SETTINGS_PAGES[page]) page = "general";
+  state.settingsPage = page;
+
+  document.querySelectorAll(".settings-page").forEach((section) => {
+    section.classList.toggle("active", section.dataset.page === page);
+  });
+  document.querySelectorAll(".settings-nav-item[data-page]").forEach((item) => {
+    item.classList.toggle("active", item.dataset.page === page);
+  });
+
+  const trail = SETTINGS_PAGES[page];
+  if (trail[0] === "AI Providers") {
+    const group = $("group-providers");
+    if (group) group.classList.add("expanded");
+  }
+  $("settings-crumb").innerHTML = `<span>Settings</span>` + trail.map((part, index) => {
+    const leaf = index === trail.length - 1 ? "leaf" : "";
+    return `<span class="sep">›</span><span class="${leaf}">${escapeHtml(part)}</span>`;
+  }).join("");
+
+  if (page === "plugins") renderPlugins();
+}
+
+function refreshNav() {
+  const allowed = SCOPE_PAGES[state.scope];
+  const query = $("settings-search").value.trim().toLowerCase();
+  document.querySelectorAll(".settings-nav-item[data-page]").forEach((item) => {
+    const inScope = !allowed || allowed.includes(item.dataset.page);
+    const matches = !query || item.textContent.toLowerCase().includes(query);
+    item.style.display = inScope && matches ? "" : "none";
+  });
+  document.querySelectorAll(".settings-group").forEach((group) => {
+    const visible = Array.from(group.querySelectorAll("[data-page]"))
+      .some((item) => item.style.display !== "none");
+    group.style.display = visible ? "" : "none";
+    if (query && visible) group.classList.add("expanded");
+  });
 }
 
 function renderCommands() {
@@ -380,11 +452,12 @@ function applySettings() {
   $("set-wake-word").checked = !!s.wake_word;
   const pk = s.wake_word_access_key || "";
   $("porcupine-key-state").textContent = pk ? "connected (" + pk.slice(-4).padStart(4, "•") + ")" : "not set";
-  $("porcupine-key-state").className = pk ? "has-key" : "";
+  $("porcupine-key-state").className = "badge" + (pk ? " has-key" : "");
 
   // AI Providers
   $("set-key").value = "";
   $("key-state").textContent = s.has_key ? "connected (" + s.key_hint + ")" : "not set";
+  $("key-state").className = "badge" + (s.has_key ? " has-key" : "");
   $("model-chip").className = "chip " + (s.has_key ? "on" : "off");
   $("model-chip").innerHTML = `<span class="dot"></span> AI: ${s.has_key ? "Gemini connected" : "commands only"}`;
 
@@ -396,6 +469,11 @@ function applySettings() {
   $("set-openai-url").value = s.openai_url || "";
   $("set-openai-key").value = "";
   $("set-openai-model").value = s.openai_model || "";
+  const openaiState = $("openai-key-state");
+  if (openaiState) {
+    openaiState.textContent = s.has_openai_key ? "connected (" + s.openai_key_hint + ")" : "not set";
+    openaiState.className = "badge" + (s.has_openai_key ? " has-key" : "");
+  }
 
   // Plugins
   renderPlugins();
@@ -404,26 +482,23 @@ function applySettings() {
 async function saveSettings() {
   const mic = $("set-mic").value;
   const patch = {
+    // General
     user_name: $("set-name").value.trim(),
     city: $("set-city").value.trim(),
-    rate: $("set-rate").value,
-    voice: $("set-voice").value,
-    language: $("set-language").value,
-    mic_index: mic === "" ? null : Number(mic),
     auto_listen: $("set-autolisten").checked,
     continuous: $("set-continuous").checked,
     check_updates: $("set-updates").checked,
     background_apps: $("set-background").checked,
-    wake_word: $("set-wake-word").checked,
-    wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
     autostart: $("set-autostart").checked,
     // Voice
-    voice: $("set-voice").value,
+    mic_index: mic === "" ? null : Number(mic),
     language: $("set-language").value,
+    voice: $("set-voice").value,
     rate: $("set-rate").value,
     // Wake word
+    wake_word: $("set-wake-word").checked,
     wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
-    // AI Providers
+    // AI providers
     api_key: $("set-key").value.trim() || undefined,
     ollama_url: $("set-ollama-url").value.trim() || "http://localhost:11434",
     ollama_model: $("set-ollama-model").value.trim() || "llama3.2",
@@ -438,6 +513,13 @@ async function saveSettings() {
     $("set-porcupine-key").value = "";
     $("set-openai-key").value = "";
     applySettings();
+    const hint = $("settings-saved");
+    hint.textContent = "Saved.";
+    hint.style.color = "var(--green)";
+    setTimeout(() => {
+      hint.textContent = "Changes apply when you save.";
+      hint.style.color = "";
+    }, 2600);
     toast("Settings saved.");
   } catch (error) {
     toast("Could not save settings.");
@@ -452,53 +534,151 @@ async function renderPlugins() {
   if (!container) return;
   try {
     const data = await api("/api/plugins");
-    const plugins = data.plugins || [];
+    let plugins = data.plugins || [];
+    if (state.pluginFilter === "on") plugins = plugins.filter((p) => p.enabled);
+    if (state.pluginFilter === "off") plugins = plugins.filter((p) => !p.enabled);
     if (!plugins.length) {
-      container.innerHTML = `<div class="muted">No plugins found.</div>`;
+      const empty = state.pluginFilter === "all" ? "No plugins found." : "No plugins match this filter.";
+      container.innerHTML = `<div class="plugin-empty">${empty}</div>`;
       return;
     }
     container.innerHTML = plugins.map((p) => `
-      <div class="plugin-card">
+      <div class="plugin-card ${p.enabled ? "on" : ""}">
         <div class="plugin-header">
-          <div>
+          <div class="plugin-title">
             <strong>${escapeHtml(p.display_name || p.name)}</strong>
             <span class="plugin-version">v${escapeHtml(p.version)}</span>
+            ${p.error ? `<span class="badge">error</span>` : ""}
           </div>
-          <label class="check">
-            <input type="checkbox" ${p.enabled ? "checked" : ""} data-plugin="${escapeHtml(p.name)}" />
-            Enabled
+          <label class="switch" title="Enable or disable">
+            <input type="checkbox" data-enable="${escapeHtml(p.name)}" ${p.enabled ? "checked" : ""} />
+            <span class="track"></span>
           </label>
         </div>
-        <p class="plugin-desc muted">${escapeHtml(p.description)}</p>
+        <p class="plugin-desc">${escapeHtml(p.description)}</p>
         <div class="plugin-commands">
           <strong>Commands:</strong>
-          <span class="muted">${p.commands.map(escapeHtml).join(", ")}</span>
+          ${(p.commands || []).length
+            ? p.commands.map((command) => `<code>${escapeHtml(command)}</code>`).join(" ")
+            : `<span class="muted">none</span>`}
         </div>
-        ${p.error ? `<div class="plugin-error muted">${escapeHtml(p.error)}</div>` : ""}
+        ${p.error ? `<div class="plugin-error">${escapeHtml(p.error)}</div>` : ""}
         <div class="plugin-actions">
-          <button class="ghost" data-action="configure" data-plugin="${escapeHtml(p.name)}" ${!p.enabled ? "disabled" : ""}>Configure</button>
-          <button class="ghost" data-action="${p.enabled ? "disable" : "enable"}" data-plugin="${escapeHtml(p.name)}">${p.enabled ? "Disable" : "Enable"}</button>
+          <button class="ghost" data-configure="${escapeHtml(p.name)}">Configure</button>
+          <button class="ghost" data-reload="${escapeHtml(p.name)}">Reload</button>
         </div>
+        <div class="plugin-config" id="config-${escapeHtml(p.name)}" hidden></div>
       </div>
     `).join("");
 
-    container.querySelectorAll("[data-action]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const action = btn.dataset.action;
-        const name = btn.dataset.plugin;
+    container.querySelectorAll("[data-enable]").forEach((input) => {
+      input.addEventListener("change", async () => {
+        const name = input.dataset.enable;
+        const path = input.checked ? "/api/plugins/load" : "/api/plugins/unload";
         try {
-          if (action === "enable" || action === "disable") {
-            await api("/api/plugins/" + action, { method: "POST", body: JSON.stringify({ name }) });
-          }
+          await api(path, { method: "POST", body: JSON.stringify({ name }) });
           renderPlugins();
         } catch (error) {
-          toast("Could not " + action + " plugin.");
+          input.checked = !input.checked;
+          toast("Could not toggle that plugin.");
         }
       });
     });
+    container.querySelectorAll("[data-reload]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await api("/api/plugins/reload", { method: "POST", body: JSON.stringify({ name: button.dataset.reload }) });
+          toast("Plugin reloaded.");
+          renderPlugins();
+        } catch (error) {
+          button.disabled = false;
+          toast("Could not reload that plugin.");
+        }
+      });
+    });
+    container.querySelectorAll("[data-configure]").forEach((button) => {
+      button.addEventListener("click", () => togglePluginConfig(button.dataset.configure));
+    });
   } catch (error) {
-    container.innerHTML = `<div class="muted">Could not load plugins.</div>`;
+    container.innerHTML = `<div class="plugin-empty">Could not load plugins.</div>`;
   }
+}
+
+async function togglePluginConfig(name) {
+  const node = $("config-" + name);
+  if (!node) return;
+  if (!node.hidden) { node.hidden = true; return; }
+  node.hidden = false;
+  if (node.dataset.loaded === "1") return;
+  node.innerHTML = `<div class="plugin-empty">Loading settings…</div>`;
+  try {
+    const data = await api("/api/plugins/settings", { method: "POST", body: JSON.stringify({ name, get: true }) });
+    const schema = data.schema || {};
+    const values = data.settings || {};
+    const keys = Object.keys(schema);
+    if (!keys.length) {
+      node.innerHTML = `<div class="plugin-empty">This plugin has no settings.</div>`;
+      node.dataset.loaded = "1";
+      return;
+    }
+    node.innerHTML = keys.map((key) => {
+      const item = schema[key] || {};
+      const label = key.replace(/_/g, " ");
+      const desc = item.description ? `<span class="field-desc">${escapeHtml(item.description)}</span>` : "";
+      const current = values[key] !== undefined ? values[key] : (item.default !== undefined ? item.default : "");
+      let control;
+      if (item.type === "boolean") {
+        control = `<label class="switch"><input type="checkbox" data-key="${escapeHtml(key)}" ${current ? "checked" : ""} /><span class="track"></span></label>`;
+      } else {
+        const secret = /key|secret|token|password/i.test(key);
+        const type = item.type === "number" ? "number" : secret ? "password" : "text";
+        control = `<input type="${type}" data-key="${escapeHtml(key)}" value="${escapeHtml(String(current))}" placeholder="${escapeHtml(String(item.default === undefined ? "" : item.default))}" />`;
+      }
+      return `<div class="field-row">` +
+        `<div class="field-text"><span class="field-label">${escapeHtml(label)}</span>${desc}</div>` +
+        `<div class="field-control">${control}</div></div>`;
+    }).join("") +
+      `<div class="plugin-config-foot"><button class="ghost" data-save-config="${escapeHtml(name)}">Save settings</button></div>`;
+
+    node.dataset.loaded = "1";
+    node.querySelector("[data-save-config]").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = "Saving…";
+      try {
+        const fields = node.querySelectorAll("[data-key]");
+        for (const field of fields) {
+          const value = field.type === "checkbox" ? field.checked : field.value;
+          await api("/api/plugins/settings", { method: "POST", body: JSON.stringify({ name, key: field.dataset.key, value }) });
+        }
+        await api("/api/plugins/reload", { method: "POST", body: JSON.stringify({ name }) });
+        toast("Plugin settings saved.");
+      } catch (error) {
+        toast("Could not save plugin settings.");
+      }
+      button.disabled = false;
+      button.textContent = "Save settings";
+    });
+  } catch (error) {
+    node.innerHTML = `<div class="plugin-empty">Could not load plugin settings.</div>`;
+  }
+}
+
+async function reloadAllPlugins() {
+  const button = $("plugins-reload");
+  button.disabled = true;
+  try {
+    const data = await api("/api/plugins");
+    for (const plugin of data.plugins || []) {
+      await api("/api/plugins/reload", { method: "POST", body: JSON.stringify({ name: plugin.name }) });
+    }
+    toast("All plugins reloaded.");
+    renderPlugins();
+  } catch (error) {
+    toast("Could not reload plugins.");
+  }
+  button.disabled = false;
 }
   /* ------------------------------------------------------------------ */
 /*  Updates                                                            */
@@ -630,6 +810,360 @@ function initTinyView() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Routines                                                           */
+/* ------------------------------------------------------------------ */
+function describeStep(step) {
+  const action = step.action || "";
+  const args = step.args || {};
+  const text = args.app || args.text || "";
+  switch (action) {
+    case "open_app": return "Open " + (text || "an app");
+    case "close_app": return "Close " + (text || "an app");
+    case "web_search": return "Search the web for " + (args.query || text);
+    case "open_site": return "Open " + (args.name || text);
+    case "set_volume": return "Set volume to " + args.percent + "%";
+    case "volume": return "Volume " + (args.direction || "change");
+    case "set_brightness": return "Set brightness to " + args.percent + "%";
+    case "brightness": return "Brightness " + (args.direction || "change");
+    case "what_time": return "Tell the time";
+    case "screenshot": return "Take a screenshot";
+    case "lock_screen": return "Lock the screen";
+    case "add_note": return "Take a note: " + text;
+    case "set_timer": return "Remind in " + args.minutes + " min: " + (args.label || "timer");
+    case "speak": return "Say: " + text;
+    case "wait": return "Wait " + args.seconds + "s";
+    default: {
+      const extra = Object.values(args).filter(Boolean).join(" · ");
+      return (action || "step").replace(/_/g, " ") + (extra ? " — " + extra : "");
+    }
+  }
+}
+
+function renderRoutines(items) {
+  if (items) state.routines = items;
+  const node = $("routine-list");
+  if (!node) return;
+  const list = state.routines || [];
+  if (!list.length) {
+    node.innerHTML = `<div class="empty">No routines yet. Create one above, or say “save routine morning with steps open chrome and then what time is it”.</div>`;
+    return;
+  }
+  node.innerHTML = list.map((routine) => {
+    const steps = (routine.steps || []).map((step, index) =>
+      `<li><span class="n">${index + 1}.</span><span>${escapeHtml(describeStep(step))}</span></li>`).join("");
+    return `<div class="routine-card">` +
+      `<div class="routine-head"><div>` +
+      `<div class="routine-name">${escapeHtml(routine.name)}</div>` +
+      `${routine.description ? `<div class="routine-desc">${escapeHtml(routine.description)}</div>` : ""}` +
+      `</div></div>` +
+      `<ol class="routine-steps">${steps}</ol>` +
+      `<div class="routine-actions">` +
+      `<button class="ghost" data-run="${escapeHtml(routine.name)}">Run</button>` +
+      `<button class="ghost" data-delete="${escapeHtml(routine.name)}">Delete</button>` +
+      `</div>` +
+      `<div class="routine-result" id="routine-result" hidden></div>` +
+      `</div>`;
+  }).join("");
+
+  node.querySelectorAll("[data-run]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const name = button.dataset.run;
+      button.disabled = true;
+      button.textContent = "Running…";
+      const result = await runRoutine(name);
+      button.disabled = false;
+      button.textContent = "Run";
+      const box = button.closest(".routine-card").querySelector(".routine-result");
+      if (box) {
+        box.hidden = false;
+        box.textContent = result;
+      }
+    });
+  });
+  node.querySelectorAll("[data-delete]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await api("/api/routines/delete", { method: "POST", body: JSON.stringify({ name: button.dataset.delete }) });
+        toast("Routine deleted.");
+        loadRoutines();
+      } catch (error) {
+        toast("Could not delete that routine.");
+      }
+    });
+  });
+}
+
+async function loadRoutines() {
+  try {
+    const data = await api("/api/routines");
+    renderRoutines(data.routines || []);
+  } catch (error) {
+    toast("Could not load routines.");
+  }
+}
+
+async function runRoutine(name) {
+  try {
+    const data = await api("/api/ask", { method: "POST", body: JSON.stringify({ text: "run " + name }) });
+    return data.reply || "Done.";
+  } catch (error) {
+    return "Could not run that routine.";
+  }
+}
+
+async function loadTemplates() {
+  const node = $("template-list");
+  if (!node) return;
+  try {
+    const data = await api("/api/routines/templates");
+    const templates = data.templates || {};
+    const entries = Object.entries(templates);
+    if (!entries.length) {
+      node.innerHTML = `<span class="muted">No templates available.</span>`;
+      return;
+    }
+    node.innerHTML = entries.map(([key, tpl]) =>
+      `<button class="tpl-chip" data-template="${escapeHtml(key)}">` +
+      `<span>${escapeHtml(key.replace(/_/g, " "))}</span>` +
+      `<small>${escapeHtml(tpl.description || "")} · ${(tpl.steps || []).length} steps</small></button>`).join("");
+    node.querySelectorAll("[data-template]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const template = templates[button.dataset.template];
+        button.disabled = true;
+        try {
+          await api("/api/routines/save", {
+            method: "POST",
+            body: JSON.stringify({ name: button.dataset.template, description: template.description, steps: template.steps }),
+          });
+          toast("Template added.");
+          loadRoutines();
+        } catch (error) {
+          toast("Could not add that template.");
+        }
+        button.disabled = false;
+      });
+    });
+  } catch (error) {
+    node.innerHTML = `<span class="muted">Templates unavailable.</span>`;
+  }
+}
+
+function initRoutineForm() {
+  $("routine-new").addEventListener("click", () => {
+    $("routine-form").hidden = false;
+    $("routine-name").focus();
+  });
+  $("routine-cancel").addEventListener("click", () => {
+    $("routine-form").hidden = true;
+  });
+  $("routines-refresh").addEventListener("click", () => {
+    loadRoutines();
+    loadTemplates();
+  });
+  $("routine-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = $("routine-name").value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+    const description = $("routine-desc").value.trim();
+    const steps = $("routine-steps").value.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (!name) {
+      toast("Give the routine a name.");
+      return;
+    }
+    if (!steps.length) {
+      toast("Add at least one step.");
+      return;
+    }
+    try {
+      const data = await api("/api/ask", {
+        method: "POST",
+        body: JSON.stringify({ text: "save routine " + name + " with steps " + steps.join(" and then ") }),
+      });
+      if (description) {
+        const list = await api("/api/routines");
+        const created = (list.routines || []).find((item) => item.name === name);
+        if (created) {
+          await api("/api/routines/save", {
+            method: "POST",
+            body: JSON.stringify({ name, description, steps: created.steps }),
+          });
+        }
+      }
+      toast(data.reply || "Routine saved.");
+      $("routine-form").hidden = true;
+      $("routine-name").value = "";
+      $("routine-desc").value = "";
+      $("routine-steps").value = "";
+      loadRoutines();
+    } catch (error) {
+      toast("Could not save the routine.");
+    }
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Command palette                                                    */
+/* ------------------------------------------------------------------ */
+const NAV_VIEWS = [
+  ["chat", "Go to Chat"],
+  ["notes", "Go to Notes & Memory"],
+  ["reminders", "Go to Reminders"],
+  ["routines", "Go to Routines"],
+  ["commands", "Go to Commands"],
+  ["settings", "Go to Settings"],
+];
+
+const QUICK_ACTIONS = [
+  "Screenshot",
+  "Lock the screen",
+  "Mute",
+  "Volume up",
+  "Volume down",
+  "Volume 40",
+  "Brightness up",
+  "Brightness down",
+  "What time is it",
+  "Battery status",
+  "Good morning",
+  "Give me a briefing",
+  "Read my notes",
+  "Clipboard history",
+  "System stats",
+  "List my windows",
+  "Show the desktop",
+  "Organize downloads by type",
+];
+
+let paletteItems = [];
+let paletteShown = [];
+let paletteIndex = 0;
+
+function paletteScore(label, query) {
+  const text = label.toLowerCase();
+  if (!query) return 1;
+  if (text.startsWith(query)) return 4;
+  if (text.includes(query)) return 3;
+  let index = 0;
+  for (const char of text) {
+    if (char === query[index]) index += 1;
+    if (index === query.length) return 2;
+  }
+  return 0;
+}
+
+async function runAsk(text) {
+  setView("chat");
+  try {
+    await api("/api/ask", { method: "POST", body: JSON.stringify({ text }) });
+  } catch (error) {
+    toast("Could not reach Helpie's brain.");
+  }
+}
+
+async function paletteBuild() {
+  let routines = [];
+  try {
+    const data = await api("/api/routines");
+    routines = data.routines || [];
+  } catch (error) {
+    routines = [];
+  }
+
+  const items = [];
+  for (const [view, label] of NAV_VIEWS) {
+    items.push({ group: "Go", label, hint: "go", run: () => setView(view) });
+  }
+  for (const action of QUICK_ACTIONS) {
+    items.push({ group: "Action", label: action, hint: "run", run: () => runAsk(action) });
+  }
+  for (const routine of routines) {
+    items.push({
+      group: "Routine",
+      label: "Run " + routine.name,
+      hint: (routine.steps || []).length + " steps",
+      run: () => runAsk("run " + routine.name),
+    });
+  }
+  for (const [page, trail] of Object.entries(SETTINGS_PAGES)) {
+    items.push({
+      group: "Settings",
+      label: trail.join(" › "),
+      hint: "open",
+      run: () => {
+        setView("settings");
+        setSettingsPage(page);
+      },
+    });
+  }
+  for (const chat of (state.chats || []).slice(0, 8)) {
+    const preview = (chat.messages && chat.messages[0] && chat.messages[0].text) || "New chat";
+    items.push({
+      group: "Chat",
+      label: preview.slice(0, 48),
+      hint: "open",
+      run: async () => {
+        const selected = await api("/api/history/select", { method: "POST", body: JSON.stringify({ id: chat.id }) });
+        if (selected) showChat(selected);
+      },
+    });
+  }
+  paletteItems = items;
+}
+
+function paletteRender() {
+  const node = $("palette-list");
+  const query = $("palette-input").value.trim().toLowerCase();
+  paletteShown = paletteItems
+    .map((item) => ({ item, score: paletteScore(item.label, query) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 40)
+    .map((entry) => entry.item);
+
+  if (!paletteShown.length) {
+    node.innerHTML = `<div class="palette-empty">Nothing matches “${escapeHtml(query)}”.</div>`;
+    return;
+  }
+  if (paletteIndex >= paletteShown.length) paletteIndex = 0;
+
+  node.innerHTML = paletteShown.map((item, index) =>
+    `<button class="palette-item ${index === paletteIndex ? "active" : ""}" data-index="${index}">` +
+    `<span class="p-group">${escapeHtml(item.group)}</span>` +
+    `<span class="p-label">${escapeHtml(item.label)}</span>` +
+    `<span class="p-hint">${escapeHtml(item.hint || "")}</span></button>`).join("");
+
+  node.querySelectorAll(".palette-item").forEach((button) => {
+    button.addEventListener("click", () => paletteRun(paletteShown[Number(button.dataset.index)]));
+  });
+  const active = node.querySelector(".palette-item.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+async function paletteOpen() {
+  $("palette").hidden = false;
+  $("palette-input").value = "";
+  paletteIndex = 0;
+  $("palette-list").innerHTML = `<div class="palette-empty">Loading…</div>`;
+  $("palette-input").focus();
+  await paletteBuild();
+  paletteRender();
+}
+
+function paletteClose() {
+  $("palette").hidden = true;
+  $("palette-input").value = "";
+}
+
+async function paletteRun(item) {
+  if (!item) return;
+  paletteClose();
+  try {
+    await item.run();
+  } catch (error) {
+    toast("Could not run that.");
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Wiring                                                             */
 /* ------------------------------------------------------------------ */
 function bind() {
@@ -651,6 +1185,48 @@ function bind() {
 
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.addEventListener("click", () => setView(item.dataset.view));
+  });
+
+  // Settings navigation
+  document.querySelectorAll(".settings-nav-item[data-page]").forEach((item) => {
+    item.addEventListener("click", () => setSettingsPage(item.dataset.page));
+  });
+  document.querySelectorAll("[data-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const group = $("group-" + button.dataset.toggle);
+      if (group) group.classList.toggle("expanded");
+    });
+  });
+  $("settings-close").addEventListener("click", () => setView("chat"));
+  $("settings-scope").addEventListener("change", (event) => {
+    state.scope = event.target.value;
+    refreshNav();
+    const allowed = SCOPE_PAGES[state.scope];
+    if (allowed && !allowed.includes(state.settingsPage)) setSettingsPage(allowed[0]);
+  });
+  $("settings-search").addEventListener("input", refreshNav);
+  $("nav-update").addEventListener("click", () => checkUpdates(true));
+  $("nav-github").addEventListener("click", () => {
+    window.open("https://github.com/Flynntaggart26/helpie", "_blank");
+  });
+  $("nav-quit").addEventListener("click", () => api("/api/quit", { method: "POST", body: "{}" }));
+  document.querySelectorAll("#plugin-filter .seg-item").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.pluginFilter = button.dataset.filter;
+      document.querySelectorAll("#plugin-filter .seg-item").forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
+      renderPlugins();
+    });
+  });
+  $("plugins-reload").addEventListener("click", reloadAllPlugins);
+  $("about-update").addEventListener("click", () => checkUpdates(true));
+  $("about-github").addEventListener("click", () => {
+    window.open("https://github.com/Flynntaggart26/helpie", "_blank");
+  });
+  $("get-ollama").addEventListener("click", (event) => {
+    event.preventDefault();
+    window.open("https://ollama.com/download", "_blank");
   });
 
   $("save-settings").addEventListener("click", saveSettings);
@@ -716,10 +1292,64 @@ function bind() {
     }
   });
 
+  // Routines + command palette
+  initRoutineForm();
+  $("palette-input").addEventListener("input", () => {
+    paletteIndex = 0;
+    paletteRender();
+  });
+  $("palette-input").addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (paletteShown.length) paletteIndex = (paletteIndex + 1) % paletteShown.length;
+      paletteRender();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (paletteShown.length) paletteIndex = (paletteIndex - 1 + paletteShown.length) % paletteShown.length;
+      paletteRender();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      paletteRun(paletteShown[paletteIndex]);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      paletteClose();
+    }
+  });
+  $("palette").addEventListener("mousedown", (event) => {
+    if (event.target === $("palette")) paletteClose();
+  });
+
   document.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && event.code === "Space") {
+      event.preventDefault();
+      if ($("palette").hidden) paletteOpen();
+      else paletteClose();
+      return;
+    }
+    if (event.key === "Escape" && !$("palette").hidden) {
+      paletteClose();
+      return;
+    }
     if (event.ctrlKey && event.key.toLowerCase() === "h") {
       event.preventDefault();
       startListening();
+      return;
+    }
+    if (event.ctrlKey && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      if (state.view !== "settings") setView("settings");
+      $("settings-search").focus();
+      return;
+    }
+    if (event.key === "Escape" && state.view === "settings") {
+      const search = $("settings-search");
+      if (document.activeElement === search && search.value) {
+        search.value = "";
+        refreshNav();
+        return;
+      }
+      setView("chat");
     }
   });
 }
@@ -742,6 +1372,8 @@ async function boot() {
     state.memory = data.memory || [];
     state.lastEvent = data.last_event || 0;
     $("version").textContent = "v" + data.version;
+    $("settings-version").textContent = "v" + data.version;
+    $("about-version").textContent = "v" + data.version;
     applySettings();
     setStatus(data.state || "idle");
     renderRecent(state.chats);
@@ -752,6 +1384,8 @@ async function boot() {
     }
     const requested = new URLSearchParams(location.search).get("view");
     if (requested && document.getElementById("view-" + requested)) setView(requested);
+    const requestedPage = new URLSearchParams(location.search).get("page");
+    if (requestedPage) setSettingsPage(requestedPage);
   } catch (error) {
     toast("Could not connect to Helpie's local server.");
   }
