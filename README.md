@@ -28,6 +28,7 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Web | Google / YouTube search, direct site shortcuts |
 | Notes | Saves notes to `data/notes.md`, list and clear from the UI |
 | Reminders | One-off timers plus repeating reminders (daily / weekdays / weekly) that survive a restart and show a Windows notification |
+| Activity | Activity log of everything Helpie did (apps opened, files moved, timers set…), filterable |
 | Routines | Saved multi-step command sequences, with one-click Run, templates and a visual builder |
 | Palette | **Ctrl + Space** fuzzy launcher for actions, routines, chats and settings pages |
 | Math | "What is 15 percent of 240" |
@@ -281,6 +282,11 @@ Settings opens as its own full-window surface (the chat sidebar hides while it i
 - **Save settings** in the footer applies everything
 
 Pages are deep-linkable: `?view=settings&page=plugins`.
+
+**Activity** (`Settings → Activity`) shows every action Helpie performed on this PC — apps opened,
+files moved, timers set, screenshots taken, routines run — newest first. It's filterable by type
+(actions / files / routines / plugins) and stored locally in `data/audit.jsonl` (capped at 500
+entries). There's also a **Clear log** button if you want to wipe it.
 
 ## Background apps
 

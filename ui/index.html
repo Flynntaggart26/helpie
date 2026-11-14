@@ -243,6 +243,9 @@
               <button class="settings-nav-item" data-page="plugins">
                 <span class="sico">▦</span><span class="slabel">Plugins</span><span class="caret">›</span>
               </button>
+              <button class="settings-nav-item" data-page="activity">
+                <span class="sico">◔</span><span class="slabel">Activity</span><span class="caret">›</span>
+              </button>
               <button class="settings-nav-item" data-page="shortcuts">
                 <span class="sico">⌨</span><span class="slabel">Shortcuts</span><span class="caret">›</span>
               </button>
@@ -501,6 +504,31 @@
                 </div>
 
                 <div id="plugins-list" class="plugins-list"></div>
+              </section>
+
+              <!-- ----------------------------- Activity ----------------------------- -->
+              <section class="settings-page" data-page="activity">
+                <p class="page-lead">
+                  Every action Helpie performed on this PC, newest first — apps it opened, files it moved,
+                  commands it ran. Stored locally in <code>data/audit.jsonl</code> and capped at the last 500 entries.
+                </p>
+
+                <div class="plugins-toolbar">
+                  <div class="seg" id="audit-filter">
+                    <button class="seg-item active" data-source="">All</button>
+                    <button class="seg-item" data-source="action">Actions</button>
+                    <button class="seg-item" data-source="files">Files</button>
+                    <button class="seg-item" data-source="routine">Routines</button>
+                    <button class="seg-item" data-source="plugin">Plugins</button>
+                  </div>
+                  <div class="audit-tools">
+                    <button class="ghost" id="audit-refresh">Refresh</button>
+                    <button class="ghost" id="audit-clear">Clear log</button>
+                  </div>
+                </div>
+
+                <div class="audit-summary" id="audit-summary"></div>
+                <div class="audit-list" id="audit-list"></div>
               </section>
 
               <!-- ----------------------------- Shortcuts ----------------------------- -->

@@ -17,6 +17,7 @@ const state = {
   micTesting: false,
   settingsPage: "general",
   pluginFilter: "all",
+  auditSource: "",
   scope: "all",
 };
 
@@ -28,6 +29,7 @@ const SETTINGS_PAGES = {
   "provider-ollama": ["AI Providers", "Ollama"],
   "provider-custom": ["AI Providers", "Custom OpenAI"],
   plugins: ["Plugins"],
+  activity: ["Activity"],
   shortcuts: ["Shortcuts"],
   about: ["About"],
 };
@@ -180,6 +182,7 @@ function setSettingsPage(page) {
   }).join("");
 
   if (page === "plugins") renderPlugins();
+  if (page === "activity") loadAudit();
 }
 
 function refreshNav() {
@@ -810,6 +813,54 @@ function initTinyView() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Activity (audit log)                                               */
+/* ------------------------------------------------------------------ */
+function formatAuditTime(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso || "");
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return time;
+  return date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+}
+
+function renderAudit(data) {
+  const node = $("audit-list");
+  if (!node) return;
+  const entries = (data && data.entries) || [];
+  const stats = (data && data.stats) || { count: 0, by_source: {} };
+  const summary = $("audit-summary");
+  if (summary) {
+    const parts = Object.entries(stats.by_source || {}).map(([key, value]) => `${value} ${key}`);
+    summary.textContent = entries.length ? `${stats.count} logged actions · ${parts.join(" · ")}` : "";
+  }
+  if (!entries.length) {
+    node.innerHTML = `<div class="audit-empty">Nothing logged yet. Ask Helpie to open an app, take a screenshot or run a routine.</div>`;
+    return;
+  }
+  node.innerHTML = entries.map((entry) =>
+    `<div class="audit-row${entry.ok ? "" : " failed"}">` +
+    `<span class="audit-time">${escapeHtml(formatAuditTime(entry.ts))}</span>` +
+    `<span class="audit-dot ${escapeHtml(entry.source || "action")}"></span>` +
+    `<span class="audit-action">${escapeHtml(entry.action)}</span>` +
+    `<span class="audit-detail">${escapeHtml(entry.detail || "")}</span>` +
+    `</div>`).join("");
+}
+
+async function loadAudit() {
+  const node = $("audit-list");
+  if (!node) return;
+  if (!node.dataset.loaded) node.innerHTML = `<div class="audit-empty">Loading…</div>`;
+  try {
+    const query = state.auditSource ? "?source=" + encodeURIComponent(state.auditSource) : "";
+    renderAudit(await api("/api/audit" + query));
+    node.dataset.loaded = "1";
+  } catch (error) {
+    node.innerHTML = `<div class="audit-empty">Could not load the activity log.</div>`;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Routines                                                           */
 /* ------------------------------------------------------------------ */
 function describeStep(step) {
@@ -1220,6 +1271,29 @@ function bind() {
     });
   });
   $("plugins-reload").addEventListener("click", reloadAllPlugins);
+  document.querySelectorAll("#audit-filter .seg-item").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.auditSource = button.dataset.source || "";
+      document.querySelectorAll("#audit-filter .seg-item").forEach((item) => {
+        item.classList.toggle("active", item === button);
+      });
+      loadAudit();
+    });
+  });
+  $("audit-refresh").addEventListener("click", () => {
+    delete $("audit-list").dataset.loaded;
+    loadAudit();
+  });
+  $("audit-clear").addEventListener("click", async () => {
+    try {
+      await api("/api/audit/clear", { method: "POST", body: "{}" });
+      delete $("audit-list").dataset.loaded;
+      loadAudit();
+      toast("Activity log cleared.");
+    } catch (error) {
+      toast("Could not clear the activity log.");
+    }
+  });
   $("about-update").addEventListener("click", () => checkUpdates(true));
   $("about-github").addEventListener("click", () => {
     window.open("https://github.com/Flynntaggart26/helpie", "_blank");

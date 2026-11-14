@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import actions
+import audit
 import documents
 import memory
 import routines
@@ -764,6 +765,24 @@ class Brain:
             pass
         return reply.strip(), None
 
+    @staticmethod
+    def _audit_entry(name: str, args: dict) -> tuple[str, str, str]:
+        """Human readable (title, detail, source) for the audit log, or empty strings."""
+        text = str(args.get("app") or args.get("text") or args.get("name")
+                   or args.get("query") or args.get("url") or "").strip()
+        mapping = {
+            "remember": ("Remembered a fact", text, "action"),
+            "read_screen": ("Looked at the screen", str(args.get("prompt", "")), "action"),
+            "summarize_file": ("Summarised a document", text, "action"),
+            "run_routine": ("Ran routine", text, "routine"),
+            "save_routine": ("Saved routine", text, "routine"),
+            "delete_routine": ("Deleted routine", text, "routine"),
+        }
+        entry = mapping.get(name)
+        if not entry:
+            return ("", "", "")
+        return entry
+
     def _dispatch(self, name: str, args: dict) -> str:
         try:
             minutes = float(args.get("minutes", 0) or 0)
@@ -810,10 +829,16 @@ class Brain:
         handler = handlers.get(name)
         if not handler:
             return ""
+        title, detail, source = self._audit_entry(name, args)
         try:
-            return handler(args)
+            result = handler(args)
         except Exception:
+            if title:
+                audit.log(title, detail, ok=False, source=source)
             return "Something went wrong while doing that."
+        if title:
+            audit.log(title, detail, source=source)
+        return result
 
     def _remember(self, text: str) -> str:
         item = memory.add(text)
@@ -844,10 +869,12 @@ class Brain:
                                 if handler and callable(handler):
                                     # handler is a bound method, call with args keyword
                                     try:
-                                        return handler(args={})
+                                        result = handler(args={})
                                     except TypeError:
                                         # Fallback for handlers that don't accept args
-                                        return handler()
+                                        result = handler()
+                                    audit.log("Ran plugin command", f"{cmd_name} · {text}", source="plugin")
+                                    return result
         except Exception:
             pass
         return ""

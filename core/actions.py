@@ -14,11 +14,20 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Callable, Optional
 
+import audit
 import clipboard
 import config
 import reminders
 
 CREATE_NO_WINDOW = 0x08000000
+
+
+def _audit(action: str, detail: str = "", source: str = "action") -> None:
+    """Record a side effect for the activity log. Never raises."""
+    try:
+        audit.log(action, detail, source=source)
+    except Exception:
+        pass
 
 # --------------------------------------------------------------------------- #
 #  Apps and sites
@@ -288,6 +297,7 @@ def open_app(name: str) -> str:
         proc = APPS[key].get("proc")
         try:
             if _launch(target, [proc] if proc else []):
+                _audit("Opened app", key)
                 return f"Opening {key} in the background." if BACKGROUND_APPS else f"Opening {key}."
         except Exception:
             pass
@@ -304,10 +314,10 @@ def open_app(name: str) -> str:
             if BACKGROUND_APPS:
                 threading.Thread(target=_watch_launch, args=(set(), before, previous),
                                  daemon=True, name="helpie-launch-watch").start()
+        _audit("Opened app", cleaned)
         return f"Opening {cleaned} in the background." if BACKGROUND_APPS else f"Opening {cleaned}."
     except Exception:
         return f"I could not find an app called {cleaned}."
-
 
 def close_app(name: str) -> str:
     key = resolve_app(name)
@@ -315,6 +325,7 @@ def close_app(name: str) -> str:
         return f"I could not find {name} running."
     subprocess.Popen(["taskkill", "/IM", APPS[key]["proc"], "/F"],
                      creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _audit("Closed app", key)
     return f"Closed {key}."
 
 
@@ -348,25 +359,30 @@ def set_volume(percent: float) -> str:
         interface = cast(device.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None),
                          POINTER(IAudioEndpointVolume))
         interface.SetMasterVolumeLevelScalar(percent / 100.0, None)
+        _audit("Set volume", f"{round(percent)}%")
         return f"Volume set to {round(percent)} percent."
     except Exception:
         current = get_volume()
         if current is None:
             steps = max(1, int(percent / 2))
             _key(VK_VOLUME_UP, min(steps, 50))
+            _audit("Set volume", f"~{round(percent)}%")
             return f"Volume turned up towards {round(percent)} percent."
         diff = int(round((percent - current) / 2))
         _key(VK_VOLUME_UP if diff > 0 else VK_VOLUME_DOWN, min(abs(diff), 25))
+        _audit("Set volume", f"~{round(percent)}%")
         return f"Volume set to about {round(percent)} percent."
 
 
 def volume(direction: str = "up", step: int = 4) -> str:
     if direction == "mute":
         _key(VK_VOLUME_MUTE)
+        _audit("Muted the sound")
         return "Muted."
     _key(VK_VOLUME_UP if direction == "up" else VK_VOLUME_DOWN, step)
     current = get_volume()
     word = "up" if direction == "up" else "down"
+    _audit("Changed volume", word)
     if current is None:
         return f"Volume turned {word}."
     return f"Volume turned {word}. It is now {round(current)} percent."
@@ -375,12 +391,15 @@ def volume(direction: str = "up", step: int = 4) -> str:
 def media(action: str) -> str:
     if action == "play":
         _key(VK_MEDIA_PLAY)
+        _audit("Media control", "play")
         return "Playing."
     if action == "next":
         _key(VK_MEDIA_NEXT)
+        _audit("Media control", "next track")
         return "Next track."
     if action == "prev":
         _key(VK_MEDIA_PREV)
+        _audit("Media control", "previous track")
         return "Previous track."
     return "I did not catch that media command."
 
@@ -405,6 +424,7 @@ def set_brightness(percent: int) -> str:
         f"-Arguments @{{Brightness=[byte]{percent}}} | Out-Null; 'ok' }} else {{ 'no' }}"
     )
     if _powershell(script).strip().endswith("ok"):
+        _audit("Set brightness", f"{percent}%")
         return f"Brightness set to {percent} percent."
     return "This display does not support brightness control (common on desktop monitors)."
 
@@ -424,6 +444,7 @@ def open_url(url: str) -> str:
         url = "https://" + url
     if not _launch(url):
         webbrowser.open(url)
+    _audit("Opened link", url)
     return "Opened it" + (" in the background." if BACKGROUND_APPS else ".")
 
 
@@ -439,6 +460,7 @@ def web_search(query: str, engine: str = "google") -> str:
         message = f"Searching the web for {query}{suffix}."
     if not _launch(url):
         webbrowser.open(url)
+    _audit("Web search", f"{query} ({engine})")
     return message
 
 
@@ -454,6 +476,7 @@ def open_site(name: str) -> str:
         return f"I do not know the site {name}."
     if not _launch(url):
         webbrowser.open(url)
+    _audit("Opened site", key)
     return f"Opening {key}" + (" in the background." if BACKGROUND_APPS else ".")
 
 
@@ -483,6 +506,7 @@ def add_note(text: str) -> str:
     stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     with path.open("a", encoding="utf-8") as handle:
         handle.write(f"- [{stamp}] {text}\n")
+    _audit("Saved a note", text)
     return "Saved to your notes."
 
 
@@ -513,6 +537,7 @@ def read_notes(limit: int = 5) -> str:
 
 def clear_notes() -> str:
     config.notes_path().write_text("", encoding="utf-8")
+    _audit("Cleared all notes")
     return "All notes cleared."
 
 
@@ -526,6 +551,7 @@ def screenshot() -> str:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"shot_{dt.datetime.now():%Y%m%d_%H%M%S}.png"
     ImageGrab.grab(all_screens=True).save(path)
+    _audit("Took a screenshot", path.name)
     return f"Screenshot saved as {path.name}."
 
 
@@ -586,16 +612,19 @@ def briefing(city: str = "") -> str:
 
 
 def lock_screen() -> str:
+    _audit("Locked the screen")
     ctypes.windll.user32.LockWorkStation()
     return "Locking the screen."
 
 
 def sleep_pc() -> str:
+    _audit("Put the PC to sleep")
     _run(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
     return "Putting the computer to sleep."
 
 
 def shutdown_pc(restart: bool = False) -> str:
+    _audit("Restarting the PC" if restart else "Shutting down the PC")
     _run(["shutdown", "/r" if restart else "/s", "/t", "5"])
     return "Restarting in 5 seconds." if restart else "Shutting down in 5 seconds."
 
@@ -606,6 +635,7 @@ def cancel_shutdown() -> str:
 
 
 def empty_recycle_bin() -> str:
+    _audit("Emptied the recycle bin")
     _powershell("Clear-RecycleBin -Force -ErrorAction SilentlyContinue")
     return "Recycle bin emptied."
 
@@ -683,6 +713,7 @@ def type_text(text: str) -> str:
     array = (_INPUT * len(events))(*events)
     time.sleep(0.35)
     if ctypes.windll.user32.SendInput(len(events), array, ctypes.sizeof(_INPUT)):
+        _audit("Typed text", text)
         return "Typed it."
     return "I could not type. Make sure a text field is focused."
 
@@ -748,6 +779,7 @@ def open_file(query: str) -> str:
     if not path:
         return f"I could not find a file called {query}."
     os.startfile(str(path))
+    _audit("Opened a file", path.name, "files")
     return f"Opening {path.name}."
 
 
@@ -764,8 +796,10 @@ def open_folder(name: str = "") -> str:
     for alias, path in mapping.items():
         if alias in key:
             os.startfile(str(path))
+            _audit("Opened a folder", alias, "files")
             return f"Opening {alias}."
     os.startfile(str(Path.home()))
+    _audit("Opened a folder", "home", "files")
     return "Opening your home folder."
 
 
@@ -865,6 +899,8 @@ def organize_folder(folder: Path, by: str = "type", dry_run: bool = False) -> di
             errors += 1
             details.append(f"  {item.name} → FAILED: {msg}")
 
+    _audit("Organized a folder",
+           f"{folder.name} by {by} · {moved} moved{' (preview)' if dry_run else ''}", "files")
     return {
         "folder": str(folder),
         "by": by,
@@ -934,6 +970,8 @@ def remove_duplicates(folder: Path, dry_run: bool = False) -> dict:
                 details.append(f"Removed duplicate: {dup.relative_to(folder)} (kept {keeper.relative_to(folder)})")
             except Exception as e:
                 details.append(f"Failed to remove {dup}: {e}")
+    _audit("Removed duplicate files",
+           f"{folder.name} · {removed} removed{' (preview)' if dry_run else ''}", "files")
     return {"folder": str(folder), "groups": len(groups), "removed": removed, "freed_bytes": freed, "dry_run": dry_run, "details": details}
 
 
@@ -951,6 +989,7 @@ def clean_empty_folders(folder: Path, dry_run: bool = False) -> dict:
                     details.append(f"Removed empty folder: {dir_path.relative_to(folder)}")
             except Exception as e:
                 details.append(f"Failed to remove {dir_path}: {e}")
+    _audit("Cleaned empty folders", f"{folder.name} · {removed} removed{' (preview)' if dry_run else ''}", "files")
     return {"folder": str(folder), "removed": removed, "dry_run": dry_run, "details": details}
 
 
@@ -1037,6 +1076,7 @@ def set_timer(seconds: float, label: str, on_fire: Callable[[str], None]) -> str
     reminders.store.start()
     reminders.store.add_in(seconds, text)
     span = f"{int(seconds)} seconds" if seconds < 60 else f"{seconds / 60:.0f} minutes"
+    _audit("Set a timer", f"{span} · {text}")
     return f"Timer set for {span}."
 
 
@@ -1047,6 +1087,7 @@ def add_reminder(text: str, due: dt.datetime, repeat: str = "none") -> str:
     item = reminders.store.add(text, due, repeat)
     when = dt.datetime.fromisoformat(item["due"])
     pretty = when.strftime("%H:%M") if when.date() == dt.date.today() else when.strftime("%a %d %b, %H:%M")
+    _audit("Added a reminder", f"{pretty} · {item['text']}")
     if repeat == "daily":
         return f"Okay. I will remind you every day at {pretty[-5:]} to {item['text']}."
     if repeat == "weekdays":
@@ -1092,6 +1133,7 @@ def write_clipboard(text: str) -> str:
     if not text:
         return "What should I copy?"
     if clipboard.set_text(text):
+        _audit("Copied to clipboard", text)
         return "Copied to the clipboard."
     return "I could not write to the clipboard."
 
@@ -1161,10 +1203,12 @@ def switch_window(name: str) -> str:
         user32.SwitchToThisWindow(match.hwnd, True)
     except Exception:
         pass
+    _audit("Switched window", match.title)
     return f"Switched to {match.title}."
 
 
 def show_desktop() -> str:
     press_key("win+d")
+    _audit("Showed the desktop")
     return "Showing the desktop."
 

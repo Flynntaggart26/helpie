@@ -29,7 +29,7 @@
 
 ## Phase 5: Privacy & Security (Week 5)
 - [ ] Encrypted data at rest (DPAPI/user passphrase)
-- [ ] Audit log (all actions timestamped)
+- [x] Audit log (all actions timestamped)
 - [ ] Permission prompts on first plugin use
 - [ ] Sandboxed plugins (WASM/subprocess isolation)
 

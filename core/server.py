@@ -15,6 +15,7 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 import actions
+import audit
 import autostart
 import config
 import history
@@ -527,6 +528,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/routines/templates":
                 self._json({"templates": routines.list_templates()})
                 return
+            if path == "/api/audit":
+                try:
+                    limit = int(query.get("limit", ["200"])[0])
+                except (TypeError, ValueError):
+                    limit = 200
+                source = (query.get("source", [""])[0] or "").strip()
+                self._json({"entries": audit.tail(limit, source), "stats": audit.stats()})
+                return
             self._json({"error": "unknown endpoint"}, 404)
             return
 
@@ -704,6 +713,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "steps required"}, 400)
                 return
             ok = routines.save_routine(name, steps, description)
+            if ok:
+                audit.log("Saved routine", f"{name} · {len(steps)} steps", source="routine")
             self._json({"ok": ok})
             return
         if path == "/api/routines/delete":
@@ -712,6 +723,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "name required"}, 400)
                 return
             ok = routines.delete_routine(name)
+            if ok:
+                audit.log("Deleted routine", name, source="routine")
             self._json({"ok": ok})
             return
         if path == "/api/routines/run":
@@ -731,7 +744,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "name and template required"}, 400)
                 return
             ok = routines.create_routine_from_template(name, template)
+            if ok:
+                audit.log("Created routine from template", f"{name} ← {template}", source="routine")
             self._json({"ok": ok})
+            return
+
+        if path == "/api/audit/clear":
+            self._json({"ok": audit.clear()})
             return
 
         if path == "/api/mic/test":
