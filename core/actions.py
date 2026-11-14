@@ -480,13 +480,13 @@ def open_site(name: str) -> str:
     return f"Opening {key}" + (" in the background." if BACKGROUND_APPS else ".")
 
 
-def weather(city: str = "") -> str:
+def weather(city: str = "", timeout: float = 10.0) -> str:
     import requests
 
     try:
         place = city.strip()
         r = requests.get(f"https://wttr.in/{place}?format=%l:+%C,+%t&m",
-                         timeout=10, headers={"User-Agent": "curl/8"})
+                         timeout=timeout, headers={"User-Agent": "curl/8"})
         text = (r.text or "").strip()
         if not text or "<html" in text.lower():
             return "I could not reach the weather service."

@@ -1,0 +1,59 @@
+{
+  "name": "ollama",
+  "display_name": "Ollama (Local LLM)",
+  "version": "1.0.0",
+  "description": "Local LLM inference via Ollama - chat, embeddings, function calling",
+  "author": "Helpie Team",
+  "entry": "plugin.py",
+  "api_version": "1.0",
+  "permissions": ["net.request", "settings.read", "settings.write", "voice.speak", "commands.register"],
+  "commands": [
+    {
+      "name": "list_models",
+      "description": "List available Ollama models",
+      "handler": "list_models",
+      "patterns": ["ollama models", "ollama list", "yerel modeller"]
+    },
+    {
+      "name": "pull_model",
+      "description": "Pull/download a model",
+      "handler": "pull_model",
+      "patterns": ["ollama pull ", "ollama indir ", "model indir "]
+    },
+    {
+      "name": "embed",
+      "description": "Generate embeddings for text",
+      "handler": "embed",
+      "patterns": ["ollama embed ", "embedding ", "gömme "]
+    },
+    {
+      "name": "set_model",
+      "description": "Set default model",
+      "handler": "set_model",
+      "patterns": ["ollama model ", "model seç ", "model ayarla "]
+    },
+    {
+      "name": "chat",
+      "description": "Chat with local LLM",
+      "handler": "chat",
+      "patterns": ["ollama chat ", "ollama ", "local llm ", "local chat ", "yerel sohbet "]
+    }
+  ],
+  "settings_schema": {
+    "url": {
+      "type": "string",
+      "default": "http://localhost:11434",
+      "description": "Ollama API URL (default: http://localhost:11434)"
+    },
+    "default_model": {
+      "type": "string",
+      "default": "llama3.2",
+      "description": "Default model to use"
+    },
+    "timeout": {
+      "type": "number",
+      "default": 120,
+      "description": "Request timeout in seconds"
+    }
+  }
+}

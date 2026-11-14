@@ -161,7 +161,6 @@ function setView(view) {
     refreshNav();
   }
   if (view === "tiny") {
-    document.title = "tw: tiny-view";
     startTinyDashboard();
   }
 }
@@ -172,8 +171,6 @@ function startTinyDashboard() {
   if (tinyTimer) clearInterval(tinyTimer);
   tinyTick = 0;
   updateTinyTime();
-  loadTinyWeather();
-  loadTinyReminder();
   tinyTimer = setInterval(() => {
     tinyTick += 1;
     updateTinyTime();
@@ -189,6 +186,7 @@ function stopTinyDashboard() {
     clearInterval(tinyTimer);
     tinyTimer = null;
   }
+  state._tinyLoaded = false;
 }
 
 function updateTinyTime() {
@@ -509,8 +507,9 @@ function applySettings() {
   $("set-name").value = s.user_name || "";
   $("set-city").value = s.city || "";
   $("set-theme").value = s.theme || "dark";
-  document.body.className = "";
-  document.body.classList.add("theme-" + (s.theme || "dark"));
+  var themeClass = "theme-" + (s.theme || "dark");
+  document.body.className = themeClass;
+  document.documentElement.className = themeClass;
   $("set-rate").value = s.rate || "+0%";
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
@@ -842,6 +841,7 @@ function handleEvent(event) {
   }
 }
 
+let tinyLoaded = false;
 async function poll() {
   try {
     const data = await api("/api/events?after=" + state.lastEvent);
@@ -849,6 +849,12 @@ async function poll() {
       state.lastEvent = Math.max(state.lastEvent, event.id);
       handleEvent(event);
     });
+    // Load tiny dashboard widgets on first successful poll
+    if (state.view === "tiny" && !state._tinyLoaded) {
+      state._tinyLoaded = true;
+      loadTinyWeather();
+      loadTinyReminder();
+    }
   } catch (error) {
     /* server may be restarting */
   }
@@ -1521,7 +1527,8 @@ async function boot() {
   bind();
   renderCommands();
   try {
-    const data = await api("/api/init");
+    const response = await fetch("/api/init");
+    const data = await response.json();
     state.settings = data.settings;
     state.mics = data.mics || [];
     state.voices = data.voices || [];
@@ -1543,7 +1550,9 @@ async function boot() {
       showChat(data.chat);
     }
     const requested = new URLSearchParams(location.search).get("view");
-    if (requested && document.getElementById("view-" + requested)) setView(requested);
+    if (requested && document.getElementById("view-" + requested)) {
+      setView(requested);
+    }
     const requestedPage = new URLSearchParams(location.search).get("page");
     if (requestedPage) setSettingsPage(requestedPage);
   } catch (error) {
@@ -1552,4 +1561,6 @@ async function boot() {
   poll();
 }
 
-boot();
+window.addEventListener("load", () => {
+  boot();
+});

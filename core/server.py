@@ -366,7 +366,7 @@ class App:
             safe["autostart"] = False
         # Weather for tiny-window dashboard (best effort, never blocks init)
         try:
-            safe["weather"] = actions.weather(self.cfg.get("city", ""))
+            safe["weather"] = actions.weather(self.cfg.get("city", ""), timeout=3.0)
         except Exception:
             safe["weather"] = ""
         return safe

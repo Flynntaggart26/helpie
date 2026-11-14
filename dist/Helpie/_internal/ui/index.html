@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Helpie</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">H</div>
+        <div class="brand-text">
+          <div class="brand-name">Helpie</div>
+          <div class="brand-sub">Desktop assistant</div>
+        </div>
+      </div>
+
+      <button class="new-chat" id="new-chat">
+        <span class="plus">+</span> New chat
+      </button>
+
+      <div class="recent-wrap">
+        <div class="recent-head">Recent</div>
+        <div class="recent" id="recent"></div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="chat"><span class="ico">▤</span> Chat</button>
+        <button class="nav-item" data-view="notes"><span class="ico">✎</span> Notes</button>
+        <button class="nav-item" data-view="reminders"><span class="ico">◷</span> Reminders</button>
+        <button class="nav-item" data-view="routines"><span class="ico">⇉</span> Routines</button>
+        <button class="nav-item" data-view="commands"><span class="ico">⌘</span> Commands</button>
+        <button class="nav-item" data-view="settings"><span class="ico">⚙</span> Settings</button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="chip" id="mic-chip"><span class="dot"></span> Microphone</div>
+        <div class="chip" id="model-chip"><span class="dot"></span> AI: not connected</div>
+        <button class="link" id="update-check">Check for updates</button>
+        <div class="foot-row">
+          <span class="version" id="version">v1.0.0</span>
+          <button class="link danger" id="quit-btn">Quit</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="main-head">
+        <div>
+          <h1 id="view-title">Chat</h1>
+          <p id="view-sub">Press Ctrl + H to speak</p>
+        </div>
+        <div class="head-right">
+          <div class="status-pill" id="status-pill"><span class="pulse"></span><span id="status-text">starting</span></div>
+        </div>
+      </header>
+
+      <section class="view active" id="view-chat">
+        <div class="banner" id="update-banner" hidden>
+          <span id="update-banner-text">Update available</span>
+          <button class="mini" id="update-install">Install</button>
+        </div>
+
+        <div class="messages" id="messages" role="log" aria-live="polite" aria-label="Conversation"></div>
+
+        <div class="composer" role="search">
+          <button class="mic-btn" id="mic-btn" title="Listen (Ctrl + H)" aria-label="Start listening">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" fill="currentColor"/>
+              <path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <textarea id="input" rows="1" placeholder="Ask anything, or press Ctrl + H to speak…" aria-label="Type your message"></textarea>
+          <button class="send-btn" id="send-btn" title="Send" aria-label="Send message">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M4 12l16-8-6 8 6 8z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+        <div class="hint" id="hint" hidden aria-live="polite"></div>
+      </section>
+
+      <section class="view" id="view-tiny">
+        <div class="tiny-panel">
+          <div class="tiny-header">
+            <div class="tiny-logo">H</div>
+            <div class="tiny-title">Helpie</div>
+            <button class="tiny-close" id="tiny-close" aria-label="Close">×</button>
+          </div>
+          <div class="tiny-status" id="tiny-status">
+            <span class="tiny-dot" id="tiny-dot"></span>
+            <span id="tiny-status-text">Listening…</span>
+          </div>
+
+          <div class="tiny-dashboard">
+            <div class="tiny-widget">
+              <span class="tiny-widget-label">Time</span>
+              <span class="tiny-widget-value" id="tiny-time">--:--</span>
+              <span class="tiny-widget-sub" id="tiny-date">--</span>
+            </div>
+            <div class="tiny-widget" id="tiny-weather-widget" hidden>
+              <span class="tiny-widget-label">Weather</span>
+              <span class="tiny-widget-value" id="tiny-weather">--</span>
+            </div>
+            <div class="tiny-widget" id="tiny-reminder-widget" hidden>
+              <span class="tiny-widget-label">Next reminder</span>
+              <span class="tiny-widget-value" id="tiny-reminder-text">--</span>
+              <span class="tiny-widget-sub" id="tiny-reminder-time">--</span>
+            </div>
+          </div>
+
+          <div class="tiny-actions">
+            <button class="tiny-btn" id="tiny-open-main" title="Open main window">⛶</button>
+            <button class="tiny-btn" id="tiny-mute" title="Mute microphone">🔇</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-notes">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Notes</h2>
+            <button class="ghost" id="notes-clear">Clear all</button>
+          </div>
+          <div class="note-list" id="note-list"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Memory</h2>
+            <button class="ghost" id="memory-clear">Forget all</button>
+          </div>
+          <p class="muted">
+            Lasting facts Helpie keeps about you. Say “remember that …” or add one here.
+          </p>
+          <form class="memory-form" id="memory-form">
+            <input id="memory-text" type="text" placeholder="I like short answers, my cat is named Miso…" />
+            <button class="primary" type="submit">Remember</button>
+          </form>
+          <div class="note-list" id="memory-list"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-commands">
+        <div class="panel">
+          <h2>What you can say</h2>
+          <div class="cmd-grid" id="cmd-grid"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-reminders">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Reminders</h2>
+            <button class="ghost" id="reminders-clear">Clear all</button>
+          </div>
+          <p class="muted">
+            Say “remind me in 10 minutes to stretch” or “remind me every day at 9 to drink water”.
+            Reminders keep running after a restart and show a Windows notification.
+          </p>
+          <div class="note-list" id="reminder-list"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-routines">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Routines</h2>
+            <div class="head-actions">
+              <button class="ghost" id="routines-refresh">Refresh</button>
+              <button class="primary" id="routine-new">New routine</button>
+            </div>
+          </div>
+          <p class="muted">
+            Saved sequences of commands. Say “run &lt;name&gt;”, press Ctrl + Space, or hit Run.
+          </p>
+
+          <form class="routine-form" id="routine-form" hidden>
+            <div class="form-grid">
+              <label class="field">
+                <span>Name</span>
+                <input id="routine-name" type="text" placeholder="morning" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>Description (optional)</span>
+                <input id="routine-desc" type="text" placeholder="Open my work apps" autocomplete="off" />
+              </label>
+            </div>
+            <label class="field routine-steps-field">
+              <span>Steps — one per line</span>
+              <textarea id="routine-steps" rows="4" placeholder="open chrome&#10;set volume 30&#10;what time is it"></textarea>
+            </label>
+            <div class="actions">
+              <button class="primary" type="submit">Save routine</button>
+              <button class="ghost" type="button" id="routine-cancel">Cancel</button>
+            </div>
+          </form>
+
+          <div class="routine-templates">
+            <span class="routine-tpl-label">Start from a template</span>
+            <div class="routine-tpl-list" id="template-list"></div>
+          </div>
+
+          <div class="routine-list" id="routine-list"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="settings-topbar">
+          <div class="settings-search">
+            <span class="search-ico">⌕</span>
+            <input id="settings-search" type="text" placeholder="Search settings" aria-label="Search settings" />
+            <kbd>Ctrl K</kbd>
+          </div>
+          <button class="settings-close" id="settings-close" aria-label="Close settings">×</button>
+        </div>
+
+        <div class="settings-shell">
+          <aside class="settings-nav" aria-label="Settings sections">
+            <div class="settings-scope-wrap">
+              <span class="scope-ico">▦</span>
+              <select id="settings-scope" class="settings-scope" aria-label="Jump to settings section">
+                <option value="all">All settings</option>
+                <option value="ai">AI models</option>
+                <option value="voice">Voice</option>
+                <option value="wakeword">Wake Word</option>
+                <option value="provider-gemini">AI Providers · Gemini</option>
+                <option value="provider-ollama">AI Providers · Ollama</option>
+                <option value="provider-custom">AI Providers · Custom OpenAI</option>
+                <option value="plugins">Plugins</option>
+                <option value="shortcuts">Shortcuts</option>
+                <option value="about">About</option>
+              </select>
+              <span class="scope-chevron">⌄</span>
+            </div>
+
+            <div class="settings-nav-list">
+              <button class="settings-nav-item active" data-page="general">
+                <span class="sico">▤</span><span class="slabel">General</span><span class="caret">›</span>
+              </button>
+              <button class="settings-nav-item" data-page="voice">
+                <span class="sico">◈</span><span class="slabel">Voice</span><span class="caret">›</span>
+              </button>
+              <button class="settings-nav-item" data-page="wakeword">
+                <span class="sico">⌁</span><span class="slabel">Wake Word</span><span class="caret">›</span>
+              </button>
+
+              <div class="settings-group expanded" id="group-providers">
+                <button class="settings-nav-item group-head" data-toggle="providers">
+                  <span class="sico">◇</span><span class="slabel">AI Providers</span><span class="caret">⌄</span>
+                </button>
+                <div class="settings-group-body">
+                  <button class="settings-nav-item sub" data-page="provider-gemini"><span class="sico">&#10022;</span><span class="slabel">Gemini</span></button>
+                  <button class="settings-nav-item sub" data-page="provider-ollama"><span class="sico">&#9677;</span><span class="slabel">Ollama</span></button>
+                  <button class="settings-nav-item sub" data-page="provider-custom"><span class="sico">&#8984;</span><span class="slabel">Custom OpenAI</span></button>
+                </div>
+              </div>
+
+              <button class="settings-nav-item" data-page="plugins">
+                <span class="sico">▦</span><span class="slabel">Plugins</span><span class="caret">›</span>
+              </button>
+              <button class="settings-nav-item" data-page="activity">
+                <span class="sico">◔</span><span class="slabel">Activity</span><span class="caret">›</span>
+              </button>
+              <button class="settings-nav-item" data-page="shortcuts">
+                <span class="sico">⌨</span><span class="slabel">Shortcuts</span><span class="caret">›</span>
+              </button>
+              <button class="settings-nav-item" data-page="about">
+                <span class="sico">ⓘ</span><span class="slabel">About</span><span class="caret">›</span>
+              </button>
+            </div>
+
+            <div class="settings-nav-foot">
+              <span id="settings-version">v1.0.0</span>
+              <button class="nav-icon" id="nav-update" title="Check for updates">↻</button>
+              <button class="nav-icon" id="nav-github" title="Open GitHub">↗</button>
+              <button class="nav-icon" id="nav-quit" title="Quit Helpie">⏻</button>
+            </div>
+          </aside>
+
+          <div class="settings-content">
+            <div class="settings-crumb" id="settings-crumb">
+              <span>Settings</span><span class="sep">›</span><span class="leaf">General</span>
+            </div>
+
+            <div class="settings-pages" id="settings-pages">
+              <!-- ------------------------------ General ------------------------------ -->
+              <section class="settings-page active" data-page="general">
+                <p class="page-lead">Basics about you and how Helpie starts up.</p>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-name">Your name</label>
+                  <input id="set-name" class="wide" type="text" placeholder="Your name" />
+                  <p class="page-help">How Helpie should address you.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-city">City for weather</label>
+                  <input id="set-city" class="wide" type="text" placeholder="Automatic" />
+                  <p class="page-help">Leave empty to detect your location automatically.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-theme">Theme</label>
+                  <select id="set-theme" class="wide">
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="high-contrast">High contrast</option>
+                  </select>
+                  <p class="page-help">Switch between dark, light, and high-contrast themes.</p>
+                </div>
+
+                <div class="page-divider"></div>
+                <h3 class="page-heading">Startup and behavior</h3>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Listen on startup</span>
+                    <span class="split-desc">Start listening as soon as Helpie opens.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-autolisten" /><span class="track"></span></label>
+                  </div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Continuous listening</span>
+                    <span class="split-desc">Keep the microphone open after each answer.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-continuous" /><span class="track"></span></label>
+                  </div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Check for updates on startup</span>
+                    <span class="split-desc">Looks for a newer release on GitHub when Helpie launches.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-updates" /><span class="track"></span></label>
+                  </div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Open apps in the background</span>
+                    <span class="split-desc">Apps and links Helpie opens stay behind your current window instead of jumping in front.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-background" /><span class="track"></span></label>
+                  </div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Start with Windows</span>
+                    <span class="split-desc">Run silently at sign-in — press Ctrl + H to talk.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-autostart" /><span class="track"></span></label>
+                  </div>
+                </div>
+              </section>
+
+              <!-- ------------------------------- Voice ------------------------------- -->
+              <section class="settings-page" data-page="voice">
+                <p class="page-lead">Input device, recognition language and the voice Helpie answers with.</p>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-mic">Microphone</label>
+                  <select id="set-mic" class="wide"></select>
+                  <p class="page-help">Which input device Helpie listens to.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-language">Speech recognition language</label>
+                  <select id="set-language" class="wide"></select>
+                  <p class="page-help">Turkish commands are understood even in English mode.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-voice">Answering voice</label>
+                  <select id="set-voice" class="wide"></select>
+                  <p class="page-help">Neural voice used for spoken replies.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-rate">Speaking speed</label>
+                  <select id="set-rate" class="wide">
+                    <option value="-20%">Slow</option>
+                    <option value="+0%">Normal</option>
+                    <option value="+15%">Fast</option>
+                    <option value="+30%">Very fast</option>
+                  </select>
+                  <p class="page-help">How fast Helpie talks.</p>
+                </div>
+
+                <div class="page-divider"></div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <h3 class="page-heading">Microphone test</h3>
+                    <p class="split-desc">Press the button, then speak for a few seconds. The bar shows what Helpie hears.</p>
+                  </div>
+                  <div class="split-control">
+                    <button class="ghost" id="test-mic">Test mic</button>
+                  </div>
+                </div>
+
+                <div class="mic-test">
+                  <div class="level-track"><div class="level-fill" id="level-fill"></div></div>
+                  <div class="mic-verdict" id="mic-verdict">Not tested yet.</div>
+                </div>
+              </section>
+
+              <!-- ----------------------------- Wake word ----------------------------- -->
+              <section class="settings-page" data-page="wakeword">
+                <p class="page-lead">
+                  Say “Hey Helpie” or “Jarvis” to open the tiny window and start listening, without touching the keyboard.
+                  Powered by Picovoice Porcupine — free tier at
+                  <a href="#" id="get-porcupine">console.picovoice.ai</a>.
+                </p>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Always listening for the wake word</span>
+                    <span class="split-desc">Runs a local keyword spotter in the background.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-wake-word" /><span class="track"></span></label>
+                  </div>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-porcupine-key">
+                    Porcupine AccessKey <span class="badge" id="porcupine-key-state">not set</span>
+                  </label>
+                  <input id="set-porcupine-key" class="wide" type="password" placeholder="AccessKey…" />
+                  <p class="page-help">Required for the wake word. Free from the Picovoice Console.</p>
+                </div>
+              </section>
+
+              <!-- ------------------------------ Gemini ------------------------------ -->
+              <section class="settings-page" data-page="provider-gemini">
+                <p class="page-lead">
+                  Google's Gemini powers free-form conversation, screen understanding and document summaries.
+                  Get a free key at <a href="#" id="get-key">aistudio.google.com/app/apikey</a>.
+                </p>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-key">
+                    API key <span class="badge" id="key-state">not set</span>
+                  </label>
+                  <input id="set-key" class="wide" type="password" placeholder="AIza…" />
+                  <p class="page-help">Stored encrypted with Windows DPAPI on this PC only.</p>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Without a key</span>
+                    <span class="split-desc">Every built-in command still works — only open-ended chat needs the key.</span>
+                  </div>
+                  <div class="split-control"><span class="badge">commands only</span></div>
+                </div>
+              </section>
+
+              <!-- ------------------------------ Ollama ------------------------------ -->
+              <section class="settings-page" data-page="provider-ollama">
+                <p class="page-lead"><span class="badge">local</span> 
+                  Run models on your own machine. Install Ollama from
+                  <a href="#" id="get-ollama">ollama.com</a> and keep it running — no API key needed.
+                </p>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-ollama-url">Server URL</label>
+                  <input id="set-ollama-url" class="wide" type="text" placeholder="http://localhost:11434" />
+                  <p class="page-help">Default port for the local Ollama daemon.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-ollama-model">Default model</label>
+                  <input id="set-ollama-model" class="wide" type="text" placeholder="llama3.2" />
+                  <p class="page-help">Used when you say “ollama chat …” without naming a model.</p>
+                </div>
+              </section>
+
+              <!-- --------------------------- Custom OpenAI --------------------------- -->
+              <section class="settings-page" data-page="provider-custom">
+                <p class="page-lead">
+                  Any endpoint that speaks the OpenAI chat-completions format — Groq, Together, OpenRouter,
+                  LM Studio, a private gateway.
+                </p>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-openai-url">Base URL</label>
+                  <input id="set-openai-url" class="wide" type="text" placeholder="https://api.groq.com/openai/v1" />
+                  <p class="page-help">Include the version path, for example https://api.groq.com/openai/v1.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-openai-key">
+                    API key <span class="badge" id="openai-key-state">not set</span>
+                  </label>
+                  <input id="set-openai-key" class="wide" type="password" placeholder="sk-…" />
+                  <p class="page-help">Leave empty for a local server that needs no auth.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-openai-model">Model</label>
+                  <input id="set-openai-model" class="wide" type="text" placeholder="llama-3.3-70b-versatile" />
+                  <p class="page-help">Model identifier exactly as the provider names it.</p>
+                </div>
+              </section>
+
+              <!-- ------------------------------ Plugins ------------------------------ -->
+              <section class="settings-page" data-page="plugins">
+                <p class="page-lead">
+                  Extend what Helpie can do. Each plugin runs sandboxed and only gets the permissions listed in its manifest.
+                </p>
+
+                <div class="plugins-toolbar">
+                  <div class="seg" id="plugin-filter">
+                    <button class="seg-item active" data-filter="all">All</button>
+                    <button class="seg-item" data-filter="on">Enabled</button>
+                    <button class="seg-item" data-filter="off">Disabled</button>
+                  </div>
+                  <button class="ghost" id="plugins-reload">Reload all</button>
+                </div>
+
+                <div id="plugins-list" class="plugins-list"></div>
+              </section>
+
+              <!-- ----------------------------- Activity ----------------------------- -->
+              <section class="settings-page" data-page="activity">
+                <p class="page-lead">
+                  Every action Helpie performed on this PC, newest first — apps it opened, files it moved,
+                  commands it ran. Stored locally in <code>data/audit.jsonl</code> and capped at the last 500 entries.
+                </p>
+
+                <div class="plugins-toolbar">
+                  <div class="seg" id="audit-filter">
+                    <button class="seg-item active" data-source="">All</button>
+                    <button class="seg-item" data-source="action">Actions</button>
+                    <button class="seg-item" data-source="files">Files</button>
+                    <button class="seg-item" data-source="routine">Routines</button>
+                    <button class="seg-item" data-source="plugin">Plugins</button>
+                  </div>
+                  <div class="audit-tools">
+                    <button class="ghost" id="audit-refresh">Refresh</button>
+                    <button class="ghost" id="audit-clear">Clear log</button>
+                  </div>
+                </div>
+
+                <div class="audit-summary" id="audit-summary"></div>
+                <div class="audit-list" id="audit-list"></div>
+              </section>
+
+              <!-- ----------------------------- Shortcuts ----------------------------- -->
+              <section class="settings-page" data-page="shortcuts">
+                <p class="page-lead">Keyboard shortcuts that work anywhere in Windows.</p>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Talk to Helpie</span>
+                    <span class="split-desc">Focuses the window and starts listening.</span>
+                  </div>
+                  <div class="split-control"><kbd>Ctrl</kbd><span class="kbd-plus">+</span><kbd>H</kbd></div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Wake word</span>
+                    <span class="split-desc">Hands-free, opens the tiny window at your cursor.</span>
+                  </div>
+                  <div class="split-control"><span class="badge">“Hey Helpie”</span></div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Tiny window</span>
+                    <span class="split-desc">Esc closes it, Enter opens the full chat.</span>
+                  </div>
+                  <div class="split-control"><span class="badge">always on top</span></div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Windows microphone access</span>
+                    <span class="split-desc">If the mic is blocked, open the Windows privacy settings.</span>
+                  </div>
+                  <div class="split-control"><button class="ghost" id="mic-settings">Open settings</button></div>
+                </div>
+              </section>
+
+              <!-- ------------------------------- About ------------------------------- -->
+              <section class="settings-page" data-page="about">
+                <p class="page-lead">Helpie is a local desktop assistant for Windows. Your data stays in the app folder.</p>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Version</span>
+                    <span class="split-desc">Installed build.</span>
+                  </div>
+                  <div class="split-control"><span class="badge" id="about-version">v1.0.0</span></div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Updates</span>
+                    <span class="split-desc">Helpie installs new releases in place and keeps your settings and data.</span>
+                  </div>
+                  <div class="split-control"><button class="ghost" id="about-update">Check for updates</button></div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Source code</span>
+                    <span class="split-desc">Issues and releases live on GitHub.</span>
+                  </div>
+                  <div class="split-control"><button class="ghost" id="about-github">Open GitHub</button></div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Local data</span>
+                    <span class="split-desc">Chats, notes, memory, reminders, routines and settings live in the data folder next to the app.</span>
+                  </div>
+                  <div class="split-control"><span class="badge">on this PC</span></div>
+                </div>
+              </section>
+            </div>
+
+            <div class="settings-foot">
+              <span class="foot-hint" id="settings-saved">Changes apply when you save.</span>
+              <button class="ghost" id="test-voice">Test voice</button>
+              <button class="btn-light" id="save-settings">Save settings</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="palette" id="palette" hidden>
+    <div class="palette-panel" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="palette-search">
+        <span class="palette-ico">⌘</span>
+        <input id="palette-input" type="text" placeholder="Type a command, routine, chat or setting…" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="palette-list" id="palette-list" role="listbox"></div>
+      <div class="palette-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>Enter</kbd> run</span>
+        <span><kbd>Esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
