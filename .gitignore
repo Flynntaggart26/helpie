@@ -12,3 +12,7 @@ plugins/clipboard_history/history.json
 dist/
 build/
 *.spec
+
+*.spec
+build/
+dist/
