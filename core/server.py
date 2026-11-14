@@ -364,13 +364,18 @@ class App:
             safe["autostart"] = autostart.enabled()
         except Exception:
             safe["autostart"] = False
+        # Weather for tiny-window dashboard (best effort, never blocks init)
+        try:
+            safe["weather"] = actions.weather(self.cfg.get("city", ""))
+        except Exception:
+            safe["weather"] = ""
         return safe
 
     def update_settings(self, patch: dict) -> dict:
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "auto_listen", "continuous", "auto_turns",
                    "city", "check_updates", "background_apps", "wake_word", "wake_word_access_key",
-                   "ollama_url", "ollama_model", "openai_url", "openai_key", "openai_model"}
+                   "theme", "ollama_url", "ollama_model", "openai_url", "openai_key", "openai_model"}
         for key, value in (patch or {}).items():
             if key in allowed:
                 self.cfg[key] = value
@@ -535,6 +540,14 @@ class Handler(BaseHTTPRequestHandler):
                     limit = 200
                 source = (query.get("source", [""])[0] or "").strip()
                 self._json({"entries": audit.tail(limit, source), "stats": audit.stats()})
+                return
+            if path == "/api/weather":
+                city = str(app.cfg.get("city", "")).strip()
+                try:
+                    weather_text = actions.weather(city)
+                    self._json({"city": city or "auto", "weather": weather_text})
+                except Exception:
+                    self._json({"city": city or "auto", "weather": "Weather unavailable."})
                 return
             self._json({"error": "unknown endpoint"}, 404)
             return

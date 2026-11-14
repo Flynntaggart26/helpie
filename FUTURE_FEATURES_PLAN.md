@@ -17,9 +17,9 @@
 ## Phase 3: UI/UX Polish (Week 3)
 - [ ] Plugin marketplace UI (browse/install from GitHub)
 - [x] Routine builder (visual editor — list, create, run, delete, templates)
-- [ ] Dashboard widgets on tiny window
+- [x] Dashboard widgets on tiny window (time, weather, next reminder)
 - [x] Command palette (Ctrl+Space fuzzy search)
-- [ ] Themes (light, high-contrast, custom CSS)
+- [x] Themes (dark, light, high-contrast)
 
 ## Phase 4: Advanced AI (Week 4)
 - [ ] RAG over local files (embeddings + vector search)

@@ -16,6 +16,7 @@ const state = {
   memory: [],
   micTesting: false,
   settingsPage: "general",
+  theme: "dark",
   pluginFilter: "all",
   auditSource: "",
   scope: "all",
@@ -133,6 +134,7 @@ function setView(view) {
   document.querySelectorAll(".view").forEach((section) => {
     section.classList.toggle("active", section.id === "view-" + view);
   });
+  if (view !== "tiny") stopTinyDashboard();
   const titles = {
     chat: ["Chat", "Press Ctrl + H to speak"],
     notes: ["Notes", "Everything you asked Helpie to remember"],
@@ -157,6 +159,74 @@ function setView(view) {
   if (view === "settings") {
     setSettingsPage(state.settingsPage || "general");
     refreshNav();
+  }
+  if (view === "tiny") {
+    document.title = "tw: tiny-view";
+    startTinyDashboard();
+  }
+}
+
+let tinyTimer = null;
+let tinyTick = 0;
+function startTinyDashboard() {
+  if (tinyTimer) clearInterval(tinyTimer);
+  tinyTick = 0;
+  updateTinyTime();
+  loadTinyWeather();
+  loadTinyReminder();
+  tinyTimer = setInterval(() => {
+    tinyTick += 1;
+    updateTinyTime();
+    if (tinyTick % 60 === 0) {
+      loadTinyWeather();
+      loadTinyReminder();
+    }
+  }, 1000);
+}
+
+function stopTinyDashboard() {
+  if (tinyTimer) {
+    clearInterval(tinyTimer);
+    tinyTimer = null;
+  }
+}
+
+function updateTinyTime() {
+  const now = new Date();
+  const timeNode = $("tiny-time");
+  const dateNode = $("tiny-date");
+  if (timeNode) timeNode.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (dateNode) dateNode.textContent = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+function loadTinyWeather() {
+  const node = $("tiny-weather-widget");
+  const valueNode = $("tiny-weather");
+  if (!node || !valueNode) return;
+  const weather = (state.settings && state.settings.weather) || "";
+  if (weather) {
+    node.hidden = false;
+    valueNode.textContent = weather;
+  } else {
+    node.hidden = true;
+  }
+}
+
+function loadTinyReminder() {
+  const node = $("tiny-reminder-widget");
+  const textNode = $("tiny-reminder-text");
+  const timeNode = $("tiny-reminder-time");
+  if (!node || !textNode || !timeNode) return;
+  const items = state.reminders || [];
+  const now = new Date();
+  const upcoming = items.find((item) => new Date(item.due) > now);
+  if (upcoming) {
+    node.hidden = false;
+    textNode.textContent = upcoming.text;
+    const due = new Date(upcoming.due);
+    timeNode.textContent = due.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } else {
+    node.hidden = true;
   }
 }
 
@@ -438,6 +508,9 @@ function applySettings() {
 
   $("set-name").value = s.user_name || "";
   $("set-city").value = s.city || "";
+  $("set-theme").value = s.theme || "dark";
+  document.body.className = "";
+  document.body.classList.add("theme-" + (s.theme || "dark"));
   $("set-rate").value = s.rate || "+0%";
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
@@ -488,6 +561,7 @@ async function saveSettings() {
     // General
     user_name: $("set-name").value.trim(),
     city: $("set-city").value.trim(),
+    theme: $("set-theme").value,
     auto_listen: $("set-autolisten").checked,
     continuous: $("set-continuous").checked,
     check_updates: $("set-updates").checked,
@@ -810,6 +884,8 @@ function initTinyView() {
     dot.style.animation = "none";
     dot.style.boxShadow = "none";
   }
+  loadTinyWeather();
+  loadTinyReminder();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1256,6 +1332,16 @@ function bind() {
     if (allowed && !allowed.includes(state.settingsPage)) setSettingsPage(allowed[0]);
   });
   $("settings-search").addEventListener("input", refreshNav);
+  $("set-theme").addEventListener("change", async () => {
+    document.body.className = "";
+    document.body.classList.add("theme-" + $("set-theme").value);
+    state.theme = $("set-theme").value;
+    try {
+      await api("/api/settings", { method: "POST", body: JSON.stringify({ theme: $("set-theme").value }) });
+    } catch (error) {
+      toast("Could not save theme.");
+    }
+  });
   $("nav-update").addEventListener("click", () => checkUpdates(true));
   $("nav-github").addEventListener("click", () => {
     window.open("https://github.com/Flynntaggart26/helpie", "_blank");

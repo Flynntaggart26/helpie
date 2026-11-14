@@ -37,6 +37,7 @@ DEFAULTS = {
     "first_run": True,
     "wake_word": True,
     "wake_word_access_key": "",
+    "theme": "dark",
     "ollama_url": "http://localhost:11434",
     "ollama_model": "llama3.2",
     "openai_url": "",

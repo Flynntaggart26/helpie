@@ -288,6 +288,13 @@ files moved, timers set, screenshots taken, routines run — newest first. It's 
 (actions / files / routines / plugins) and stored locally in `data/audit.jsonl` (capped at 500
 entries). There's also a **Clear log** button if you want to wipe it.
 
+**Themes** — Helpie ships with three themes: **Dark** (default), **Light**, and **High contrast**.
+Pick one in **Settings → General → Theme**. Your choice is saved and restored on restart.
+
+**Tiny-window dashboard** — When the wake word opens the tiny window, it now shows a dashboard
+with the current time, date, weather (for your configured city), and your next upcoming reminder.
+The dashboard refreshes automatically while the tiny window is open.
+
 ## Background apps
 
 Opening something no longer pulls you away from what you are doing. Helpie starts apps and

@@ -93,6 +93,24 @@
             <span class="tiny-dot" id="tiny-dot"></span>
             <span id="tiny-status-text">Listening…</span>
           </div>
+
+          <div class="tiny-dashboard">
+            <div class="tiny-widget">
+              <span class="tiny-widget-label">Time</span>
+              <span class="tiny-widget-value" id="tiny-time">--:--</span>
+              <span class="tiny-widget-sub" id="tiny-date">--</span>
+            </div>
+            <div class="tiny-widget" id="tiny-weather-widget" hidden>
+              <span class="tiny-widget-label">Weather</span>
+              <span class="tiny-widget-value" id="tiny-weather">--</span>
+            </div>
+            <div class="tiny-widget" id="tiny-reminder-widget" hidden>
+              <span class="tiny-widget-label">Next reminder</span>
+              <span class="tiny-widget-value" id="tiny-reminder-text">--</span>
+              <span class="tiny-widget-sub" id="tiny-reminder-time">--</span>
+            </div>
+          </div>
+
           <div class="tiny-actions">
             <button class="tiny-btn" id="tiny-open-main" title="Open main window">⛶</button>
             <button class="tiny-btn" id="tiny-mute" title="Mute microphone">🔇</button>
@@ -282,6 +300,16 @@
                   <label class="page-label" for="set-city">City for weather</label>
                   <input id="set-city" class="wide" type="text" placeholder="Automatic" />
                   <p class="page-help">Leave empty to detect your location automatically.</p>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-theme">Theme</label>
+                  <select id="set-theme" class="wide">
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                    <option value="high-contrast">High contrast</option>
+                  </select>
+                  <p class="page-help">Switch between dark, light, and high-contrast themes.</p>
                 </div>
 
                 <div class="page-divider"></div>
