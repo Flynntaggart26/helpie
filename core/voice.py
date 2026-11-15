@@ -12,8 +12,21 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-import pyaudio
-import speech_recognition as sr
+try:
+    import pyaudio
+
+    PYAUDIO_AVAILABLE = True
+except Exception:  # PortAudio missing, no audio drivers, etc.
+    pyaudio = None  # type: ignore[assignment]
+    PYAUDIO_AVAILABLE = False
+
+try:
+    import speech_recognition as sr
+
+    SPEECH_RECOGNITION_AVAILABLE = True
+except Exception:
+    sr = None  # type: ignore[assignment]
+    SPEECH_RECOGNITION_AVAILABLE = False
 
 CHUNK = 640
 RATE = 16000
@@ -26,6 +39,8 @@ WIDTH = 2
 def list_microphones() -> list[dict]:
     """Kullanılabilir mikrofonları (index, ad) olarak döndürür."""
     out: list[dict] = []
+    if not SPEECH_RECOGNITION_AVAILABLE:
+        return out
     try:
         for index, name in enumerate(sr.Microphone.list_microphone_names()):
             out.append({"index": index, "name": name})
@@ -52,6 +67,9 @@ class WakeWordListener:
         """Initialize Porcupine and start listening thread."""
         if self._enabled:
             return True
+        if not PYAUDIO_AVAILABLE:
+            print("[WakeWord] PyAudio not available on this machine. Voice input disabled.")
+            return False
         try:
             import pvporcupine
         except Exception:
@@ -171,6 +189,8 @@ class Listener:
             return math.sqrt(sum(s * s for s in samples) / count)
 
     def _open(self, mic_index: Optional[int], rate: int) -> tuple[pyaudio.PyAudio, pyaudio.Stream]:
+        if not PYAUDIO_AVAILABLE:
+            raise RuntimeError("PyAudio is not available on this machine")
         pa = pyaudio.PyAudio()
         kwargs = dict(
             format=pyaudio.paInt16,
@@ -342,6 +362,8 @@ class Listener:
 
     # -- metne çevirme ------------------------------------------------------ #
     def transcribe(self, wav: bytes, language: str = "tr-TR") -> str:
+        if not SPEECH_RECOGNITION_AVAILABLE:
+            raise RuntimeError("SpeechRecognition is not available on this machine")
         audio = sr.AudioData(wav, RATE, WIDTH)
         text = self.recognizer.recognize_google(audio, language=language)
         return re.sub(r"\s+", " ", (text or "").strip())

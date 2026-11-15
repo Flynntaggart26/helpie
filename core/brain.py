@@ -733,14 +733,16 @@ class Brain:
         if re.search(r"\b(open|close|set|start|stop|turn|delete|show)\b", t):
             return "Sorry, I did not understand that. Could you rephrase it?"
         if not self.llm.available:
-            return ("I can't answer that yet. Add a free Gemini API key in Settings and "
-                    "I will be able to chat about anything.")
+            return ("Local features (time, weather, open apps, notes, reminders, "
+                    "calculations) work without a key. To chat and ask questions, "
+                    "add a free Gemini API key in Settings (Ctrl+H -> Settings -> General).")
         return "Sorry, something went wrong while answering."
 
     # ------------------------------------------------------------------ #
     def _describe_screen(self, prompt: str) -> str:
         if not self.llm.available:
-            return ("I can look at your screen once you add a free Gemini API key in Settings.")
+            return ("Screen reading needs a free Gemini API key in Settings "
+                    "(Ctrl+H -> Settings -> General).")
         if getattr(self.llm, "provider", "gemini") != "gemini":
             return "Screen reading works with the Gemini brain. Switch the provider in Settings."
         image = actions.capture_screen()
