@@ -39,6 +39,7 @@ EXCLUDES = [
     "matplotlib",
     "pandas",
     "scipy",
+    "numpy",
     "IPython",
     "notebook",
     "pytest",
