@@ -147,6 +147,7 @@ function setView(view) {
   $("view-title").textContent = titles[view][0];
   $("view-sub").textContent = titles[view][1];
   document.body.classList.toggle("settings-mode", view === "settings");
+  document.body.classList.toggle("tiny-mode", view === "tiny");
   if (view === "notes") {
     loadNotes();
     loadMemory();
@@ -203,8 +204,11 @@ function loadTinyWeather() {
   if (!node || !valueNode) return;
   const weather = (state.settings && state.settings.weather) || "";
   if (weather) {
+    // "Denizli, TR: Clear, 15°C" -> "Clear, 15°C" so it fits the small widget.
+    const short = weather.includes(":") ? weather.slice(weather.lastIndexOf(":") + 1).trim() : weather;
     node.hidden = false;
-    valueNode.textContent = weather;
+    valueNode.textContent = short || weather;
+    valueNode.title = weather;
   } else {
     node.hidden = true;
   }
@@ -1300,6 +1304,18 @@ async function paletteRun(item) {
 /*  Wiring                                                             */
 /* ------------------------------------------------------------------ */
 function bind() {
+  const tinyClose = $("tiny-close");
+  if (tinyClose) {
+    tinyClose.addEventListener("click", () => {
+      api("/api/window", { method: "POST", body: JSON.stringify({ target: "hide-tiny" }) }).catch(() => {});
+    });
+  }
+  const tinyMain = $("tiny-open-main");
+  if (tinyMain) {
+    tinyMain.addEventListener("click", () => {
+      api("/api/window", { method: "POST", body: JSON.stringify({ target: "full" }) }).catch(() => {});
+    });
+  }
   $("send-btn").addEventListener("click", send);
   $("input").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {

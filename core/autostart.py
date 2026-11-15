@@ -12,6 +12,10 @@ VALUE_NAME = "Helpie"
 
 
 def command() -> str:
+    if getattr(sys, "frozen", False):
+        # Installed build: the Tauri shell is the entry point, not python.exe.
+        shell = Path(sys.executable).with_name("Helpie.exe")
+        return f'"{shell}" --hidden'
     python = Path(sys.executable)
     windowed = python.with_name("pythonw.exe")
     executable = windowed if windowed.exists() else python

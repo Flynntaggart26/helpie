@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 try:  # core/secrets.py (DPAPI), not the stdlib module
@@ -10,8 +11,33 @@ try:  # core/secrets.py (DPAPI), not the stdlib module
 except Exception:  # pragma: no cover
     dpapi = None
 
-APP_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = APP_DIR / "data"
+
+def _app_dir() -> Path:
+    """Where the bundled read-only assets (ui/, plugins/, VERSION) live."""
+    if getattr(sys, "frozen", False):
+        # PyInstaller onefile unpacks into _MEIPASS; onedir puts assets next to the exe.
+        base = getattr(sys, "_MEIPASS", None)
+        return Path(base) if base else Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def _data_dir() -> Path:
+    """Writable location for settings, history and the API key.
+
+    Installed builds live under Program Files, which is read-only, so user data
+    goes to %APPDATA%\\Helpie. A HELPIE_DATA_DIR override wins over everything.
+    """
+    override = os.environ.get("HELPIE_DATA_DIR", "").strip()
+    if override:
+        return Path(override)
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("APPDATA") or str(Path.home())
+        return Path(base) / "Helpie"
+    return APP_DIR / "data"
+
+
+APP_DIR = _app_dir()
+DATA_DIR = _data_dir()
 SETTINGS_PATH = DATA_DIR / "settings.json"
 NOTES_PATH = DATA_DIR / "notes.md"
 PORT_PATH = DATA_DIR / "port.txt"

@@ -1,0 +1,64 @@
+"""Bridge between the Python backend and the Tauri shell.
+
+When Helpie runs inside the Tauri desktop shell, window control (show the full
+app, pop the tiny window, quit) is owned by Rust. The shell exposes a tiny
+localhost control endpoint and passes its port to us through the
+``HELPIE_CONTROL_PORT`` environment variable.
+
+Everything here degrades to a no-op when Helpie runs the old way
+(``python helpie.py`` opening an Edge/Chrome app window), so both modes work.
+"""
+from __future__ import annotations
+
+import os
+import urllib.request
+from pathlib import Path
+
+try:  # imported from the app root in helpie.py, from core/ in server.py
+    import config
+except Exception:  # pragma: no cover
+    config = None
+
+
+def _read_port_file() -> str:
+    if config is None:
+        return ""
+    try:
+        return (Path(config.DATA_DIR) / "control_port.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def control_port() -> int | None:
+    """Port of the Tauri control endpoint, or None when not running in the shell."""
+    raw = os.environ.get("HELPIE_CONTROL_PORT", "").strip() or _read_port_file()
+    if not raw:
+        return None
+    try:
+        port = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return port if 0 < port < 65536 else None
+
+
+def available() -> bool:
+    """True when a Tauri shell is driving the windows."""
+    return control_port() is not None or os.environ.get("HELPIE_NO_BROWSER") == "1"
+
+
+def request(action: str, timeout: float = 2.5) -> bool:
+    """Ask the shell to perform ``action`` (full, tiny, hide-tiny, focus, quit).
+
+    Returns False if no shell is listening, so callers can fall back to opening
+    a browser window themselves.
+    """
+    port = control_port()
+    if port is None:
+        return False
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/{action}", timeout=timeout
+        ) as response:
+            return 200 <= int(response.status) < 300
+    except Exception:
+        return False

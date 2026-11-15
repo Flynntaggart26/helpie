@@ -78,6 +78,13 @@ class EventBus:
 def open_tiny_window(port: int) -> None:
     """Launch a small Edge app window near the cursor for wake-word interactions."""
     try:
+        import shell
+
+        if shell.request("tiny"):
+            return
+    except Exception:
+        pass
+    try:
         import ctypes
         from pathlib import Path
         import subprocess
@@ -173,7 +180,13 @@ class App:
         self.plugins = plugins.manager
         self.plugins.set_core_api(self)
         self.plugins.load_all()
-        
+
+        # HELPIE_NO_VOICE=1 keeps the mic off during development and CI smoke tests.
+        if os.environ.get("HELPIE_NO_VOICE") == "1":
+            self.cfg["wake_word"] = False
+            self.cfg["auto_listen"] = False
+            self.cfg["continuous"] = False
+
         self._start_wake_word()
 
     def _start_wake_word(self) -> None:
@@ -787,6 +800,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/update/apply":
             result = updater.apply(str(body.get("url", "")))
             self._json(result)
+            return
+        if path == "/api/window":
+            target = str(body.get("target", ""))
+            try:
+                import shell
+
+                if target in {"full", "tiny", "hide-tiny"}:
+                    self._json({"ok": shell.request(target)})
+                else:
+                    self._json({"error": "unknown target"}, 400)
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)})
             return
         if path == "/api/quit":
             self._json({"ok": True})

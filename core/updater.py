@@ -40,6 +40,11 @@ def current_version() -> str:
         return "0.0.0"
 
 
+def packaged() -> bool:
+    """True when running from the installed build (Tauri shell + PyInstaller sidecar)."""
+    return bool(getattr(sys, "frozen", False))
+
+
 def _parse(version: str) -> tuple[int, ...]:
     numbers = re.findall(r"\d+", version or "")
     return tuple(int(n) for n in numbers[:4]) or (0,)
@@ -51,7 +56,7 @@ def is_newer(latest: str, current: str) -> bool:
 
 def check(timeout: float = 8.0) -> dict:
     current = current_version()
-    result = {"current": current, "latest": current, "available": False, "url": "", "notes": "", "error": ""}
+    result = {"current": current, "latest": current, "available": False, "url": "", "installer": "", "notes": "", "error": ""}
     try:
         response = requests.get(API_LATEST, timeout=timeout, headers={"Accept": "application/vnd.github+json"})
     except requests.RequestException as exc:
@@ -71,9 +76,10 @@ def check(timeout: float = 8.0) -> dict:
     result["available"] = is_newer(tag, current)
     for asset in data.get("assets", []):
         name = str(asset.get("name", "")).lower()
+        if name.endswith(".exe") and "setup" in name:
+            result["installer"] = asset.get("browser_download_url", "")
         if name.endswith(".zip") and name.startswith("helpie"):
             result["url"] = asset.get("browser_download_url", "")
-            break
     if not result["url"]:
         for asset in data.get("assets", []):
             if str(asset.get("name", "")).lower().endswith(".zip"):
@@ -82,7 +88,9 @@ def check(timeout: float = 8.0) -> dict:
     return result
 
 
-def apply(url: str) -> dict:
+def apply(url: str = "") -> dict:
+    if packaged():
+        return _apply_installer(url)
     if not url:
         return {"ok": False, "message": "No download URL."}
     try:
@@ -121,6 +129,43 @@ def apply(url: str) -> dict:
 
     _restart()
     return {"ok": True, "message": f"Updated ({copied} files). Restarting…"}
+
+
+def _apply_installer(url: str) -> dict:
+    """Installed build: fetch the new setup.exe and let it replace this copy.
+
+    A running exe cannot overwrite itself, so the installer is launched detached
+    and waits a few seconds for both Helpie processes to be stopped.
+    """
+    if not url or not url.lower().endswith(".exe"):
+        info = check()
+        url = info.get("installer", "")
+        if not url:
+            return {"ok": False, "message": "No installer published for this release."}
+
+    target = Path(tempfile.gettempdir()) / "Helpie-update-setup.exe"
+    try:
+        response = requests.get(url, timeout=300, stream=True)
+        response.raise_for_status()
+        with target.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1 << 18):
+                if chunk:
+                    handle.write(chunk)
+    except Exception as exc:
+        return {"ok": False, "message": f"Download failed: {exc}"}
+
+    command = (
+        "timeout /t 4 >nul & "
+        "taskkill /IM Helpie.exe /F >nul 2>&1 & "
+        "taskkill /IM helpie-core.exe /F >nul 2>&1 & "
+        f'start "" "{target}" /S'
+    )
+    subprocess.Popen(
+        ["cmd", "/c", command],
+        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+        close_fds=True,
+    )
+    return {"ok": True, "message": "Installing the new version. Helpie will restart."}
 
 
 def _restart() -> None:

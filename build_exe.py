@@ -68,7 +68,6 @@ DATA_FILES = [
     ("ui", "ui"),
     ("core", "core"),
     ("plugins", "plugins"),
-    ("data", "data"),
     ("basla.bat", "."),
     ("requirements.txt", "."),
     (".env.example", "."),

@@ -697,6 +697,46 @@ button, input, select, textarea { font-family: inherit; }
 #key-state.has-key { color: var(--green); }
 
 /* ============================ TINY VIEW ============================ */
+/* Popup mode: the window is small, so the app chrome must disappear. */
+body.tiny-mode .sidebar,
+body.tiny-mode .main-head,
+body.tiny-mode .hint { display: none; }
+body.tiny-mode .shell { padding: 0; gap: 0; }
+body.tiny-mode .main { padding: 0; }
+body.tiny-mode .tiny-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  height: 100%;
+  overflow: hidden;
+}
+body.tiny-mode { overflow: hidden; }
+body.tiny-mode .tiny-header { padding: 8px 12px; }
+body.tiny-mode .tiny-status {
+  flex: 0 0 auto;
+  padding: 6px 12px 2px;
+  font-size: 12px;
+}
+body.tiny-mode .tiny-dashboard {
+  overflow: hidden;
+  padding: 0 10px 6px;
+  gap: 8px;
+}
+body.tiny-mode .tiny-widget {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 7px 9px;
+  gap: 2px;
+}
+body.tiny-mode .tiny-widget-value {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.tiny-mode .tiny-actions { padding: 6px 10px 8px; }
+body.tiny-mode .tiny-btn { width: 30px; height: 30px; font-size: 12px; }
+
 .tiny-panel {
   width: 100%;
   height: 100%;

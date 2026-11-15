@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "core"))
 
 import config  # noqa: E402
+import shell  # noqa: E402
 import updater  # noqa: E402
 from server import App, free_port, serve  # noqa: E402
 
@@ -40,6 +41,8 @@ CHROME_PATHS = [
 #  Window helpers
 # --------------------------------------------------------------------------- #
 def focus_window() -> bool:
+    if shell.request("focus"):
+        return True
     hwnd = ctypes.windll.user32.FindWindowW(None, WINDOW_TITLE)
     if not hwnd:
         return False
@@ -58,6 +61,10 @@ def screen_size() -> tuple[int, int]:
 
 
 def open_window(url: str) -> None:
+    if shell.request("full"):
+        return
+    if os.environ.get("HELPIE_NO_BROWSER") == "1":
+        return
     width, height = screen_size()
     x = max(0, (width - WIN_W) // 2)
     y = max(0, (height - WIN_H) // 2 - 20)
@@ -90,6 +97,10 @@ def open_window(url: str) -> None:
 
 def open_tiny_window(url: str) -> None:
     """Open a small floating window near the mouse cursor for wake-word interactions."""
+    if shell.request("tiny"):
+        return
+    if os.environ.get("HELPIE_NO_BROWSER") == "1":
+        return
     width, height = screen_size()
     # Position near mouse cursor (bottom-right of cursor)
     cursor_x, cursor_y = get_cursor_pos()
@@ -147,6 +158,15 @@ def running_port() -> int | None:
 # --------------------------------------------------------------------------- #
 #  Main
 # --------------------------------------------------------------------------- #
+def requested_port() -> int | None:
+    """Port handed to us by the Tauri shell, so it knows where to connect."""
+    raw = os.environ.get("HELPIE_PORT", "").strip()
+    if not raw.isdigit():
+        return None
+    port = int(raw)
+    return port if 0 < port < 65536 else None
+
+
 def main() -> None:
     hidden = "--hidden" in sys.argv
     existing = running_port()
@@ -158,14 +178,16 @@ def main() -> None:
         return
 
     app = App()
-    port = free_port()
+    port = requested_port() or free_port()
     app.port = port  # Store port for wake word tiny window
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     config.PORT_PATH.write_text(str(port), encoding="utf-8")
     serve(app, port)
 
     url = f"http://127.0.0.1:{port}/"
-    if not hidden:
+    if not hidden and not shell.available():
+        # Inside the Tauri shell the window already exists; the shell decides
+        # whether to show it, so we must not force it open here.
         open_window(url)
     print(f"Helpie running at {url}  (version {updater.current_version()})")
 
