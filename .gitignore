@@ -1,4 +1,11 @@
+# Local user data (never commit)
 data/
+.env
+.env.local
+.env.*.local
+*.env
+
+# Python
 __pycache__/
 *.pyc
 *.log
@@ -7,12 +14,17 @@ err.log
 .venv/
 venv/
 plugins/clipboard_history/history.json
-.env
 
 # PyInstaller
 dist/
 build/
 *.spec
+
+# Release artifacts (built exes/zips go to GitHub Releases, not the repo)
+*.zip
+*.exe
+portable-stage/
+release-notes-*.md
 
 # Tauri / Rust
 src-tauri/target/
