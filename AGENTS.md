@@ -37,7 +37,7 @@ plugins/             drop-in feature plugins
 ui/                  the entire frontend (index.html, app.js, style.css)
 web/                 splash page shown by the Tauri shell while the backend boots
 src-tauri/           Tauri v2 desktop shell (Rust) + installer config
-build_sidecar.py     PyInstaller -> src-tauri/binaries/helpie-core-<triple>.exe
+build_sidecar.py     PyInstaller -> src-tauri/sidecar/helpie-core/ (folder build)
 ```
 
 ## Architecture
@@ -74,14 +74,14 @@ build_sidecar.py     PyInstaller -> src-tauri/binaries/helpie-core-<triple>.exe
 
 ```powershell
 python make_icons.py          # once, or when the logo changes
-python build_sidecar.py       # Python backend -> src-tauri/binaries/
+python build_sidecar.py       # Python backend -> src-tauri/sidecar/helpie-core/
 npx @tauri-apps/cli@2 build   # -> src-tauri/target/release/bundle/nsis/*.exe
 ```
 
 - `VERSION`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` must agree.
 - Tag = `v` + trimmed `VERSION`. The release workflow builds the installer and
   the source zip.
-- `dist/`, `build/`, `target/`, `binaries/` and `*.spec` stay out of git.
+- `dist/`, `build/`, `target/`, `sidecar/`, `binaries/` and `*.spec` stay out of git.
 
 ## Conventions
 

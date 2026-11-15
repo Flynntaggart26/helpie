@@ -1,12 +1,14 @@
-"""Build the Python backend as a single-file sidecar for the Tauri shell.
+"""Build the Python backend as a folder-based sidecar for the Tauri shell.
 
 Usage:
     python build_sidecar.py
 
 Output:
-    src-tauri/binaries/helpie-core-x86_64-pc-windows-msvc.exe
+    src-tauri/sidecar/helpie-core/helpie-core.exe  (+ _internal/)
 
-The name must carry the Rust target triple so `bundle.externalBin` can find it.
+A folder build is deliberate: a onefile exe unpacks ~80 MB into %TEMP% on every
+launch, which antivirus and Defender ASR rules commonly block on managed
+machines, and it makes startup slow.
 """
 from __future__ import annotations
 
@@ -18,8 +20,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-BINARIES = ROOT / "src-tauri" / "binaries"
-TARGET = "x86_64-pc-windows-msvc"
+SIDECAR = ROOT / "src-tauri" / "sidecar" / "helpie-core"
 
 sys.path.insert(0, str(ROOT))
 from build_exe import HIDDEN_IMPORTS  # noqa: E402
@@ -44,16 +45,37 @@ EXCLUDES = [
     "notebook",
     "pytest",
     "torch",
+    "pocketsphinx",
 ]
+
+# SpeechRecognition ships Sphinx models (~31 MB) that are only used by
+# `recognize_sphinx`; Helpie only calls `recognize_google`. Pillow's AVIF
+# decoder is equally unreachable. Dropping them keeps the download small.
+PRUNE_DIRS = ["pocketsphinx-data"]
+PRUNE_FILES = ["_avif*.pyd"]
+
+
+def prune(target: Path) -> int:
+    """Delete bundled data the app never reads. Returns the bytes saved."""
+    saved = 0
+    for name in PRUNE_DIRS:
+        for path in target.rglob(name):
+            if path.is_dir():
+                saved += sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+                shutil.rmtree(path, ignore_errors=True)
+    for name in PRUNE_FILES:
+        for path in target.rglob(name):
+            saved += path.stat().st_size
+            path.unlink(missing_ok=True)
+    return saved
 
 
 def main() -> None:
-    BINARIES.mkdir(parents=True, exist_ok=True)
+    SIDECAR.parent.mkdir(parents=True, exist_ok=True)
     # Build outside OneDrive: syncing locks PyInstaller's scratch folder.
     build_dir = Path(tempfile.gettempdir()) / "helpie-sidecar-build"
     dist_dir = build_dir / "dist"
 
-    # A previous run can still be releasing files for a moment.
     for _ in range(6):
         shutil.rmtree(build_dir, ignore_errors=True)
         if not build_dir.exists():
@@ -66,7 +88,7 @@ def main() -> None:
         "PyInstaller",
         "--name",
         "helpie-core",
-        "--onefile",
+        "--onedir",
         "--windowed",
         "--noconfirm",
         "--clean",
@@ -97,11 +119,25 @@ def main() -> None:
         print("Sidecar build failed.")
         sys.exit(1)
 
-    built = dist_dir / "helpie-core.exe"
-    final = BINARIES / f"helpie-core-{TARGET}.exe"
-    shutil.copy2(built, final)
-    size_mb = final.stat().st_size / (1024 * 1024)
-    print(f"Sidecar ready: {final} ({size_mb:.1f} MB)")
+    built = dist_dir / "helpie-core"
+    if not (built / "helpie-core.exe").exists():
+        print(f"Sidecar build produced no exe in {built}")
+        sys.exit(1)
+
+    for _ in range(6):
+        shutil.rmtree(SIDECAR, ignore_errors=True)
+        if not SIDECAR.exists():
+            break
+        time.sleep(1)
+    shutil.copytree(built, SIDECAR)
+
+    saved = prune(SIDECAR)
+
+    total = sum(f.stat().st_size for f in SIDECAR.rglob("*") if f.is_file())
+    print(
+        f"Sidecar ready: {SIDECAR} ({total / (1024 * 1024):.1f} MB, "
+        f"pruned {saved / (1024 * 1024):.1f} MB)"
+    )
 
 
 if __name__ == "__main__":

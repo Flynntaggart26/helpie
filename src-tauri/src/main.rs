@@ -42,6 +42,20 @@ fn data_dir() -> PathBuf {
     }
 }
 
+/// Small append-only log so a failed start on someone else's machine is
+/// diagnosable instead of a silent splash screen.
+fn log(message: &str) {
+    use std::io::Write as _;
+    let _ = std::fs::create_dir_all(data_dir());
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(data_dir().join("shell.log"))
+    {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
 fn read_port_file() -> Option<u16> {
     std::fs::read_to_string(data_dir().join("port.txt"))
         .ok()
@@ -86,8 +100,38 @@ fn base_url(port: u16) -> String {
 // --------------------------------------------------------------------------- //
 fn sidecar_path() -> Option<PathBuf> {
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    let candidate = exe_dir.join("helpie-core.exe");
-    candidate.exists().then_some(candidate)
+
+    // Installed layout puts the folder next to the shell; the dev layout keeps
+    // it under src-tauri/sidecar. Try both so `cargo run` works too.
+    let candidates = [
+        exe_dir.join("helpie-core").join("helpie-core.exe"),
+        exe_dir.join("sidecar").join("helpie-core").join("helpie-core.exe"),
+        exe_dir.join("helpie-core.exe"),
+        exe_dir
+            .join("sidecar")
+            .join("helpie-core")
+            .join("helpie-core.exe"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
+/// Older installers shipped `helpie-core.exe` next to the shell; 1.16.1 ships a
+/// folder. Remove the leftover so a stale 80 MB binary does not linger after an
+/// upgrade (nothing probes it any more).
+fn cleanup_legacy_sidecar() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(dir) = exe.parent() else {
+        return;
+    };
+    let legacy = dir.join("helpie-core.exe");
+    if dir.join("helpie-core").join("helpie-core.exe").exists()
+        && legacy.exists()
+        && std::fs::remove_file(&legacy).is_ok()
+    {
+        log("cleanup: removed legacy helpie-core.exe");
+    }
 }
 
 fn spawn_backend(port: u16, control_port: u16) -> Option<Child> {
@@ -275,10 +319,47 @@ fn handle_control(app: &AppHandle, port: u16, mut stream: TcpStream) {
 // --------------------------------------------------------------------------- //
 //  Boot sequence
 // --------------------------------------------------------------------------- //
+fn show_error(app: &AppHandle, title: &str, detail: &str) {
+    log(&format!("ERROR {title}: {detail}"));
+    USER_SHOWED.store(true, Ordering::Relaxed);
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    // The splash page may not have parsed yet when boot fails, so retry until
+    // the card exists instead of silently doing nothing.
+    let script = format!(
+        r#"(function(){{
+  var tries = 0;
+  function paint() {{
+    var card = document.querySelector('.card');
+    if (!card) {{
+      if (tries++ < 60) setTimeout(paint, 250);
+      return;
+    }}
+    card.innerHTML =
+      '<div class="mark" style="background:linear-gradient(145deg,#b91c1c,#7f1d1d)">!</div>' +
+      '<h1>{title}</h1>' +
+      '<p style="max-width:340px;line-height:1.55">{detail}</p>' +
+      '<p style="margin-top:16px;font-size:11px;color:#6b7280">Details: %APPDATA%\Helpie\shell.log</p>';
+  }}
+  paint();
+}})();"#
+    );
+    let _ = window.eval(&script);
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
 fn boot(app: AppHandle) {
+    log("boot: start");
+    cleanup_legacy_sidecar();
+
     // Reuse an already running backend instead of starting a second one.
     if let Some(existing) = read_port_file() {
+        log(&format!("boot: probing existing backend on port {existing}"));
         if http_ok(existing) {
+            log("boot: reusing running backend");
             if let Some(state) = app.try_state::<Backend>() {
                 *state.port.lock().unwrap() = existing;
             }
@@ -287,8 +368,20 @@ fn boot(app: AppHandle) {
         }
     }
 
+    let sidecar = sidecar_path();
+    match sidecar.as_ref() {
+        Some(path) => log(&format!("boot: sidecar at {}", path.display())),
+        None => log(&format!(
+            "boot: sidecar not found next to {}",
+            std::env::current_exe()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|_| "?".into())
+        )),
+    }
+
     let port = free_port();
     let control = start_control(app.clone(), port).unwrap_or(0);
+    log(&format!("boot: backend port {port}, control port {control}"));
 
     let _ = std::fs::create_dir_all(data_dir());
     if control > 0 {
@@ -296,21 +389,84 @@ fn boot(app: AppHandle) {
     }
 
     let child = spawn_backend(port, control);
+    if child.is_none() {
+        show_error(
+            &app,
+            "Helpie could not start",
+            "The assistant engine is missing from the installation. \
+             Reinstall Helpie from the latest release and try again.",
+        );
+        return;
+    }
     if let Some(state) = app.try_state::<Backend>() {
         *state.child.lock().unwrap() = child;
         *state.port.lock().unwrap() = port;
     }
 
-    // First launch of a onefile backend can take a while (unpack + imports).
-    let deadline = Instant::now() + Duration::from_secs(120);
+    // A folder build starts in a second or two; 60 s still covers a cold start
+    // on a slow disk without leaving the user staring at a spinner.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut healthy = false;
     while Instant::now() < deadline {
         if http_ok(port) {
+            healthy = true;
             break;
         }
         std::thread::sleep(Duration::from_millis(400));
     }
 
+    if !healthy {
+        log("boot: backend never answered /api/health");
+        show_error(
+            &app,
+            "Helpie could not start",
+            "The assistant engine did not respond in time. \
+             Your antivirus may have blocked it, or another program is using the required port. \
+             Restart your computer and try again.",
+        );
+        return;
+    }
+
+    log("boot: backend healthy");
     show_main(&app, port, false);
+}
+
+#[cfg(windows)]
+fn message_box(title: &str, body: &str) {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut std::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            utype: u32,
+        ) -> i32;
+    }
+
+    let wide = |value: &str| -> Vec<u16> {
+        std::ffi::OsStr::new(value)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    };
+    let text = wide(body);
+    let caption = wide(title);
+    // MB_ICONERROR | MB_SETFOREGROUND
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            0x0000_0010 | 0x0001_0000,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn message_box(title: &str, body: &str) {
+    eprintln!("{title}: {body}");
 }
 
 fn main() {
@@ -326,18 +482,43 @@ fn main() {
             START_HIDDEN.store(hidden, Ordering::Relaxed);
 
             let _ = std::fs::create_dir_all(data_dir());
-            let _ = std::fs::write(
-                data_dir().join("shell.log"),
-                format!("args={:?} hidden={}\n", args, hidden),
-            );
+            // Fresh log per launch so the file cannot grow without bound.
+            let _ = std::fs::write(data_dir().join("shell.log"), "");
+            log(&format!(
+                "start: v{} args={:?} hidden={}",
+                env!("CARGO_PKG_VERSION"),
+                args,
+                hidden
+            ));
 
-            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Helpie")
-                .inner_size(MAIN_W, MAIN_H)
-                .min_inner_size(760.0, 520.0)
-                .center()
-                .visible(!hidden)
-                .build()?;
+            let window = match WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::App("index.html".into()),
+            )
+            .title("Helpie")
+            .inner_size(MAIN_W, MAIN_H)
+            .min_inner_size(760.0, 520.0)
+            .center()
+            .visible(!hidden)
+            .build()
+            {
+                Ok(window) => window,
+                Err(err) => {
+                    log(&format!("fatal: could not create main window: {err}"));
+                    message_box(
+                        "Helpie could not start",
+                        &format!(
+                            "Helpie could not open its window.\n\n{err}\n\n\
+                             This usually means Microsoft Edge WebView2 is missing or \
+                             damaged. Install it from\n\
+                             https://go.microsoft.com/fwlink/p/?LinkId=2124703\n\
+                             then start Helpie again."
+                        ),
+                    );
+                    std::process::exit(1);
+                }
+            };
 
             if hidden {
                 let _ = window.hide();
@@ -347,7 +528,11 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("failed to start Helpie")
+        .unwrap_or_else(|err| {
+            log(&format!("fatal: {err}"));
+            message_box("Helpie could not start", &format!("{err}"));
+            std::process::exit(1);
+        })
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app.try_state::<Backend>() {

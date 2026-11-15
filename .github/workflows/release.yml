@@ -69,8 +69,13 @@ jobs:
           $notes = @"
           Helpie $env:GITHUB_REF_NAME
 
-          Windows 10/11 (WebView2). Download the ``-setup.exe`` installer and run it - no Python required.
-          The installer is per-user, so no administrator rights are needed.
+          Download ``Helpie_${version}_x64-setup.exe`` and double-click it. No Python and no administrator rights are needed.
+
+          **Windows may warn "Windows protected your PC" (unknown publisher).** The installer is not code-signed, so SmartScreen cannot show a publisher name. Click **More info -> Run anyway**; the full source is in this repository and the download comes from this release page.
+
+          If Windows Defender or a corporate antivirus quarantines the download, restore it and allow it - Helpie starts no hidden downloads and unpacks nothing into your temp folder.
+
+          Requires Windows 10/11 (64-bit) with Microsoft Edge WebView2, which the installer adds automatically when it is missing.
 
           Existing installs update themselves from Settings, or automatically on startup when a newer release exists.
           "@

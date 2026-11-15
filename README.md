@@ -92,14 +92,34 @@ The installer is per-user, so it does not ask for administrator rights and needs
 no Python on the machine. Your settings, chat history and encrypted API key live
 in `%APPDATA%\Helpie`, so uninstalling never throws your data away.
 
-Prefer a portable copy? Download `helpie-v<version>.zip`, extract it anywhere and
-run `basla.bat` (that route uses your own Python and `setup.bat`).
+### "Windows protected your PC" / unknown publisher
+
+The installer is not code-signed, so Windows SmartScreen shows a warning instead
+of a publisher name. Click **More info**, then **Run anyway**. Helpie never
+downloads anything hidden at install time and needs no administrator rights.
+
+If your antivirus quarantines the download, allow it and run it again. Helpie is
+built from the source in this repository by the workflow in
+`.github/workflows/release.yml`.
+
+### Requirements
+
+- Windows 10 or 11, 64-bit.
+- Microsoft Edge WebView2. The installer adds it when it is missing; if that is
+  blocked on a locked-down machine, install the
+  [WebView2 runtime](https://go.microsoft.com/fwlink/p/?LinkId=2124703) first.
 
 ## Running on other devices
 
 The installer is fully self-contained: copy `Helpie_<version>_x64-setup.exe` to
 another Windows 10/11 machine and run it. No Python, no Edge flags, no folder
-layout to preserve.
+layout to preserve. On the new machine Helpie starts with an empty history; add
+your API key once in **Settings**, since the key is encrypted for the Windows
+account that saved it.
+
+If something fails to start, the shell writes a short log to
+`%APPDATA%\Helpie\shell.log` and the window explains what to do instead of
+spinning forever.
 
 If you forked this repo, set the `HELPIE_REPO` environment variable (or edit
 `REPO` in `core/updater.py`) so self-updates point at your fork.
@@ -111,7 +131,7 @@ Python 3.10+ with the packages from `requirements.txt`.
 
 ```powershell
 python make_icons.py          # regenerate src-tauri/icons from assets/helpie.png
-python build_sidecar.py       # bundle the Python backend into src-tauri/binaries/
+python build_sidecar.py       # bundle the Python backend into src-tauri/sidecar/
 npx @tauri-apps/cli@2 build   # -> src-tauri/target/release/bundle/nsis/*-setup.exe
 ```
 
