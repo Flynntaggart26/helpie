@@ -58,6 +58,53 @@ jobs:
           git archive --format=zip --output=$name HEAD
           Write-Host "Created $name"
 
+      - name: Build portable zip
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          $stage = "portable-stage\helpie-portable-v$version"
+          Remove-Item "portable-stage" -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item "src-tauri\target\release\helpie.exe" "$stage\helpie.exe"
+          Copy-Item "src-tauri\sidecar\helpie-core" "$stage\helpie-core" -Recurse
+          @"
+@echo off
+:: Helpie portable launcher
+:: Extract this zip anywhere, then run basla.bat (or double-click helpie.exe).
+:: No installer, no administrator rights, no Python required.
+:: Your settings and history live in %%APPDATA%%\Helpie and follow your user account.
+start "" "%~dp0helpie.exe"
+"@ | Set-Content "$stage\basla.bat"
+          @"
+Helpie Portable — v$version
+=========================
+
+No installer. Extract this folder anywhere and run `basla.bat` (or
+double-click `helpie.exe`).
+
+Requirements:
+- Windows 10/11 64-bit
+- Microsoft Edge WebView2 (the portable zip does NOT install it — if a
+  window fails to open, install WebView2 from
+  https://go.microsoft.com/fwlink/p/?LinkId=2124703)
+
+What's inside:
+- helpie.exe        — the Helpie shell (Tauri window)
+- helpie-core/      — the bundled Python assistant engine (runs beside the exe)
+- basla.bat         — one-click launcher
+
+Settings, chat history and your encrypted API key are stored in
+%APPDATA%\Helpie, so they follow your Windows account no matter where you
+extract this folder.
+
+"Windows protected your PC" (unknown publisher): Helpie is not code-signed,
+so SmartScreen shows a warning. Click More info -> Run anyway.
+
+Source: https://github.com/Flynntaggart26/helpie
+"@ | Set-Content "$stage\README-PORTABLE.txt"
+          Compress-Archive -Path "$stage\*" -DestinationPath "Helpie_${version}_x64-portable.zip" -Force
+          Write-Host "Created Helpie_${version}_x64-portable.zip"
+
       - name: Publish GitHub release
         shell: pwsh
         env:
@@ -66,10 +113,12 @@ jobs:
           $version = (Get-Content VERSION).Trim()
           $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
           $zip = "helpie-v$version.zip"
+          $portable = "Helpie_${version}_x64-portable.zip"
           $notes = @"
           Helpie $env:GITHUB_REF_NAME
 
           Download ``Helpie_${version}_x64-setup.exe`` and double-click it. No Python and no administrator rights are needed.
+          Prefer no installer at all? Download ``Helpie_${version}_x64-portable.zip``, extract anywhere, and run ``basla.bat``.
 
           **Windows may warn "Windows protected your PC" (unknown publisher).** The installer is not code-signed, so SmartScreen cannot show a publisher name. Click **More info -> Run anyway**; the full source is in this repository and the download comes from this release page.
 
@@ -81,9 +130,9 @@ jobs:
           "@
           gh release view $env:GITHUB_REF_NAME *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:GITHUB_REF_NAME $installer.FullName $zip --clobber
+            gh release upload $env:GITHUB_REF_NAME $installer.FullName $zip $portable --clobber
           } else {
-            gh release create $env:GITHUB_REF_NAME $installer.FullName $zip `
+            gh release create $env:GITHUB_REF_NAME $installer.FullName $zip $portable `
               --title "Helpie $env:GITHUB_REF_NAME" `
               --notes $notes
           }

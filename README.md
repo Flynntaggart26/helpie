@@ -109,6 +109,17 @@ built from the source in this repository by the workflow in
   blocked on a locked-down machine, install the
   [WebView2 runtime](https://go.microsoft.com/fwlink/p/?LinkId=2124703) first.
 
+### Portable copy (no installer)
+
+Download **`Helpie_<version>_x64-portable.zip`**, extract it anywhere, and run
+`basla.bat` (or double-click `helpie.exe`). No installer, no administrator
+rights, and nothing is written to Program Files. Settings and history still
+live in `%APPDATA%\Helpie` and follow your Windows account.
+
+Note: the portable zip does not install WebView2. If a window fails to open,
+install the
+[WebView2 runtime](https://go.microsoft.com/fwlink/p/?LinkId=2124703) first.
+
 ## Running on other devices
 
 The installer is fully self-contained: copy `Helpie_<version>_x64-setup.exe` to
