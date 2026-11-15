@@ -67,20 +67,11 @@ jobs:
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           Copy-Item "src-tauri\target\release\helpie.exe" "$stage\helpie.exe"
           Copy-Item "src-tauri\sidecar\helpie-core" "$stage\helpie-core" -Recurse
-          @"
-@echo off
-:: Helpie portable launcher
-:: Extract this zip anywhere, then run basla.bat (or double-click helpie.exe).
-:: No installer, no administrator rights, no Python required.
-:: Your settings and history live in %%APPDATA%%\Helpie and follow your user account.
-start "" "%~dp0helpie.exe"
-"@ | Set-Content "$stage\basla.bat"
-          @"
-Helpie Portable — v$version
+          'start "" "%~dp0helpie.exe"' | Set-Content "$stage\basla.bat"
+          $readme = 'Helpie Portable — v' + $version + '
 =========================
 
-No installer. Extract this folder anywhere and run `basla.bat` (or
-double-click `helpie.exe`).
+No installer. Extract this folder anywhere and run `basla.bat` (or double-click `helpie.exe`).
 
 Requirements:
 - Windows 10/11 64-bit
@@ -100,8 +91,8 @@ extract this folder.
 "Windows protected your PC" (unknown publisher): Helpie is not code-signed,
 so SmartScreen shows a warning. Click More info -> Run anyway.
 
-Source: https://github.com/Flynntaggart26/helpie
-"@ | Set-Content "$stage\README-PORTABLE.txt"
+Source: https://github.com/Flynntaggart26/helpie'
+          $readme | Set-Content "$stage\README-PORTABLE.txt"
           Compress-Archive -Path "$stage\*" -DestinationPath "Helpie_${version}_x64-portable.zip" -Force
           Write-Host "Created Helpie_${version}_x64-portable.zip"
 
@@ -114,20 +105,7 @@ Source: https://github.com/Flynntaggart26/helpie
           $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
           $zip = "helpie-v$version.zip"
           $portable = "Helpie_${version}_x64-portable.zip"
-          $notes = @"
-          Helpie $env:GITHUB_REF_NAME
-
-          Download ``Helpie_${version}_x64-setup.exe`` and double-click it. No Python and no administrator rights are needed.
-          Prefer no installer at all? Download ``Helpie_${version}_x64-portable.zip``, extract anywhere, and run ``basla.bat``.
-
-          **Windows may warn "Windows protected your PC" (unknown publisher).** The installer is not code-signed, so SmartScreen cannot show a publisher name. Click **More info -> Run anyway**; the full source is in this repository and the download comes from this release page.
-
-          If Windows Defender or a corporate antivirus quarantines the download, restore it and allow it - Helpie starts no hidden downloads and unpacks nothing into your temp folder.
-
-          Requires Windows 10/11 (64-bit) with Microsoft Edge WebView2, which the installer adds automatically when it is missing.
-
-          Existing installs update themselves from Settings, or automatically on startup when a newer release exists.
-          "@
+          $notes = "Helpie $env:GITHUB_REF_NAME`n`nDownload ``Helpie_${version}_x64-setup.exe`` and double-click it. No Python and no administrator rights are needed.`nPrefer no installer at all? Download ``Helpie_${version}_x64-portable.zip``, extract anywhere, and run ``basla.bat``.`n`n**Windows may warn "Windows protected your PC" (unknown publisher).** The installer is not code-signed, so SmartScreen cannot show a publisher name. Click **More info -> Run anyway**; the full source is in this repository and the download comes from this release page.`n`nIf Windows Defender or a corporate antivirus quarantines the download, restore it and allow it - Helpie starts no hidden downloads and unpacks nothing into your temp folder.`n`nRequires Windows 10/11 (64-bit) with Microsoft Edge WebView2, which the installer adds automatically when it is missing.`n`nExisting installs update themselves from Settings, or automatically on startup when a newer release exists."
           gh release view $env:GITHUB_REF_NAME *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $env:GITHUB_REF_NAME $installer.FullName $zip $portable --clobber
