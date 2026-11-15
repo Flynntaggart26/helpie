@@ -1,5 +1,17 @@
 # Helpie v2.0+ Feature Roadmap
 
+## Shipped in v1.16.0 — the Tauri desktop app
+- [x] Windows installer (`Helpie_1.16.0_x64-setup.exe`, Tauri v2 + NSIS), no Python required
+- [x] Python backend bundled as a sidecar (`helpie-core.exe`)
+- [x] Tiny wake-word window as a real popup (time, weather, next reminder)
+- [x] Silent autostart; Ctrl+H brings the window up
+- [x] Installer-aware self-update
+- [x] User data in `%APPDATA%\Helpie`
+- [ ] Tray icon with quick actions
+- [ ] Single-instance enforcement (currently a second launch reuses the backend)
+- [ ] Code signing certificate (removes the SmartScreen "unknown publisher" warning)
+- [ ] Signed auto-updater (`tauri-plugin-updater`) instead of downloading the setup.exe
+
 ## Phase 1: Core Integrations (Week 1-2) - HIGH IMPACT, LOW EFFORT
 - [ ] Spotify plugin (play/pause/next/prev/search/playlists)
 - [ ] Notion plugin (create pages, search, append to daily notes)
