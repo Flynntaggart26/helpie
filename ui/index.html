@@ -226,6 +226,7 @@
                 <option value="all">All settings</option>
                 <option value="ai">AI models</option>
                 <option value="voice">Voice</option>
+                <option value="wakeword">Wake Word</option>
                 <option value="provider-gemini">AI Providers · Gemini</option>
                 <option value="provider-ollama">AI Providers · Ollama</option>
                 <option value="provider-custom">AI Providers · Custom OpenAI</option>
@@ -242,6 +243,9 @@
               </button>
               <button class="settings-nav-item" data-page="voice">
                 <span class="sico">◈</span><span class="slabel">Voice</span><span class="caret">›</span>
+              </button>
+              <button class="settings-nav-item" data-page="wakeword">
+                <span class="sico">🎤</span><span class="slabel">Wake Word</span><span class="caret">›</span>
               </button>
               <div class="settings-group expanded" id="group-providers">
                 <button class="settings-nav-item group-head" data-toggle="providers">
@@ -440,6 +444,34 @@
                 <div class="mic-test">
                   <div class="level-track"><div class="level-fill" id="level-fill"></div></div>
                   <div class="mic-verdict" id="mic-verdict">Not tested yet.</div>
+                </div>
+              </section>
+
+              <!-- ------------------------------ Wake word ------------------------------ -->
+              <section class="settings-page" data-page="wakeword">
+                <p class="page-lead">
+                  Say "Jarvis" or "Computer" to open the tiny window and start listening,
+                  without touching the keyboard. Powered by Picovoice Porcupine — free tier at
+                  <a href="#" id="get-porcupine">console.picovoice.ai</a>.
+                </p>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Wake word detection</span>
+                    <span class="split-desc">Always listens for the wake word in the background.
+                    Off by default; typed commands and Ctrl+H remain available.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-wake-word" /><span class="track"></span></label>
+                  </div>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-porcupine-key">
+                    Porcupine AccessKey <span class="badge" id="porcupine-key-state">not set</span>
+                  </label>
+                  <input id="set-porcupine-key" class="wide" type="password" placeholder="AccessKey." />
+                  <p class="page-help">Required for the wake word. Get a free key from the Picovoice Console.</p>
                 </div>
               </section>
 

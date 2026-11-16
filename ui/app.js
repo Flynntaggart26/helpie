@@ -52,6 +52,7 @@ const COMMANDS = [
   ["Open apps", '"Open Chrome", "Launch Spotify", "Close Notepad"'],
   ["Volume", '"Volume to 40", "Mute", "Turn the volume up"'],
   ["Brightness", '"Brightness 60", "Dim the screen"'],
+  ["Wake word", '"Jarvis" / "Computer" - starts listening without Ctrl+H (needs Porcupine AccessKey)'],
   ["Search", '"Search the web for Mars", "YouTube lo-fi beats"'],
   ["Screen", '"What is on my screen", "Explain this error", "Ekranda ne var"'],
   ["Documents", '"Summarize my thesis", "Report dosyasını özetle"'],
@@ -521,6 +522,10 @@ function applySettings() {
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
   $("set-cloud-tts").checked = !!s.cloud_tts_consent;
   $("set-screen-context").checked = !!s.screen_context_consent;
+  $("set-wake-word").checked = !!s.wake_word;
+  const hasWakeWordKey = !!s.has_wake_word_key;
+  $("porcupine-key-state").textContent = hasWakeWordKey ? "connected" : "not set";
+  $("porcupine-key-state").className = "badge" + (hasWakeWordKey ? " has-key" : "");
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
@@ -577,6 +582,8 @@ async function saveSettings() {
     cloud_speech_consent: $("set-cloud-transcription").checked,
     cloud_tts_consent: $("set-cloud-tts").checked,
     screen_context_consent: $("set-screen-context").checked,
+    wake_word: $("set-wake-word").checked,
+    wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
     // AI providers
     api_key: $("set-key").value.trim() || undefined,
     ollama_url: $("set-ollama-url").value.trim() || "http://localhost:11434",
@@ -589,6 +596,7 @@ async function saveSettings() {
     const data = await api("/api/settings", { method: "POST", body: JSON.stringify(patch) });
     state.settings = data.settings;
     $("set-key").value = "";
+    $("set-porcupine-key").value = "";
     $("set-openai-key").value = "";
     applySettings();
     const hint = $("settings-saved");
@@ -1454,6 +1462,10 @@ function bind() {
   $("get-key").addEventListener("click", (event) => {
     event.preventDefault();
     window.open("https://aistudio.google.com/app/apikey", "_blank");
+  });
+  $("get-porcupine").addEventListener("click", (event) => {
+    event.preventDefault();
+    window.open("https://console.picovoice.ai/", "_blank");
   });
   $("mic-settings").addEventListener("click", (event) => {
     event.preventDefault();

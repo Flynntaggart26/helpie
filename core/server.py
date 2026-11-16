@@ -26,7 +26,7 @@ import reminders
 import routines
 import updater
 from brain import Brain
-from voice import Listener, Speaker, list_microphones
+from voice import Listener, Speaker, WakeWordListener, list_microphones
 
 ROOT = config.APP_DIR
 UI_DIR = ROOT / "ui"
@@ -99,6 +99,7 @@ class App:
             on_end=self._on_speak_end,
         )
         self.listener = Listener()
+        self.wake_word = WakeWordListener(on_wake=self._on_wake_word)
         self.brain = Brain(self.cfg, on_speak=self._speak, on_quit=self.shutdown,
                            on_event=self.bus.push)
         self.brain._app = self  # Give brain access to app for plugin commands
@@ -119,6 +120,8 @@ class App:
             self.cfg["auto_listen"] = False
             self.cfg["continuous"] = False
 
+        self._start_wake_word()
+
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
         self.bus.push(event)
@@ -126,6 +129,36 @@ class App:
     def push_state(self, state: str, detail: str = "") -> None:
         self.state = state
         self.bus.push({"type": "state", "value": state, "detail": detail})
+
+    def _start_wake_word(self) -> None:
+        if self.cfg.get("wake_word", False):
+            access_key = self.cfg.get("wake_word_access_key", "")
+            mic_index = self.cfg.get("mic_index")
+            ok = self.wake_word.start(access_key=access_key, mic_index=mic_index)
+            if not ok:
+                print("[WakeWord] Could not start (pvporcupine not installed or no access key)")
+
+    def _on_wake_word(self) -> None:
+        """Called when wake word is detected."""
+        if self._closing or self._listen_lock.locked():
+            return
+        print("[WakeWord] Triggered -> opening tiny window and starting listen")
+
+        # Open tiny window near cursor via shell control endpoint.
+        try:
+            import shell
+            shell.request("tiny")
+        except Exception as e:
+            print(f"[WakeWord] Failed to open tiny window: {e}")
+
+        # Start listening
+        self.listen_async("wake_word")
+
+    def _stop_wake_word(self) -> None:
+        try:
+            self.wake_word.stop()
+        except Exception:
+            pass
 
     def _on_speak_start(self) -> None:
         self._speaking = True
@@ -259,6 +292,7 @@ class App:
         safe["openai_key_hint"] = ("•" * 6 + openai_key[-4:]) if openai_key else ""
         safe["has_openai_key"] = bool(openai_key)
         safe["has_screen_context_consent"] = bool(self.cfg.get("screen_context_consent"))
+        safe["has_wake_word_key"] = bool(self.cfg.get("wake_word_access_key"))
         try:
             safe["autostart"] = autostart.enabled()
         except Exception:
@@ -276,13 +310,14 @@ class App:
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "cloud_speech_consent", "cloud_tts_consent",
                    "screen_context_consent",
+                   "wake_word", "wake_word_access_key",
                    "auto_listen", "continuous", "auto_turns",
                    "city", "check_updates", "background_apps",
                    "theme", "ollama_url", "ollama_model", "openai_url", "openai_key", "openai_model"}
         for key, value in (patch or {}).items():
             if key in allowed:
                 # Empty password inputs mean "keep the saved credential".
-                if key in {"api_key", "openai_key"} and not value:
+                if key in {"api_key", "openai_key", "wake_word_access_key"} and not value:
                     continue
                 self.cfg[key] = value
         if isinstance(patch, dict) and "autostart" in patch:
@@ -294,6 +329,10 @@ class App:
             raise
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
         actions.set_screen_context_consent(bool(self.cfg.get("screen_context_consent", False)))
+        # Restart wake word if settings changed
+        if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch:
+            self._stop_wake_word()
+            self._start_wake_word()
         self.brain.refresh(self.cfg)
         self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"),
                             cloud_consent=bool(self.cfg.get("cloud_tts_consent", False)))
@@ -307,6 +346,7 @@ class App:
             self.speaker.close()
         except Exception:
             pass
+        self._stop_wake_word()
         try:
             self.plugins.shutdown()
         except Exception:

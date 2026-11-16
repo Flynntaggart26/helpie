@@ -113,6 +113,8 @@ def main() -> None:
 
     for module in HIDDEN_IMPORTS:
         cmd.extend(["--hidden-import", module])
+    # pvporcupine ships native DLLs that PyInstaller won't find via hidden-import
+    cmd.extend(["--collect-binaries", "pvporcupine"])
     for module in EXCLUDES:
         cmd.extend(["--exclude-module", module])
     for src, dest in DATA_FILES:

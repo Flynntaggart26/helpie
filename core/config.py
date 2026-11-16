@@ -55,6 +55,8 @@ DEFAULTS = {
     "cloud_speech_consent": False,
     "cloud_tts_consent": False,
     "screen_context_consent": False,
+    "wake_word": False,
+    "wake_word_access_key": "",
     "hotkey": "ctrl+h",
     "auto_listen": True,
     "continuous": True,
@@ -95,7 +97,7 @@ def load() -> dict:
             raw = {}
 
     legacy_plaintext = []
-    for field in ("api_key", "openai_key"):
+    for field in ("api_key", "openai_key", "wake_word_access_key"):
         encrypted = str(raw.get(f"{field}_enc") or "")
         plaintext = str(raw.get(field) or "")
         if encrypted:
@@ -128,7 +130,7 @@ def save(cfg: dict) -> None:
     clean.pop("_has_key", None)
     clean.pop("key_hint", None)
 
-    for field in ("api_key", "openai_key"):
+    for field in ("api_key", "openai_key", "wake_word_access_key"):
         key = str(clean.pop(field, "") or "").strip()
         encrypted_field = f"{field}_enc"
         if key:

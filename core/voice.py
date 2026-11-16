@@ -51,6 +51,137 @@ def list_microphones() -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+#  Uyandırma kelimesi dinleyicisi (Porcupine)
+# --------------------------------------------------------------------------- #
+class WakeWordListener:
+    """Runs a background thread that listens for 'jarvis' / 'computer' using
+    Picovoice Porcupine. Requires a free AccessKey from console.picovoice.ai.
+
+    Silently degrades when pvporcupine is not installed or no AccessKey is
+    configured, so wake word is optional and never blocks startup.
+    """
+
+    def __init__(self, on_wake: Callable[[], None]) -> None:
+        self.on_wake = on_wake
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._porcupine = None
+        self._pa = None
+        self._stream = None
+        self._enabled = False
+
+    def start(self, access_key: str = "", mic_index: Optional[int] = None) -> bool:
+        """Initialize Porcupine and start listening thread.
+
+        Returns False (and prints a message) when pvporcupine is not installed,
+        PyAudio is unavailable, or no AccessKey is configured. Callers should
+        treat False as "wake word unavailable" and continue normally.
+        """
+        if self._enabled:
+            return True
+        if not access_key:
+            print("[WakeWord] No AccessKey configured; wake word disabled.")
+            return False
+        try:
+            import pvporcupine
+        except Exception:
+            print("[WakeWord] pvporcupine not installed. Run: pip install pvporcupine")
+            return False
+
+        # Built-in keywords available on the free tier. "jarvis" is closest
+        # to "Helpie" phonetically; "computer" is an alternative.
+        keywords = ["jarvis", "computer"]
+        try:
+            self._porcupine = pvporcupine.create(
+                access_key=access_key,
+                keywords=keywords,
+            )
+        except Exception as e:
+            print(f"[WakeWord] Failed to init Porcupine: {e}")
+            return False
+
+        try:
+            import pyaudio
+        except Exception:
+            print("[WakeWord] PyAudio not available on this machine. Voice input disabled.")
+            return False
+
+        self._pa = pyaudio.PyAudio()
+        try:
+            self._stream = self._pa.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=self._porcupine.sample_rate,
+                input=True,
+                frames_per_buffer=self._porcupine.frame_length,
+                input_device_index=mic_index,
+            )
+        except Exception as e:
+            print(f"[WakeWord] Failed to open mic: {e}")
+            self.stop()
+            return False
+
+        self._enabled = True
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True, name="wake-word")
+        self._thread.start()
+        print(f"[WakeWord] Listening for: {keywords}")
+        return True
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+        self._cleanup()
+
+    def _cleanup(self) -> None:
+        try:
+            if self._stream:
+                self._stream.stop_stream()
+                self._stream.close()
+        except Exception:
+            pass
+        try:
+            if self._pa:
+                self._pa.terminate()
+        except Exception:
+            pass
+        try:
+            if self._porcupine:
+                self._porcupine.delete()
+        except Exception:
+            pass
+        self._stream = None
+        self._pa = None
+        self._porcupine = None
+        self._enabled = False
+
+    def _run(self) -> None:
+        import struct
+
+        while not self._stop.is_set():
+            try:
+                data = self._stream.read(self._porcupine.frame_length, exception_on_overflow=False)
+                pcm = struct.unpack_from("h" * self._porcupine.frame_length, data)
+                keyword_index = self._porcupine.process(pcm)
+                if keyword_index >= 0:
+                    keyword = ["jarvis", "computer"][keyword_index]
+                    print(f"[WakeWord] Detected: {keyword}")
+                    if self.on_wake:
+                        self.on_wake()
+            except Exception:
+                time.sleep(0.1)
+
+    def update_mic(self, mic_index: Optional[int]) -> None:
+        """Restart with new microphone index."""
+        was_enabled = self._enabled
+        self.stop()
+        if was_enabled:
+            # AccessKey should have been persisted in config; caller re-pass it.
+            pass
+
+
+# --------------------------------------------------------------------------- #
 #  Dinleyici (kendi VAD'imiz: canlı ses seviyesi + konuşma algılama)
 # --------------------------------------------------------------------------- #
 class Listener:
