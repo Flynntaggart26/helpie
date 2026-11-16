@@ -606,6 +606,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/health":
                 self._json({"ok": True, "version": updater.current_version()})
                 return
+            if path == "/api/overlay/state":
+                self._json({"state": app.state})
+                return
             if path == "/api/plugins":
                 self._json({"plugins": app.plugins.list_plugins()})
                 return
@@ -671,6 +674,12 @@ class Handler(BaseHTTPRequestHandler):
             app.speaker.stop()
             app.push_state("idle")
             self._json({"ok": True})
+            return
+        if path == "/api/overlay/hide":
+            import shell
+
+            ok = shell.request("hide-overlay")
+            self._json({"ok": ok})
             return
         if path == "/api/settings":
             try:

@@ -1622,3 +1622,116 @@ body.overlay-mode .overlay-root {
   padding: 4px 12px;
   font-size: 12px;
 }
+
+/* ---------------- Overlay state visuals ---------------- */
+
+@keyframes overlay-pulse {
+  0%, 100% {
+    opacity: 1;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+  }
+  50% {
+    opacity: 0.75;
+    filter: drop-shadow(0 2px 16px rgba(37, 99, 235, 0.6));
+  }
+}
+
+@keyframes overlay-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* idle: default, subtle cyan */
+.overlay-state-idle .overlay-marker svg path {
+  fill: #6ee7ff;
+  stroke: #0b1020;
+}
+.overlay-state-idle .overlay-hint {
+  background: rgba(11, 16, 32, 0.82);
+  color: #cfe6ff;
+  border-color: rgba(110, 231, 255, 0.35);
+}
+
+/* listening: pulsing blue */
+.overlay-state-listening .overlay-marker {
+  animation: overlay-pulse 2s ease-in-out infinite;
+}
+.overlay-state-listening .overlay-marker svg path {
+  fill: #2563eb;
+  stroke: #0b1020;
+}
+.overlay-state-listening .overlay-hint {
+  background: rgba(37, 99, 235, 0.85);
+  color: #ffffff;
+  border-color: rgba(37, 99, 235, 0.5);
+}
+
+/* thinking: spinning purple */
+.overlay-state-thinking .overlay-marker {
+  animation: overlay-spin 1s linear infinite;
+}
+.overlay-state-thinking .overlay-marker svg path {
+  fill: #7c3aed;
+  stroke: #0b1020;
+}
+.overlay-state-thinking .overlay-hint {
+  background: rgba(124, 58, 237, 0.85);
+  color: #ffffff;
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+/* speaking: green, solid */
+.overlay-state-speaking .overlay-marker svg path {
+  fill: #16a34a;
+  stroke: #0b1020;
+}
+.overlay-state-speaking .overlay-hint {
+  background: rgba(22, 163, 74, 0.85);
+  color: #ffffff;
+  border-color: rgba(22, 163, 74, 0.5);
+}
+
+/* error: pulsing red */
+.overlay-state-error .overlay-marker {
+  animation: overlay-pulse 1.5s ease-in-out infinite;
+}
+.overlay-state-error .overlay-marker svg path {
+  fill: #dc2626;
+  stroke: #0b1020;
+}
+.overlay-state-error .overlay-hint {
+  background: rgba(220, 38, 38, 0.85);
+  color: #ffffff;
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+/* paused: dimmed gray */
+.overlay-state-paused {
+  opacity: 0.55;
+}
+.overlay-state-paused .overlay-marker svg path {
+  fill: #64748b;
+  stroke: #0b1020;
+}
+.overlay-state-paused .overlay-hint {
+  background: rgba(100, 116, 139, 0.8);
+  color: #cbd5e1;
+  border-color: rgba(100, 116, 139, 0.35);
+}
+
+/* drawing: amber */
+.overlay-state-drawing .overlay-marker svg path {
+  fill: #f59e0b;
+  stroke: #0b1020;
+}
+.overlay-state-drawing .overlay-hint {
+  background: rgba(245, 158, 11, 0.85);
+  color: #ffffff;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+/* State-specific hint text via data attributes */
+.overlay-hint::before {
+  content: attr(data-state-label);
+}

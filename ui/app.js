@@ -1566,20 +1566,82 @@ function startOverlay() {
   document.body.classList.add("overlay-mode");
   document.documentElement.classList.add("overlay-mode");
   const root = document.createElement("div");
-  root.className = "overlay-root";
+  root.className = "overlay-root overlay-state-idle";
   root.innerHTML = `
     <div class="overlay-marker" style="left: 32%; top: 28%;">
       <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
-        <path d="M4 2l14 8-6 1.6L9.4 18z" fill="#6ee7ff" stroke="#0b1020" stroke-width="1.2"/>
+        <path d="M4 2l14 8-6 1.6L9.4 18z" stroke="#0b1020" stroke-width="1.2"/>
       </svg>
       <span class="overlay-tag">Helpie</span>
     </div>
     <div class="overlay-highlight" style="left: 46%; top: 42%; width: 22%; height: 16%;">
       <span class="overlay-highlight-label">1</span>
     </div>
-    <div class="overlay-hint">Preview layer - hide it from the Helpie tray menu</div>
+    <div class="overlay-hint" data-state-label="idle">Idle</div>
   `;
   document.body.appendChild(root);
+
+  // Escape stops the current task and hides the overlay.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      stopOverlay();
+    }
+  });
+
+  // Sync visual state with the backend.
+  pollOverlayState();
+}
+
+function setOverlayState(state) {
+  const root = document.querySelector(".overlay-root");
+  if (!root) return;
+  root.className = root.className.replace(/overlay-state-\S+/g, "").trim();
+  root.classList.add(`overlay-state-${state}`);
+
+  const hint = document.querySelector(".overlay-hint");
+  const labels = {
+    idle: "Idle",
+    listening: "Listening\u2026",
+    hearing: "Hearing\u2026",
+    thinking: "Thinking\u2026",
+    speaking: "Speaking\u2026",
+    paused: "Paused",
+    error: "Error",
+    drawing: "Drawing\u2026",
+  };
+  if (hint) {
+    hint.setAttribute("data-state-label", labels[state] || state);
+  }
+}
+
+async function pollOverlayState() {
+  let lastState = null;
+  while (document.querySelector(".overlay-root")) {
+    try {
+      const data = await api("/api/overlay/state");
+      const state = data.state || "idle";
+      if (state !== lastState) {
+        setOverlayState(state);
+        lastState = state;
+      }
+    } catch (e) {
+      // Backend may not be ready yet; retry on the next tick.
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
+async function stopOverlay() {
+  try {
+    await api("/api/stop", { method: "POST" });
+  } catch (e) {
+    // Ignore - the overlay will still reset to idle via state sync.
+  }
+  try {
+    await api("/api/overlay/hide", { method: "POST" });
+  } catch (e) {
+    // Ignore - the tray menu can still hide the overlay.
+  }
 }
 
 async function boot() {
