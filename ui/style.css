@@ -1612,7 +1612,7 @@ body.overlay-mode .overlay-root {
 
 .overlay-hint {
   position: absolute;
-  bottom: 18px;
+  bottom: 56px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(11, 16, 32, 0.82);

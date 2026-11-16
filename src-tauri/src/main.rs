@@ -349,8 +349,36 @@ fn show_overlay(app: &AppHandle, port: u16) {
 
 fn hide_overlay(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("overlay") {
-        let _ = window.hide();
+        hide_without_activation(&window);
     }
+}
+
+/// Hide through Win32 rather than `window.hide()`.
+///
+/// The overlay is shown with a raw `ShowWindow`, so tao's tracked window flags
+/// still say "hidden". `hide()` only applies a *diff* against those flags, so it
+/// does nothing and the overlay stays on screen.
+#[cfg(windows)]
+fn hide_without_activation(window: &WebviewWindow) {
+    use std::ffi::c_void;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn ShowWindow(hwnd: *mut c_void, cmd: i32) -> i32;
+    }
+
+    const SW_HIDE: i32 = 0;
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            ShowWindow(hwnd.0 as *mut c_void, SW_HIDE);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn hide_without_activation(window: &WebviewWindow) {
+    let _ = window.hide();
 }
 
 /// Show a window without activating it, so the overlay never steals focus from
