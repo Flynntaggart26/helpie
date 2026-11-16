@@ -107,6 +107,7 @@ class App:
         self.reminders.on_fire = self._on_reminder
         self.reminders.start()
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
+        actions.set_screen_context_consent(bool(self.cfg.get("screen_context_consent", False)))
         
         # Initialize plugin manager
         self.plugins = plugins.manager
@@ -292,6 +293,7 @@ class App:
             self.cfg = previous_cfg
             raise
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
+        actions.set_screen_context_consent(bool(self.cfg.get("screen_context_consent", False)))
         self.brain.refresh(self.cfg)
         self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"),
                             cloud_consent=bool(self.cfg.get("cloud_tts_consent", False)))

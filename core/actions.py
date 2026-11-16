@@ -128,6 +128,7 @@ VK_MEDIA_NEXT, VK_MEDIA_PREV, VK_MEDIA_PLAY = 0xB0, 0xB1, 0xB3
 #  Quiet launching (open apps without yanking them in front of you)
 # --------------------------------------------------------------------------- #
 BACKGROUND_APPS = True
+_SCREEN_CONTEXT_CONSENT = False
 SW_SHOWMINNOACTIVE = 7
 SW_MINIMIZE = 6
 BROWSER_PROCESSES = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe",
@@ -155,6 +156,16 @@ def set_background_mode(enabled: bool) -> None:
     """Turn the 'open apps in the background' behaviour on or off at runtime."""
     global BACKGROUND_APPS
     BACKGROUND_APPS = bool(enabled)
+
+
+def set_screen_context_consent(enabled: bool) -> None:
+    """Turn screen context (AI screen reading) on or off at runtime.
+
+    When off, capture_screen() refuses to grab the screen so no plugin or
+    internal path can read the user's screen without consent.
+    """
+    global _SCREEN_CONTEXT_CONSENT
+    _SCREEN_CONTEXT_CONSENT = bool(enabled)
 
 
 def _foreground_hwnd() -> int:
@@ -556,7 +567,13 @@ def screenshot() -> str:
 
 
 def capture_screen(max_width: int = 1600) -> Optional[bytes]:
-    """Grab the current screen as a downscaled PNG (for the vision model)."""
+    """Grab the current screen as a downscaled PNG (for the vision model).
+
+    Refuses to capture when screen context consent is off, so no plugin or
+    internal path can read the user's screen without consent.
+    """
+    if not _SCREEN_CONTEXT_CONSENT:
+        return None
     try:
         import io
 
