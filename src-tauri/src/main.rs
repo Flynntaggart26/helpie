@@ -37,6 +37,14 @@ struct Backend {
 //  Paths and probing
 // --------------------------------------------------------------------------- //
 fn data_dir() -> PathBuf {
+    // The Python backend honours HELPIE_DATA_DIR, so the shell must use the
+    // same directory or the two disagree about where port.txt lives.
+    if let Ok(override_dir) = std::env::var("HELPIE_DATA_DIR") {
+        let trimmed = override_dir.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
     match std::env::var("APPDATA") {
         Ok(base) => PathBuf::from(base).join("Helpie"),
         Err(_) => PathBuf::from("data"),
@@ -63,6 +71,13 @@ fn read_port_file() -> Option<u16> {
         .and_then(|raw| raw.trim().parse::<u16>().ok())
 }
 
+/// The health probe request. The Host header must carry the port: the backend
+/// rejects any Host that is not exactly `127.0.0.1:<port>` with 421, so a
+/// port-less Host makes the shell think its own backend never started.
+fn health_request(port: u16) -> String {
+    format!("GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
+}
+
 /// True when something answers `/api/health` with a 200 on this port.
 fn http_ok(port: u16) -> bool {
     let addr = match format!("127.0.0.1:{port}").parse() {
@@ -74,8 +89,7 @@ fn http_ok(port: u16) -> bool {
         Err(_) => return false,
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let request = b"GET /api/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
-    if stream.write_all(request).is_err() {
+    if stream.write_all(health_request(port).as_bytes()).is_err() {
         return false;
     }
     let mut buf = [0u8; 256];
@@ -416,10 +430,23 @@ fn token_matches(supplied: &str, expected: &str) -> bool {
 
 #[cfg(test)]
 mod control_tests {
-    use super::{read_control_headers, TcpListener, TcpStream};
+    use super::{health_request, read_control_headers, TcpListener, TcpStream};
     use std::io::Write;
     use std::thread;
     use std::time::Duration;
+
+    /// Regression: the backend answers 421 to any Host that is not exactly
+    /// `127.0.0.1:<port>`, so a port-less Host silently stopped the shell from
+    /// starting its own backend.
+    #[test]
+    fn health_probe_sends_the_port_in_the_host_header() {
+        let request = health_request(58538);
+        assert!(
+            request.contains("Host: 127.0.0.1:58538\r\n"),
+            "health probe must send the port in Host: {request:?}"
+        );
+        assert!(request.starts_with("GET /api/health HTTP/1.1\r\n"));
+    }
 
     #[test]
     fn fragmented_control_header_is_reassembled() {
