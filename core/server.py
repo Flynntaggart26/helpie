@@ -257,6 +257,7 @@ class App:
         openai_key = self.cfg.get("openai_key", "")
         safe["openai_key_hint"] = ("•" * 6 + openai_key[-4:]) if openai_key else ""
         safe["has_openai_key"] = bool(openai_key)
+        safe["has_screen_context_consent"] = bool(self.cfg.get("screen_context_consent"))
         try:
             safe["autostart"] = autostart.enabled()
         except Exception:
@@ -273,6 +274,7 @@ class App:
         self.cfg = dict(self.cfg)
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "cloud_speech_consent", "cloud_tts_consent",
+                   "screen_context_consent",
                    "auto_listen", "continuous", "auto_turns",
                    "city", "check_updates", "background_apps",
                    "theme", "ollama_url", "ollama_model", "openai_url", "openai_key", "openai_model"}

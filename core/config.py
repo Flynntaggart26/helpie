@@ -54,6 +54,7 @@ DEFAULTS = {
     "language": "en-US",
     "cloud_speech_consent": False,
     "cloud_tts_consent": False,
+    "screen_context_consent": False,
     "hotkey": "ctrl+h",
     "auto_listen": True,
     "continuous": True,

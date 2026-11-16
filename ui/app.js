@@ -520,6 +520,7 @@ function applySettings() {
   $("set-rate").value = s.rate || "+0%";
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
   $("set-cloud-tts").checked = !!s.cloud_tts_consent;
+  $("set-screen-context").checked = !!s.screen_context_consent;
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
@@ -575,6 +576,7 @@ async function saveSettings() {
     rate: $("set-rate").value,
     cloud_speech_consent: $("set-cloud-transcription").checked,
     cloud_tts_consent: $("set-cloud-tts").checked,
+    screen_context_consent: $("set-screen-context").checked,
     // AI providers
     api_key: $("set-key").value.trim() || undefined,
     ollama_url: $("set-ollama-url").value.trim() || "http://localhost:11434",
