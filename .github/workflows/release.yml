@@ -19,9 +19,11 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content VERSION).Trim()
-          $tag = $env:GITHUB_REF_NAME
-          if ($tag -and $tag -ne "v$version") {
-            throw "VERSION ($version) does not match tag ($tag). Bump VERSION before tagging."
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            $tag = $env:GITHUB_REF_NAME
+            if ($tag -ne "v$version") {
+              throw "VERSION ($version) does not match tag ($tag). Bump VERSION before tagging."
+            }
           }
           Write-Host "Version $version"
 
@@ -34,8 +36,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install pyinstaller pillow
+          python -m pip install -r requirements-build.txt
 
       - name: Build Python sidecar
         shell: pwsh
@@ -50,7 +51,7 @@ jobs:
         shell: pwsh
         run: npx --yes @tauri-apps/cli@2 build
 
-      - name: Build source zip
+      - name: Build source archive
         shell: pwsh
         run: |
           $version = (Get-Content VERSION).Trim()
@@ -58,59 +59,56 @@ jobs:
           git archive --format=zip --output=$name HEAD
           Write-Host "Created $name"
 
-      - name: Build portable zip
+      - name: Build portable archive
         shell: pwsh
         run: |
           $version = (Get-Content VERSION).Trim()
-          $stage = "portable-stage\helpie-portable-v$version"
+          $stage = "portable-stage/helpie-portable-v$version"
           Remove-Item "portable-stage" -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Copy-Item "src-tauri\target\release\helpie.exe" "$stage\helpie.exe"
-          Copy-Item "src-tauri\sidecar\helpie-core" "$stage\helpie-core" -Recurse
-          'start "" "%~dp0helpie.exe"' | Set-Content "$stage\basla.bat"
-          $readme = 'Helpie Portable — v' + $version + '
-=========================
-
-No installer. Extract this folder anywhere and run `basla.bat` (or double-click `helpie.exe`).
-
-Requirements:
-- Windows 10/11 64-bit
-- Microsoft Edge WebView2 (the portable zip does NOT install it — if a
-  window fails to open, install WebView2 from
-  https://go.microsoft.com/fwlink/p/?LinkId=2124703)
-
-What's inside:
-- helpie.exe        — the Helpie shell (Tauri window)
-- helpie-core/      — the bundled Python assistant engine (runs beside the exe)
-- basla.bat         — one-click launcher
-
-Settings, chat history and your encrypted API key are stored in
-%APPDATA%\Helpie, so they follow your Windows account no matter where you
-extract this folder.
-
-"Windows protected your PC" (unknown publisher): Helpie is not code-signed,
-so SmartScreen shows a warning. Click More info -> Run anyway.
-
-Source: https://github.com/Flynntaggart26/helpie'
-          $readme | Set-Content "$stage\README-PORTABLE.txt"
-          Compress-Archive -Path "$stage\*" -DestinationPath "Helpie_${version}_x64-portable.zip" -Force
+          Copy-Item "src-tauri/target/release/helpie.exe" "$stage/helpie.exe"
+          Copy-Item "src-tauri/sidecar/helpie-core" "$stage/helpie-core" -Recurse
+          Copy-Item "packaging/portable/basla.bat" "$stage/basla.bat"
+          $readme = Get-Content "packaging/portable/README-PORTABLE.txt" -Raw
+          $readme.Replace("__VERSION__", $version) | Set-Content "$stage/README-PORTABLE.txt" -NoNewline
+          Compress-Archive -Path "$stage/*" -DestinationPath "Helpie_${version}_x64-portable.zip" -Force
           Write-Host "Created Helpie_${version}_x64-portable.zip"
 
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          $setup = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          $portable = Get-Item "Helpie_${version}_x64-portable.zip"
+          $source = Get-Item "helpie-v$version.zip"
+          $notes = Get-Content "packaging/release-notes.md" -Raw
+          $notes = $notes.Replace("__VERSION__", $version)
+          $notes = $notes.Replace("__SETUP_NAME__", $setup.Name)
+          $notes = $notes.Replace("__SETUP_SIZE__", $setup.Length.ToString("N0"))
+          $notes = $notes.Replace("__SETUP_SHA__", (Get-FileHash $setup.FullName -Algorithm SHA256).Hash)
+          $notes = $notes.Replace("__PORTABLE_NAME__", $portable.Name)
+          $notes = $notes.Replace("__PORTABLE_SIZE__", $portable.Length.ToString("N0"))
+          $notes = $notes.Replace("__PORTABLE_SHA__", (Get-FileHash $portable.FullName -Algorithm SHA256).Hash)
+          $notes = $notes.Replace("__SOURCE_NAME__", $source.Name)
+          $notes = $notes.Replace("__SOURCE_SIZE__", $source.Length.ToString("N0"))
+          $notes = $notes.Replace("__SOURCE_SHA__", (Get-FileHash $source.FullName -Algorithm SHA256).Hash)
+          $notes | Set-Content "release-notes.md" -NoNewline
+          Write-Host "Wrote release-notes.md"
+
       - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = (Get-Content VERSION).Trim()
-          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
-          $zip = "helpie-v$version.zip"
+          $tag = "v$version"
+          $setup = (Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1).FullName
           $portable = "Helpie_${version}_x64-portable.zip"
-          $notes = "Helpie $env:GITHUB_REF_NAME`n`nDownload ``Helpie_${version}_x64-setup.exe`` and double-click it. No Python and no administrator rights are needed.`nPrefer no installer at all? Download ``Helpie_${version}_x64-portable.zip``, extract anywhere, and run ``basla.bat``.`n`n**Windows may warn "Windows protected your PC" (unknown publisher).** The installer is not code-signed, so SmartScreen cannot show a publisher name. Click **More info -> Run anyway**; the full source is in this repository and the download comes from this release page.`n`nIf Windows Defender or a corporate antivirus quarantines the download, restore it and allow it - Helpie starts no hidden downloads and unpacks nothing into your temp folder.`n`nRequires Windows 10/11 (64-bit) with Microsoft Edge WebView2, which the installer adds automatically when it is missing.`n`nExisting installs update themselves from Settings, or automatically on startup when a newer release exists."
-          gh release view $env:GITHUB_REF_NAME *> $null
+          $source = "helpie-v$version.zip"
+          gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:GITHUB_REF_NAME $installer.FullName $zip $portable --clobber
+            gh release upload $tag $setup $portable $source --clobber
           } else {
-            gh release create $env:GITHUB_REF_NAME $installer.FullName $zip $portable `
-              --title "Helpie $env:GITHUB_REF_NAME" `
-              --notes $notes
+            gh release create $tag $setup $portable $source --title "Helpie $tag" --notes-file "release-notes.md"
           }
