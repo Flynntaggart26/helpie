@@ -24,8 +24,8 @@ build/
 *.zip
 *.exe
 portable-stage/
-release-notes-*.md
-release-notes.md
+/release-notes-*.md
+/release-notes.md
 
 # Tauri / Rust
 src-tauri/target/
