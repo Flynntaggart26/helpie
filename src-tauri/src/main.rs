@@ -26,6 +26,7 @@ const MAIN_W: f64 = 1180.0;
 const MAIN_H: f64 = 780.0;
 const TINY_W: f64 = 380.0;
 const TINY_H: f64 = 220.0;
+const MAX_CONTROL_HEADER: usize = 4096;
 
 struct Backend {
     child: Mutex<Option<Child>>,
@@ -134,12 +135,13 @@ fn cleanup_legacy_sidecar() {
     }
 }
 
-fn spawn_backend(port: u16, control_port: u16) -> Option<Child> {
+fn spawn_backend(port: u16, control_port: u16, control_token: &str) -> Option<Child> {
     let exe = sidecar_path()?;
     let mut command = Command::new(&exe);
     command
         .env("HELPIE_PORT", port.to_string())
         .env("HELPIE_CONTROL_PORT", control_port.to_string())
+        .env("HELPIE_CONTROL_TOKEN", control_token)
         .env("HELPIE_NO_BROWSER", "1")
         .env("HELPIE_DATA_DIR", data_dir())
         .current_dir(exe.parent()?);
@@ -277,33 +279,117 @@ fn hide_tiny(app: &AppHandle) {
 // --------------------------------------------------------------------------- //
 //  Control endpoint used by the Python backend
 // --------------------------------------------------------------------------- //
-fn start_control(app: AppHandle, backend_port: u16) -> std::io::Result<u16> {
+fn new_control_token() -> Option<String> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).ok()?;
+    Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn start_control(app: AppHandle, backend_port: u16, token: String) -> std::io::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
 
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
-            handle_control(&app, backend_port, stream);
+            handle_control(&app, backend_port, &token, stream);
         }
     });
 
     Ok(port)
 }
 
-fn handle_control(app: &AppHandle, port: u16, mut stream: TcpStream) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-    let mut buf = [0u8; 512];
-    let read = stream.read(&mut buf).unwrap_or(0);
-    let request = String::from_utf8_lossy(&buf[..read]).to_string();
-    let action = request
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .trim_start_matches('/')
+fn read_control_headers(stream: &mut TcpStream) -> Result<Vec<u8>, u16> {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|_| 400u16)?;
+    let mut request_bytes = Vec::with_capacity(512);
+    let mut chunk = [0u8; 512];
+    loop {
+        let read = match stream.read(&mut chunk) {
+            Ok(0) => return Err(400),
+            Ok(read) => read,
+            Err(_) => return Err(400),
+        };
+        request_bytes.extend_from_slice(&chunk[..read]);
+        if request_bytes.len() > MAX_CONTROL_HEADER {
+            return Err(431);
+        }
+        if request_bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+            return Ok(request_bytes);
+        }
+    }
+}
+
+fn write_control_error(stream: &mut TcpStream, status: u16) {
+    let response: &[u8] = match status {
+        431 => b"HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        _ => b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+    };
+    let _ = stream.write_all(response);
+}
+
+fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream) {
+    let request_bytes = match read_control_headers(&mut stream) {
+        Ok(bytes) => bytes,
+        Err(status) => {
+            write_control_error(&mut stream, status);
+            return;
+        }
+    };
+
+    let request = String::from_utf8_lossy(&request_bytes).to_string();
+    let mut lines = request.split("\r\n");
+    let mut request_line = lines.next().unwrap_or("").split_whitespace();
+    let method = request_line.next().unwrap_or("");
+    let target = request_line.next().unwrap_or("");
+    let version = request_line.next().unwrap_or("");
+    if method != "GET"
+        || !matches!(version, "HTTP/1.0" | "HTTP/1.1")
+        || request_line.next().is_some()
+    {
+        let _ = stream.write_all(
+            b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+        return;
+    }
+
+    let mut supplied_token = None;
+    let mut duplicate_token = false;
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("x-helpie-control-token") {
+                if supplied_token.is_some() {
+                    duplicate_token = true;
+                    break;
+                }
+                supplied_token = Some(value.trim());
+            }
+        }
+    }
+    if duplicate_token || !supplied_token.is_some_and(|value| token_matches(value, token)) {
+        let _ = stream
+            .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        return;
+    }
+
+    let action = target
+        .strip_prefix('/')
+        .unwrap_or("")
         .split('?')
         .next()
         .unwrap_or("")
         .to_string();
+    if !matches!(
+        action.as_str(),
+        "full" | "focus" | "tiny" | "hide-tiny" | "quit"
+    ) {
+        let _ = stream
+            .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        return;
+    }
 
     match action.as_str() {
         "full" | "focus" => show_main(app, port, true),
@@ -313,7 +399,50 @@ fn handle_control(app: &AppHandle, port: u16, mut stream: TcpStream) {
         _ => {}
     }
 
-    let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+    let _ =
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+}
+
+fn token_matches(supplied: &str, expected: &str) -> bool {
+    if supplied.len() != expected.len() {
+        return false;
+    }
+    supplied
+        .bytes()
+        .zip(expected.bytes())
+        .fold(0u8, |difference, (left, right)| difference | (left ^ right))
+        == 0
+}
+
+#[cfg(test)]
+mod control_tests {
+    use super::{read_control_headers, TcpListener, TcpStream};
+    use std::io::Write;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn fragmented_control_header_is_reassembled() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind test listener");
+        let address = listener.local_addr().expect("read test address");
+        let sender = thread::spawn(move || {
+            let mut client = TcpStream::connect(address).expect("connect test client");
+            client
+                .write_all(b"GET /tiny HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Helpie-Control-")
+                .expect("send first header fragment");
+            thread::sleep(Duration::from_millis(25));
+            client
+                .write_all(b"Token: test-token\r\nConnection: close\r\n\r\n")
+                .expect("send second header fragment");
+        });
+
+        let (mut stream, _) = listener.accept().expect("accept test client");
+        let header = read_control_headers(&mut stream).expect("reassemble full header");
+        sender.join().expect("finish test sender");
+        let header = String::from_utf8(header).expect("valid UTF-8 header");
+        assert!(header.contains("X-Helpie-Control-Token: test-token"));
+        assert!(header.ends_with("\r\n\r\n"));
+    }
 }
 
 // --------------------------------------------------------------------------- //
@@ -380,7 +509,11 @@ fn boot(app: AppHandle) {
     }
 
     let port = free_port();
-    let control = start_control(app.clone(), port).unwrap_or(0);
+    let Some(control_token) = new_control_token() else {
+        show_error(&app, "Helpie could not start", "Secure window control could not be initialized.");
+        return;
+    };
+    let control = start_control(app.clone(), port, control_token.clone()).unwrap_or(0);
     log(&format!("boot: backend port {port}, control port {control}"));
 
     let _ = std::fs::create_dir_all(data_dir());
@@ -388,7 +521,7 @@ fn boot(app: AppHandle) {
         let _ = std::fs::write(data_dir().join("control_port.txt"), control.to_string());
     }
 
-    let child = spawn_backend(port, control);
+    let child = spawn_backend(port, control, &control_token);
     if child.is_none() {
         show_error(
             &app,

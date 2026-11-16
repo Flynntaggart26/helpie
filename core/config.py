@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-try:  # core/secrets.py (DPAPI), not the stdlib module
+try:  # The backend puts core/ on sys.path; this resolves to core/secrets.py.
     import secrets as dpapi
 except Exception:  # pragma: no cover
     dpapi = None
@@ -52,6 +52,8 @@ DEFAULTS = {
     "volume": 0.9,
     "mic_index": None,
     "language": "en-US",
+    "cloud_speech_consent": False,
+    "cloud_tts_consent": False,
     "hotkey": "ctrl+h",
     "auto_listen": True,
     "continuous": True,
@@ -93,15 +95,27 @@ def load() -> dict:
         except (json.JSONDecodeError, OSError):
             raw = {}
 
-    encrypted = str(raw.get("api_key_enc") or "")
-    plaintext = str(cfg.get("api_key") or "")
-    if encrypted and dpapi:
-        decrypted = dpapi.unprotect(encrypted)
-        if decrypted:
-            cfg["api_key"] = decrypted
-    elif plaintext and dpapi:
-        # Migrate an old plaintext key to DPAPI on first run.
-        save(cfg)
+    legacy_plaintext = []
+    for field in ("api_key", "openai_key", "wake_word_access_key"):
+        encrypted = str(raw.get(f"{field}_enc") or "")
+        plaintext = str(raw.get(field) or "")
+        if encrypted:
+            decrypted = dpapi.unprotect(encrypted) if dpapi else ""
+            cfg[field] = decrypted
+        elif plaintext:
+            cfg[field] = plaintext
+            legacy_plaintext.append(field)
+
+    # Migrate old plaintext settings. If DPAPI is unavailable or fails, erase
+    # the plaintext from disk and require the user to enter the key again.
+    if legacy_plaintext:
+        try:
+            save(cfg)
+        except (OSError, RuntimeError):
+            for field in legacy_plaintext:
+                cfg[field] = ""
+                raw.pop(field, None)
+            SETTINGS_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if not cfg.get("api_key"):
         cfg["api_key"] = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("HELPIE_API_KEY", "")
@@ -115,18 +129,33 @@ def save(cfg: dict) -> None:
     clean.pop("_has_key", None)
     clean.pop("key_hint", None)
 
-    key = str(clean.pop("api_key", "") or "").strip()
-    if key:
-        token = dpapi.protect(key) if dpapi else ""
-        if token:
-            clean["api_key_enc"] = token
-            clean.pop("api_key", None)
+    for field in ("api_key", "openai_key", "wake_word_access_key"):
+        key = str(clean.pop(field, "") or "").strip()
+        encrypted_field = f"{field}_enc"
+        if key:
+            token = dpapi.protect(key) if dpapi else ""
+            if not token:
+                raise RuntimeError(f"Could not securely protect {field}; the key was not saved.")
+            clean[encrypted_field] = token
         else:
-            clean["api_key"] = key
-    else:
-        clean.pop("api_key_enc", None)
+            clean.pop(encrypted_field, None)
 
     SETTINGS_PATH.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def protect_secret(value: str) -> str:
+    """Protect a credential with the current Windows user's DPAPI key."""
+    if not value:
+        return ""
+    token = dpapi.protect(value) if dpapi else ""
+    if not token:
+        raise RuntimeError("Windows could not securely protect this credential; it was not saved.")
+    return token
+
+
+def unprotect_secret(token: str) -> str:
+    """Decrypt a credential protected for the current Windows user."""
+    return dpapi.unprotect(token) if token and dpapi else ""
 
 
 def notes_path() -> Path:

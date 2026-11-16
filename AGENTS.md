@@ -1,3 +1,7 @@
+## Local-only AI project materials
+
+If this checkout contains .codex-local/, read PROJECT_PLAN.md and AI_AGENT_RULES.md there before planning or editing. When continuing existing work, read AI_PROGRESS.md if present. The folder is ignored by Git and is not part of releases. Keep its contents private unless the owner explicitly asks to publish them.
+
 # Helpie — instructions for every agent
 
 ## Hard rule: no voice during development

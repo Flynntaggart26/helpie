@@ -330,7 +330,7 @@ class Brain:
         if self.pending:
             pending, self.pending = self.pending, None
             if any(word in t for word in CONFIRM_YES):
-                return self._dispatch(*pending)
+                return self._dispatch(*pending, confirmed=True)
             if any(word in t for word in CONFIRM_NO):
                 return "Okay, cancelled."
             self.pending = pending
@@ -785,7 +785,17 @@ class Brain:
             return ("", "", "")
         return entry
 
-    def _dispatch(self, name: str, args: dict) -> str:
+    def _dispatch(self, name: str, args: dict, confirmed: bool = False) -> str:
+        if name == "power":
+            mode = str(args.get("mode", "shutdown")).lower()
+            if mode not in {"shutdown", "restart", "sleep"}:
+                return "I cannot perform that power action."
+            if not confirmed:
+                self.pending = ("power", {"mode": mode})
+                labels = {"shutdown": "shut the computer down", "restart": "restart the computer",
+                          "sleep": "put the computer to sleep"}
+                return f"I am about to {labels[mode]}. Are you sure?"
+            return self._power(mode)
         try:
             minutes = float(args.get("minutes", 0) or 0)
         except (TypeError, ValueError):
@@ -822,7 +832,6 @@ class Brain:
             "plan": lambda a: self._run_plan(a.get("steps") or []),
             "what_time": lambda a: actions.now_time(),
             "plan": lambda a: self._run_plan(a.get("steps") or []),
-            "power": lambda a: self._power(str(a.get("mode", "shutdown"))),
             "run_routine": lambda a: self._run_routine(a.get("name", ""), a.get("params", {})),
             "save_routine": lambda a: self._save_routine(a.get("name", ""), a.get("steps", []), a.get("description", "")),
             "delete_routine": lambda a: self._delete_routine(a.get("name", "")),
@@ -892,6 +901,9 @@ class Brain:
     def _run_routine(self, name: str, params: dict = None) -> str:
         if not hasattr(self, '_app') or not self._app:
             return "Routines not available."
+        routine = routines.get_routine(name)
+        if routine and any(step.get("action") == "power" for step in routine.get("steps", [])):
+            return "Power actions must be requested directly so Helpie can confirm them first."
         return routines.run_routine(name, params, executor=self._execute_routine_step)
 
     def _execute_routine_step(self, step_name: str, step_args: dict) -> str:

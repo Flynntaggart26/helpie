@@ -77,9 +77,14 @@ const COMMANDS = [
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 async function api(path, options = {}) {
+  const token = document.querySelector('meta[name="helpie-api-token"]')?.content || "";
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      ...(options.headers || {}),
+      "Content-Type": "application/json",
+      "X-Helpie-Token": token,
+    },
   });
   if (!response.ok) throw new Error("HTTP " + response.status);
   return response.json();
@@ -515,6 +520,8 @@ function applySettings() {
   document.body.className = themeClass;
   document.documentElement.className = themeClass;
   $("set-rate").value = s.rate || "+0%";
+  $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
+  $("set-cloud-tts").checked = !!s.cloud_tts_consent;
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
@@ -529,9 +536,9 @@ function applySettings() {
 
   // Wake word
   $("set-wake-word").checked = !!s.wake_word;
-  const pk = s.wake_word_access_key || "";
-  $("porcupine-key-state").textContent = pk ? "connected (" + pk.slice(-4).padStart(4, "•") + ")" : "not set";
-  $("porcupine-key-state").className = "badge" + (pk ? " has-key" : "");
+  const hasWakeWordKey = !!s.has_wake_word_key;
+  $("porcupine-key-state").textContent = hasWakeWordKey ? "connected" : "not set";
+  $("porcupine-key-state").className = "badge" + (hasWakeWordKey ? " has-key" : "");
 
   // AI Providers
   $("set-key").value = "";
@@ -575,6 +582,8 @@ async function saveSettings() {
     language: $("set-language").value,
     voice: $("set-voice").value,
     rate: $("set-rate").value,
+    cloud_speech_consent: $("set-cloud-transcription").checked,
+    cloud_tts_consent: $("set-cloud-tts").checked,
     // Wake word
     wake_word: $("set-wake-word").checked,
     wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
@@ -628,10 +637,10 @@ async function renderPlugins() {
           <div class="plugin-title">
             <strong>${escapeHtml(p.display_name || p.name)}</strong>
             <span class="plugin-version">v${escapeHtml(p.version)}</span>
-            ${p.error ? `<span class="badge">error</span>` : ""}
+            ${p.error ? `<span class="badge">${p.trusted ? "error" : "blocked"}</span>` : ""}
           </div>
           <label class="switch" title="Enable or disable">
-            <input type="checkbox" data-enable="${escapeHtml(p.name)}" ${p.enabled ? "checked" : ""} />
+            <input type="checkbox" data-enable="${escapeHtml(p.name)}" ${p.enabled ? "checked" : ""} ${p.trusted ? "" : "disabled"} />
             <span class="track"></span>
           </label>
         </div>
@@ -644,8 +653,8 @@ async function renderPlugins() {
         </div>
         ${p.error ? `<div class="plugin-error">${escapeHtml(p.error)}</div>` : ""}
         <div class="plugin-actions">
-          <button class="ghost" data-configure="${escapeHtml(p.name)}">Configure</button>
-          <button class="ghost" data-reload="${escapeHtml(p.name)}">Reload</button>
+          <button class="ghost" data-configure="${escapeHtml(p.name)}" ${p.trusted ? "" : "disabled"}>Configure</button>
+          <button class="ghost" data-reload="${escapeHtml(p.name)}" ${p.trusted ? "" : "disabled"}>Reload</button>
         </div>
         <div class="plugin-config" id="config-${escapeHtml(p.name)}" hidden></div>
       </div>
@@ -654,6 +663,12 @@ async function renderPlugins() {
     container.querySelectorAll("[data-enable]").forEach((input) => {
       input.addEventListener("change", async () => {
         const name = input.dataset.enable;
+        if (input.checked && !window.confirm(
+          "This plugin is not sandboxed and can access files and network resources as Helpie. Enable it only if you trust its code. Continue?"
+        )) {
+          input.checked = false;
+          return;
+        }
         const path = input.checked ? "/api/plugins/load" : "/api/plugins/unload";
         try {
           await api(path, { method: "POST", body: JSON.stringify({ name }) });
@@ -696,6 +711,7 @@ async function togglePluginConfig(name) {
     const data = await api("/api/plugins/settings", { method: "POST", body: JSON.stringify({ name, get: true }) });
     const schema = data.schema || {};
     const values = data.settings || {};
+    const configured = data.configured || {};
     const keys = Object.keys(schema);
     if (!keys.length) {
       node.innerHTML = `<div class="plugin-empty">This plugin has no settings.</div>`;
@@ -706,14 +722,15 @@ async function togglePluginConfig(name) {
       const item = schema[key] || {};
       const label = key.replace(/_/g, " ");
       const desc = item.description ? `<span class="field-desc">${escapeHtml(item.description)}</span>` : "";
-      const current = values[key] !== undefined ? values[key] : (item.default !== undefined ? item.default : "");
+      const secret = /key|secret|token|password/i.test(key);
+      const current = secret ? "" : (values[key] !== undefined ? values[key] : (item.default !== undefined ? item.default : ""));
       let control;
       if (item.type === "boolean") {
         control = `<label class="switch"><input type="checkbox" data-key="${escapeHtml(key)}" ${current ? "checked" : ""} /><span class="track"></span></label>`;
       } else {
-        const secret = /key|secret|token|password/i.test(key);
         const type = item.type === "number" ? "number" : secret ? "password" : "text";
-        control = `<input type="${type}" data-key="${escapeHtml(key)}" value="${escapeHtml(String(current))}" placeholder="${escapeHtml(String(item.default === undefined ? "" : item.default))}" />`;
+        const placeholder = secret && configured[key] ? "Saved — enter a new value to replace" : String(item.default === undefined ? "" : item.default);
+        control = `<input type="${type}" data-key="${escapeHtml(key)}" value="${escapeHtml(String(current))}" placeholder="${escapeHtml(placeholder)}" />`;
       }
       return `<div class="field-row">` +
         `<div class="field-text"><span class="field-label">${escapeHtml(label)}</span>${desc}</div>` +
@@ -729,6 +746,7 @@ async function togglePluginConfig(name) {
       try {
         const fields = node.querySelectorAll("[data-key]");
         for (const field of fields) {
+          if (field.type === "password" && !field.value) continue;
           const value = field.type === "checkbox" ? field.checked : field.value;
           await api("/api/plugins/settings", { method: "POST", body: JSON.stringify({ name, key: field.dataset.key, value }) });
         }
@@ -750,7 +768,7 @@ async function reloadAllPlugins() {
   button.disabled = true;
   try {
     const data = await api("/api/plugins");
-    for (const plugin of data.plugins || []) {
+    for (const plugin of (data.plugins || []).filter((item) => item.enabled)) {
       await api("/api/plugins/reload", { method: "POST", body: JSON.stringify({ name: plugin.name }) });
     }
     toast("All plugins reloaded.");
@@ -1543,8 +1561,7 @@ async function boot() {
   bind();
   renderCommands();
   try {
-    const response = await fetch("/api/init");
-    const data = await response.json();
+    const data = await api("/api/init");
     state.settings = data.settings;
     state.mics = data.mics || [];
     state.voices = data.voices || [];

@@ -17,7 +17,20 @@ class Plugin:
 
     def init(self, api):
         self.api = api
-        self._history_file = Path(api._plugin.manifest.path.parent) / "history.json"
+        self._history_file = api.get_data_file("history.json")
+
+        # Move older development builds' history out of the source/plugin folder.
+        legacy_history = Path(api._plugin.manifest.path.parent) / "history.json"
+        if not self._history_file.exists() and legacy_history.is_file():
+            try:
+                legacy_data = json.loads(legacy_history.read_text(encoding="utf-8"))
+                if isinstance(legacy_data, list):
+                    self._history_file.write_text(
+                        json.dumps(legacy_data, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+            except (OSError, json.JSONDecodeError):
+                pass
 
         # Load history
         self._load_history()

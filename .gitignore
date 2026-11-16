@@ -31,3 +31,6 @@ src-tauri/target/
 src-tauri/binaries/
 src-tauri/sidecar/
 src-tauri/gen/
+
+# Private, local-only AI planning and instructions (never commit)
+/.codex-local/

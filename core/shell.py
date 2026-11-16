@@ -53,12 +53,15 @@ def request(action: str, timeout: float = 2.5) -> bool:
     a browser window themselves.
     """
     port = control_port()
-    if port is None:
+    token = os.environ.get("HELPIE_CONTROL_TOKEN", "").strip()
+    if port is None or not token:
         return False
     try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/{action}", timeout=timeout
-        ) as response:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/{action}",
+            headers={"X-Helpie-Control-Token": token},
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return 200 <= int(response.status) < 300
     except Exception:
         return False

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="helpie-api-token" content="__HELPIE_API_TOKEN__" />
   <title>Helpie</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -370,6 +371,26 @@
               <section class="settings-page" data-page="voice">
                 <p class="page-lead">Input device, recognition language and the voice Helpie answers with.</p>
 
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Allow Google to transcribe voice commands</span>
+                    <span class="split-desc">When enabled, Helpie sends recorded command audio to Google for transcription. Off by default. Typed commands remain available.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-cloud-transcription" /><span class="track"></span></label>
+                  </div>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Allow Microsoft Edge to create spoken replies</span>
+                    <span class="split-desc">When enabled, Helpie sends reply text to Microsoft’s online speech service. Off by default; replies still appear as text.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-cloud-tts" /><span class="track"></span></label>
+                  </div>
+                </div>
+
                 <div class="form-block">
                   <label class="page-label" for="set-mic">Microphone</label>
                   <select id="set-mic" class="wide"></select>
@@ -519,7 +540,7 @@
               <!-- ------------------------------ Plugins ------------------------------ -->
               <section class="settings-page" data-page="plugins">
                 <p class="page-lead">
-                  Extend what Helpie can do. Each plugin runs sandboxed and only gets the permissions listed in its manifest.
+                  Plugins start disabled, and this build only allows reviewed bundled plugins to run. Unreviewed additions are blocked. Enabling an allowed plugin runs its Python code with Helpie’s user-level access to files, network, and other app resources until you disable it or exit Helpie. Plugins are not sandboxed. Manifest permissions limit only Helpie’s plugin helper API; they cannot restrict plugin code.
                 </p>
 
                 <div class="plugins-toolbar">

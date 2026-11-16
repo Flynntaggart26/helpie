@@ -138,16 +138,21 @@ If you forked this repo, set the `HELPIE_REPO` environment variable (or edit
 ## Building the installer
 
 Requirements: Rust stable, Visual Studio Build Tools (C++ workload), Node 20+,
-Python 3.10+ with the packages from `requirements.txt`.
+Python 3.10+ with the packages from `requirements-build.txt`.
 
 ```powershell
+python -m pip install -r requirements-build.txt
 python make_icons.py          # regenerate src-tauri/icons from assets/helpie.png
 python build_sidecar.py       # bundle the Python backend into src-tauri/sidecar/
 npx @tauri-apps/cli@2 build   # -> src-tauri/target/release/bundle/nsis/*-setup.exe
 ```
 
-`build_sidecar.py` never includes `data/`, so a build can never ship your own
-settings or API key.
+Build scripts exclude `data/` and plugin runtime state. They package only the
+manifest and Python entry file for reviewed bundled plugins. Do not distribute
+existing `dist/` or portable ZIP outputs until you have rebuilt them from a
+clean environment; older outputs may contain local settings, history, or
+clipboard data. The legacy `Helpie.spec` is intentionally disabled because it
+could bundle local user data.
 
 ## Design refresh (v1.4.0)
 
@@ -284,7 +289,9 @@ Helpie has a built-in plugin system that lets you extend its capabilities withou
 1. Create a folder under `plugins/` (e.g., `plugins/my_plugin/`)
 2. Add `manifest.json` with name, version, entry point, permissions, and commands
 3. Create `plugin.py` with a `Plugin` class that has `init(api)` and optional `shutdown()` methods
-4. Restart Helpie — plugins are auto-discovered
+4. Restart Helpie — manifests are discovered but plugins stay disabled until you enable them in Settings → Plugins. Only reviewed, bundled plugins can be enabled in this build; unreviewed additions are blocked.
+
+**Security:** plugins are Python code and are not sandboxed. Enabling one allows its code to run with Helpie’s user-level access to files, network, and other resources. Manifest permissions restrict only calls through Helpie’s helper API; they do not restrict what plugin code can do directly. New plugin code must be reviewed and included in the bundled-plugin allowlist before it can run.
 
 ### Plugin manifest example
 
@@ -311,7 +318,7 @@ Helpie has a built-in plugin system that lets you extend its capabilities withou
 
 ### Plugin API
 
-Plugins receive an `api` object in their `init(api)` method with these capabilities:
+Plugins receive an `api` object in their `init(api)` method with these helper capabilities. The manifest permissions are checked when a plugin uses these helpers, but this is not an OS security boundary: the plugin’s Python code can bypass the helpers and access resources directly.
 
 | Permission | Methods |
 |------------|---------|
@@ -470,4 +477,26 @@ core/wintools.py      closes only Helpie's own browser window
 core/plugins.py       plugin manager, loader, API
 plugins/              plugin directory (example_weather, clipboard_history, system_monitor)
 ui/                   chat + sidebar interface
+```
+
+### Standalone folder build
+
+`build_exe.py` writes to `dist/Helpie` by default. To preserve existing output and build to a separate staging folder, set `HELPIE_BUILD_DIST_DIR` before running it:
+
+```powershell
+$env:HELPIE_BUILD_DIST_DIR = "C:\path\to\fresh-staging-folder"
+python build_exe.py
+```
+
+The build refuses known local user-state files in its output. Do not distribute older build artifacts that predate this guard.
+
+
+### Staging the backend sidecar without replacing the current copy
+
+Set these variables to fresh paths before running `build_sidecar.py`; the script refuses an existing custom output path:
+
+```powershell
+$env:HELPIE_SIDECAR_OUTPUT_DIR = "C:\path\to\fresh-sidecar\helpie-core"
+$env:HELPIE_SIDECAR_WORK_DIR = "C:\path\to\fresh-build-work"
+python build_sidecar.py
 ```

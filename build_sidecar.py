@@ -12,6 +12,7 @@ machines, and it makes startup slow.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -23,7 +24,12 @@ ROOT = Path(__file__).resolve().parent
 SIDECAR = ROOT / "src-tauri" / "sidecar" / "helpie-core"
 
 sys.path.insert(0, str(ROOT))
-from build_exe import HIDDEN_IMPORTS  # noqa: E402
+from build_exe import (  # noqa: E402
+    HIDDEN_IMPORTS,
+    PLUGIN_RUNTIME_FILES,
+    REVIEWED_BUNDLED_PLUGINS,
+    assert_no_local_state,
+)
 
 # Everything the app reads at runtime. `data/` is deliberately absent: it holds
 # the user's settings and encrypted API key and must never ship in a build.
@@ -31,7 +37,6 @@ DATA_FILES = [
     ("VERSION", "."),
     ("ui", "ui"),
     ("core", "core"),
-    ("plugins", "plugins"),
     ("requirements.txt", "."),
 ]
 
@@ -71,9 +76,13 @@ def prune(target: Path) -> int:
 
 
 def main() -> None:
-    SIDECAR.parent.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(os.environ.get("HELPIE_SIDECAR_OUTPUT_DIR", SIDECAR)).resolve()
+    if os.environ.get("HELPIE_SIDECAR_OUTPUT_DIR") and output_dir.exists():
+        raise FileExistsError(f"Refusing to overwrite sidecar output: {output_dir}")
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
     # Build outside OneDrive: syncing locks PyInstaller's scratch folder.
-    build_dir = Path(tempfile.gettempdir()) / "helpie-sidecar-build"
+    work_parent = Path(os.environ.get("HELPIE_SIDECAR_WORK_DIR", tempfile.gettempdir()))
+    build_dir = work_parent / "helpie-sidecar-build"
     dist_dir = build_dir / "dist"
 
     for _ in range(6):
@@ -92,6 +101,8 @@ def main() -> None:
         "--windowed",
         "--noconfirm",
         "--clean",
+        "--paths",
+        str(ROOT / "core"),
         "--distpath",
         str(dist_dir),
         "--workpath",
@@ -109,8 +120,15 @@ def main() -> None:
         if path.exists():
             cmd.extend(["--add-data", f"{path};{dest}"])
 
+    # Include plugin code/manifests only; exclude source-tree runtime data.
+    for plugin_id in sorted(REVIEWED_BUNDLED_PLUGINS):
+        for filename in PLUGIN_RUNTIME_FILES:
+            path = ROOT / "plugins" / plugin_id / filename
+            if not path.is_file():
+                raise FileNotFoundError(f"Missing bundled plugin file: {path}")
+            cmd.extend(["--add-data", f"{path};plugins/{plugin_id}"])
+
     cmd.extend(["--collect-submodules", "core"])
-    cmd.extend(["--collect-submodules", "plugins"])
     cmd.append(str(ROOT / "helpie.py"))
 
     print("Building the Helpie backend sidecar...")
@@ -123,19 +141,21 @@ def main() -> None:
     if not (built / "helpie-core.exe").exists():
         print(f"Sidecar build produced no exe in {built}")
         sys.exit(1)
+    assert_no_local_state(built)
 
     for _ in range(6):
-        shutil.rmtree(SIDECAR, ignore_errors=True)
-        if not SIDECAR.exists():
+        shutil.rmtree(output_dir, ignore_errors=True)
+        if not output_dir.exists():
             break
         time.sleep(1)
-    shutil.copytree(built, SIDECAR)
+    shutil.copytree(built, output_dir)
 
-    saved = prune(SIDECAR)
+    saved = prune(output_dir)
+    assert_no_local_state(output_dir)
 
-    total = sum(f.stat().st_size for f in SIDECAR.rglob("*") if f.is_file())
+    total = sum(f.stat().st_size for f in output_dir.rglob("*") if f.is_file())
     print(
-        f"Sidecar ready: {SIDECAR} ({total / (1024 * 1024):.1f} MB, "
+        f"Sidecar ready: {output_dir} ({total / (1024 * 1024):.1f} MB, "
         f"pruned {saved / (1024 * 1024):.1f} MB)"
     )
 

@@ -1,9 +1,10 @@
-"""Plugin system for Helpie: load, manage, and sandbox plugins."""
+"""Plugin system for Helpie: load and manage trusted in-process plugins."""
 from __future__ import annotations
 
 import importlib.util
 import json
 import os
+import re
 import sys
 import threading
 import traceback
@@ -12,11 +13,73 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import jsonschema
+import config
+from plugin_policy import PLUGIN_RUNTIME_FILES, REVIEWED_BUNDLED_PLUGINS
 
 PLUGINS_DIR = Path(__file__).resolve().parent.parent / "plugins"
 PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
-
 SCHEMA_PATH = Path(__file__).resolve().parent / "plugin_schema.json"
+SECRET_SETTING = re.compile(r"(?:key|secret|token|password)", re.I)
+
+
+def _settings_file(plugin: "Plugin") -> Path:
+    return config.DATA_DIR / "plugins" / plugin.manifest.name / "settings.json"
+
+
+def _save_settings_data(manifest: "PluginManifest", settings: dict) -> None:
+    path = config.DATA_DIR / "plugins" / manifest.name / "settings.json"
+    stored = {}
+    for key, value in settings.items():
+        if SECRET_SETTING.search(key):
+            if value:
+                stored[f"{key}_enc"] = config.protect_secret(str(value))
+        else:
+            stored[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _load_settings(manifest: "PluginManifest") -> dict:
+    settings = {key: item.get("default", "") for key, item in manifest.settings_schema.items()}
+    path = config.DATA_DIR / "plugins" / manifest.name / "settings.json"
+    legacy_path = manifest.path.parent / "settings.json"
+    migrating = not path.exists() and legacy_path.exists()
+    if migrating:
+        path = legacy_path
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        stored = {}
+    if not isinstance(stored, dict):
+        return settings
+    for key, value in stored.items():
+        if key.endswith("_enc"):
+            name = key[:-4]
+            if SECRET_SETTING.search(name):
+                settings[name] = config.unprotect_secret(str(value or ""))
+        elif not SECRET_SETTING.search(key):
+            settings[key] = value
+        elif key in manifest.settings_schema:
+            # Migrate an older plaintext credential to DPAPI on the next save.
+            settings[key] = value
+    if migrating:
+        try:
+            _save_settings_data(manifest, settings)
+        except RuntimeError:
+            # Do not keep legacy credentials in plaintext if DPAPI is unavailable.
+            for key, item in manifest.settings_schema.items():
+                if SECRET_SETTING.search(key):
+                    settings[key] = item.get("default", "")
+            legacy_path.unlink(missing_ok=True)
+        else:
+            legacy_path.unlink(missing_ok=True)
+    return settings
+
+
+def _save_settings(plugin: "Plugin") -> None:
+    _save_settings_data(plugin.manifest, plugin.settings)
 
 
 @dataclass
@@ -47,7 +110,10 @@ class Plugin:
     manifest: PluginManifest
     module: Any = None
     instance: Any = None
-    enabled: bool = True
+    # Importing a Python plugin executes arbitrary code with Helpie's privileges.
+    # Keep it disabled until the user explicitly enables it in the UI.
+    enabled: bool = False
+    reviewed: bool = False
     error: str = ""
     settings: dict = field(default_factory=dict)
 
@@ -55,8 +121,14 @@ class Plugin:
         if self.enabled is False:
             return False
         try:
-            entry_path = self.manifest.path.parent / self.manifest.entry
-            if not entry_path.exists():
+            plugin_root = self.manifest.path.parent.resolve()
+            entry_path = (plugin_root / self.manifest.entry).resolve()
+            try:
+                entry_path.relative_to(plugin_root)
+            except ValueError:
+                self.error = "Entry point must stay within the plugin directory"
+                return False
+            if not entry_path.is_file():
                 self.error = f"Entry point not found: {entry_path}"
                 return False
             spec = importlib.util.spec_from_file_location(
@@ -88,6 +160,8 @@ class Plugin:
             return False
 
     def unload(self) -> None:
+        module = self.module
+        module_name = getattr(module, "__name__", None)
         if self.instance and hasattr(self.instance, "shutdown"):
             try:
                 self.instance.shutdown()
@@ -96,13 +170,15 @@ class Plugin:
         self.instance = None
         self.module = None
         self._api = None
+        if module_name and sys.modules.get(module_name) is module:
+            del sys.modules[module_name]
 
     def _make_api(self) -> "PluginAPI":
         return PluginAPI(self)
 
 
 class PluginAPI:
-    """Sandboxed API exposed to plugins."""
+    """Capability-checked convenience API; plugins still run in-process."""
 
     def __init__(self, plugin: Plugin) -> None:
         self._plugin = plugin
@@ -142,12 +218,8 @@ class PluginAPI:
     def set_setting(self, key: str, value: Any) -> None:
         self._check("settings.write")
         self._settings[key] = value
-        # Persist to plugin's settings file
-        settings_file = self._plugin.manifest.path.parent / "settings.json"
-        try:
-            settings_file.write_text(json.dumps(self._settings, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+        self._plugin.settings[key] = value
+        _save_settings(self._plugin)
 
     # --- File System ---
     def read_file(self, path: str) -> str:
@@ -157,6 +229,27 @@ class PluginAPI:
     def write_file(self, path: str, content: str) -> None:
         self._check("fs.write")
         Path(path).write_text(content, encoding="utf-8")
+
+    def get_data_file(self, filename: str) -> Path:
+        """Return a path inside this plugin's per-user data directory."""
+        self._check("fs.read")
+        self._check("fs.write")
+        relative = Path(filename)
+        if relative.is_absolute() or not relative.parts or any(part in {".", ".."} for part in relative.parts):
+            raise ValueError("plugin data filename must be a safe relative path")
+
+        data_root = (config.DATA_DIR / "plugins" / self._plugin.manifest.name).resolve()
+        try:
+            data_root.relative_to(config.DATA_DIR.resolve())
+        except ValueError as exc:
+            raise ValueError("plugin data directory escapes Helpie's data directory") from exc
+        candidate = (data_root / relative).resolve()
+        try:
+            candidate.relative_to(data_root)
+        except ValueError as exc:
+            raise ValueError("plugin data file escapes its plugin data directory") from exc
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
 
     # --- Network ---
     def http_get(self, url: str, headers: dict = None, timeout: float = 10.0) -> dict:
@@ -215,11 +308,21 @@ class PluginManager:
 
     def discover(self) -> list[dict]:
         results = []
-        for item in PLUGINS_DIR.iterdir():
+        plugins_root = PLUGINS_DIR.resolve()
+        for item in plugins_root.iterdir():
             if not item.is_dir():
                 continue
-            manifest_path = item / "manifest.json"
-            if not manifest_path.exists():
+            plugin_dir = item.resolve()
+            try:
+                plugin_dir.relative_to(plugins_root)
+            except ValueError:
+                continue
+            manifest_path = (plugin_dir / "manifest.json").resolve()
+            try:
+                manifest_path.relative_to(plugin_dir)
+            except ValueError:
+                continue
+            if not manifest_path.is_file():
                 continue
             try:
                 manifest = PluginManifest.from_file(manifest_path)
@@ -230,7 +333,8 @@ class PluginManager:
                     "version": manifest.version,
                     "description": manifest.description,
                     "author": manifest.author,
-                    "enabled": True,
+                    "enabled": False,
+                    "trusted": item.name in REVIEWED_BUNDLED_PLUGINS and manifest.name == item.name,
                     "error": "",
                 })
             except Exception as e:
@@ -248,18 +352,48 @@ class PluginManager:
     def load_all(self) -> dict[str, bool]:
         with self._lock:
             results = {}
-            for item in PLUGINS_DIR.iterdir():
+            plugins_root = PLUGINS_DIR.resolve()
+            for item in plugins_root.iterdir():
                 if not item.is_dir():
                     continue
-                manifest_path = item / "manifest.json"
-                if not manifest_path.exists():
+                plugin_dir = item.resolve()
+                try:
+                    plugin_dir.relative_to(plugins_root)
+                except ValueError:
+                    results[item.name] = False
+                    continue
+                manifest_path = (plugin_dir / "manifest.json").resolve()
+                try:
+                    manifest_path.relative_to(plugin_dir)
+                except ValueError:
+                    results[item.name] = False
+                    continue
+                if not manifest_path.is_file():
                     continue
                 try:
                     manifest = PluginManifest.from_file(manifest_path)
                     manifest.path = manifest_path
-                    plugin = Plugin(manifest=manifest)
+                    if manifest.name in self.plugins:
+                        duplicate = self.plugins[manifest.name]
+                        duplicate.reviewed = False
+                        duplicate.error = "Duplicate plugin identifier; all copies are blocked."
+                        results[manifest.name] = False
+                        continue
+                    reviewed = (
+                        item.name in REVIEWED_BUNDLED_PLUGINS
+                        and manifest.name == item.name
+                    )
+                    plugin = Plugin(
+                        manifest=manifest,
+                        settings=_load_settings(manifest),
+                        enabled=False,
+                        reviewed=reviewed,
+                    )
+                    if not reviewed:
+                        plugin.error = "Unreviewed plugin blocked; this build allows only reviewed bundled plugins."
                     self.plugins[manifest.name] = plugin
-                    results[manifest.name] = plugin.load()
+                    # Discovery and manifest validation must never execute plugin code.
+                    results[manifest.name] = False
                 except Exception as e:
                     results[item.name] = False
             return results
@@ -271,12 +405,16 @@ class PluginManager:
     def enable(self, name: str) -> bool:
         with self._lock:
             plugin = self.plugins.get(name)
-            if not plugin:
+            if not plugin or not plugin.reviewed:
                 return False
             if plugin.enabled:
                 return True
             plugin.enabled = True
-            return plugin.load()
+            if plugin.load():
+                return True
+            plugin.enabled = False
+            plugin.unload()
+            return False
 
     def disable(self, name: str) -> bool:
         with self._lock:
@@ -292,7 +430,7 @@ class PluginManager:
     def reload(self, name: str) -> bool:
         with self._lock:
             plugin = self.plugins.get(name)
-            if not plugin:
+            if not plugin or not plugin.enabled or not plugin.reviewed:
                 return False
             plugin.unload()
             return plugin.load()
@@ -311,6 +449,7 @@ class PluginManager:
                     "description": p.manifest.description,
                     "author": p.manifest.author,
                     "enabled": p.enabled,
+                    "trusted": p.reviewed,
                     "error": p.error,
                     "commands": commands,
                 })

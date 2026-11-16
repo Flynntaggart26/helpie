@@ -1,7 +1,8 @@
-"""Audit log: a timestamped record of everything Helpie actually does.
+"""Privacy-conscious audit log of action types and outcomes.
 
 Stored as JSON Lines in ``data/audit.jsonl`` so the newest entry is always the last
-line and the file is safe to append to from several threads.
+line and the file is safe to append to from several threads. Caller-provided
+details are intentionally omitted because they may contain private user content.
 """
 from __future__ import annotations
 
@@ -20,10 +21,11 @@ _lock = threading.RLock()
 
 
 def _entry(action: str, detail: str, ok: bool, source: str) -> dict:
+    has_detail = bool(str(detail or "").strip())
     return {
         "ts": dt.datetime.now().isoformat(timespec="seconds"),
         "action": str(action)[:120],
-        "detail": str(detail)[:400],
+        "detail": "Details withheld for privacy" if has_detail else "",
         "ok": bool(ok),
         "source": source,
     }

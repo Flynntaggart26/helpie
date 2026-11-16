@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import itertools
+import hmac
 import json
 import mimetypes
 import os
@@ -30,6 +31,7 @@ from voice import Listener, Speaker, WakeWordListener, list_microphones
 ROOT = config.APP_DIR
 UI_DIR = ROOT / "ui"
 TINY_W, TINY_H = 360, 180
+MAX_REQUEST_BODY = 1_048_576
 
 VOICES = [
     {"id": "en-US-AriaNeural", "label": "Aria — English (US, female)"},
@@ -149,6 +151,7 @@ def open_tiny_window(port: int) -> None:
 class App:
     def __init__(self) -> None:
         self.cfg = config.load()
+        self.api_token = os.urandom(32).hex()
         self.bus = EventBus()
         self.state = "idle"
         self._listen_lock = threading.Lock()
@@ -162,6 +165,7 @@ class App:
             voice=self.cfg["voice"],
             rate=self.cfg["rate"],
             volume=self.cfg["volume"],
+            cloud_consent=bool(self.cfg.get("cloud_tts_consent", False)),
             on_start=self._on_speak_start,
             on_end=self._on_speak_end,
         )
@@ -201,7 +205,7 @@ class App:
         """Called when wake word is detected."""
         if self._closing or self._listen_lock.locked():
             return
-        print("[WakeWord] Triggered -> opening tiny window, capturing screen, starting listen")
+        print("[WakeWord] Triggered -> opening tiny window and starting listen")
 
         # Open tiny window near cursor
         try:
@@ -209,32 +213,8 @@ class App:
         except Exception as e:
             print(f"[WakeWord] Failed to open tiny window: {e}")
 
-        # Capture screen and analyze in background
-        threading.Thread(target=self._wake_word_screen_analysis, daemon=True).start()
-
         # Start listening
         self.listen_async("wake_word")
-
-    def _wake_word_screen_analysis(self) -> None:
-        """Capture screen and get AI analysis after wake word."""
-        try:
-            if not self.brain.llm.available:
-                return
-            if getattr(self.brain.llm, "provider", "gemini") != "gemini":
-                return
-
-            image = actions.capture_screen()
-            if not image:
-                return
-
-            answer = self.brain.llm.vision("What is on the user's screen right now? Describe briefly.", image)
-            if answer:
-                # Push to UI as a system message
-                self.bus.push({"type": "message", "role": "assistant", "text": f"👁️ {answer}"})
-                self.history.append("assistant", f"👁️ {answer}")
-                self.speaker.say(f"I see: {answer}")
-        except Exception as e:
-            print(f"[WakeWord] Screen analysis failed: {e}")
 
     def _stop_wake_word(self) -> None:
         try:
@@ -287,6 +267,13 @@ class App:
         self.speaker.say(line)
 
     def listen(self, reason: str = "manual") -> None:
+        if not self.cfg.get("cloud_speech_consent", False):
+            self.push_state("idle")
+            self.bus.push({
+                "type": "error",
+                "text": "Voice commands are off until you enable Google transcription in Settings → Voice. Typed commands still work.",
+            })
+            return
         if not self._listen_lock.acquire(blocking=False):
             return
         try:
@@ -360,7 +347,8 @@ class App:
 
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
-        safe = {k: v for k, v in self.cfg.items() if k not in ("api_key", "openai_key")}
+        safe = {k: v for k, v in self.cfg.items()
+                if k not in ("api_key", "openai_key", "wake_word_access_key")}
         safe["has_key"] = bool(self.cfg.get("api_key"))
         safe["key_hint"] = ("•" * 6 + self.cfg["api_key"][-4:]) if self.cfg.get("api_key") else ""
         # Ollama settings
@@ -373,6 +361,7 @@ class App:
         openai_key = self.cfg.get("openai_key", "")
         safe["openai_key_hint"] = ("•" * 6 + openai_key[-4:]) if openai_key else ""
         safe["has_openai_key"] = bool(openai_key)
+        safe["has_wake_word_key"] = bool(self.cfg.get("wake_word_access_key"))
         try:
             safe["autostart"] = autostart.enabled()
         except Exception:
@@ -385,23 +374,34 @@ class App:
         return safe
 
     def update_settings(self, patch: dict) -> dict:
+        previous_cfg = dict(self.cfg)
+        self.cfg = dict(self.cfg)
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
-                   "mic_index", "language", "auto_listen", "continuous", "auto_turns",
+                   "mic_index", "language", "cloud_speech_consent", "cloud_tts_consent",
+                   "auto_listen", "continuous", "auto_turns",
                    "city", "check_updates", "background_apps", "wake_word", "wake_word_access_key",
                    "theme", "ollama_url", "ollama_model", "openai_url", "openai_key", "openai_model"}
         for key, value in (patch or {}).items():
             if key in allowed:
+                # Empty password inputs mean "keep the saved credential".
+                if key in {"api_key", "openai_key", "wake_word_access_key"} and not value:
+                    continue
                 self.cfg[key] = value
         if isinstance(patch, dict) and "autostart" in patch:
             autostart.set_enabled(bool(patch.get("autostart")))
-        config.save(self.cfg)
+        try:
+            config.save(self.cfg)
+        except Exception:
+            self.cfg = previous_cfg
+            raise
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
         # Restart wake word if settings changed
         if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch:
             self._stop_wake_word()
             self._start_wake_word()
         self.brain.refresh(self.cfg)
-        self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"))
+        self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"),
+                            cloud_consent=bool(self.cfg.get("cloud_tts_consent", False)))
         self.bus.push({"type": "settings", "value": self.public_cfg()})
         return self.public_cfg()
 
@@ -449,6 +449,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        if content_type.lower().startswith("text/html"):
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; base-uri 'none'; object-src 'none'; "
+                "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                "font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self'",
+            )
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -459,33 +470,94 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def _body(self) -> dict:
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-            if not length:
-                return {}
-            return json.loads(self.rfile.read(length).decode("utf-8"))
-        except (ValueError, json.JSONDecodeError):
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) > 1 or self.headers.get("Transfer-Encoding"):
+            raise ValueError("invalid request framing")
+        raw_length = lengths[0].strip() if lengths else "0"
+        if (not raw_length or len(raw_length) > 10
+                or any(character < "0" or character > "9" for character in raw_length)):
+            raise ValueError("invalid Content-Length")
+        length = int(raw_length)
+        if length > MAX_REQUEST_BODY:
+            raise OverflowError("request body too large")
+        if length == 0:
             return {}
+        try:
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise ValueError("incomplete request body")
+            body = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ValueError("invalid JSON request body") from exc
+        if not isinstance(body, dict):
+            raise ValueError("request body must be a JSON object")
+        return body
+
+    def _trusted_local_request(self) -> bool:
+        """Reject DNS-rebinding and cross-origin requests to this loopback server."""
+        port = int(self.server.server_address[1])
+        expected_host = f"127.0.0.1:{port}"
+        hosts = self.headers.get_all("Host", [])
+        host = hosts[0].strip().lower() if len(hosts) == 1 else ""
+        if host != expected_host:
+            self.close_connection = True
+            self._json({"error": "invalid host"}, 421)
+            return False
+
+        origins = self.headers.get_all("Origin", [])
+        if len(origins) > 1:
+            self.close_connection = True
+            self._json({"error": "invalid origin"}, 403)
+            return False
+        origin = origins[0] if origins else None
+        expected_origin = f"http://{expected_host}"
+        if origin and origin.strip().lower() != expected_origin:
+            self.close_connection = True
+            self._json({"error": "invalid origin"}, 403)
+            return False
+        return True
+
+    def _authorized_api(self) -> bool:
+        token = self.headers.get("X-Helpie-Token", "")
+        expected = getattr(self.app, "api_token", "")
+        if expected and hmac.compare_digest(token.encode("utf-8"), expected.encode("ascii")):
+            return True
+        self.close_connection = True
+        self._json({"error": "unauthorized"}, 403)
+        return False
 
     def _static(self, path: str) -> None:
         relative = path.lstrip("/") or "index.html"
-        target = (UI_DIR / relative).resolve()
-        if not str(target).startswith(str(UI_DIR.resolve())) or not target.is_file():
+        root = UI_DIR.resolve()
+        target = (root / relative).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            self._json({"error": "not found"}, 404)
+            return
+        if not target.is_file():
             self._json({"error": "not found"}, 404)
             return
         content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
         if target.suffix in {".html", ".css", ".js"}:
             content_type += "; charset=utf-8"
-        self._send(200, target.read_bytes(), content_type)
+        content = target.read_bytes()
+        if target == root / "index.html":
+            content = content.replace(b"__HELPIE_API_TOKEN__", self.app.api_token.encode("ascii"))
+        self._send(200, content, content_type)
 
     # -- routes ---------------------------------------------------------- #
     def do_GET(self) -> None:
+        if not self._trusted_local_request():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
         app = self.app
 
         if path.startswith("/api/"):
+            if path != "/api/health" and not self._authorized_api():
+                return
             if path == "/api/init":
                 current = app.history.current_chat()
                 self._json({
@@ -568,9 +640,22 @@ class Handler(BaseHTTPRequestHandler):
         self._static(path)
 
     def do_POST(self) -> None:
+        if not self._trusted_local_request():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
-        body = self._body()
+        if not self._authorized_api():
+            return
+        try:
+            body = self._body()
+        except OverflowError:
+            self.close_connection = True
+            self._json({"error": "request body too large"}, 413)
+            return
+        except ValueError:
+            self.close_connection = True
+            self._json({"error": "invalid request body"}, 400)
+            return
         app = self.app
 
         if path == "/api/ask":
@@ -588,7 +673,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
         if path == "/api/settings":
-            self._json({"settings": app.update_settings(body)})
+            try:
+                settings = app.update_settings(body)
+            except RuntimeError as exc:
+                self._json({"error": str(exc)}, 503)
+                return
+            self._json({"settings": settings})
             return
         if path == "/api/test_voice":
             app.speaker.say(str(body.get("text") or "Hi, I'm Helpie. This is how I sound."))
@@ -704,21 +794,30 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "plugin not found"}, 404)
                 return
             if body.get("get"):
-                self._json({"settings": plugin.settings, "schema": plugin.manifest.settings_schema})
+                secret_keys = {key for key in plugin.manifest.settings_schema if plugins.SECRET_SETTING.search(key)}
+                public_settings = {key: value for key, value in plugin.settings.items() if key not in secret_keys}
+                configured = {key: bool(plugin.settings.get(key)) for key in secret_keys}
+                self._json({"settings": public_settings, "configured": configured,
+                            "schema": plugin.manifest.settings_schema})
             else:
                 key = str(body.get("key", "")).strip()
                 value = body.get("value")
-                if key:
-                    plugin.settings[key] = value
-                    # Save to file
-                    settings_file = plugin.manifest.path.parent / "settings.json"
-                    try:
-                        settings_file.write_text(json.dumps(plugin.settings, indent=2), encoding="utf-8")
-                    except Exception:
-                        pass
-                    self._json({"ok": True, "settings": plugin.settings})
-                else:
-                    self._json({"error": "key required"}, 400)
+                if not key or key not in plugin.manifest.settings_schema:
+                    self._json({"error": "valid setting key required"}, 400)
+                    return
+                secret = bool(plugins.SECRET_SETTING.search(key))
+                if secret and not value:
+                    self._json({"ok": True, "unchanged": True})
+                    return
+                previous = dict(plugin.settings)
+                plugin.settings[key] = value
+                try:
+                    plugins._save_settings(plugin)
+                except RuntimeError as exc:
+                    plugin.settings = previous
+                    self._json({"error": str(exc)}, 503)
+                    return
+                self._json({"ok": True})
             return
 
         # --- Routines ---

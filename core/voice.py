@@ -378,12 +378,14 @@ class Speaker:
         voice: str = "tr-TR-EmelNeural",
         rate: str = "+0%",
         volume: float = 0.9,
+        cloud_consent: bool = False,
         on_start: Optional[Callable[[], None]] = None,
         on_end: Optional[Callable[[], None]] = None,
     ) -> None:
         self.voice = voice
         self.rate = rate
         self.volume = volume
+        self.cloud_consent = bool(cloud_consent)
         self.on_start = on_start
         self.on_end = on_end
         self._queue: "queue.Queue[Optional[str]]" = queue.Queue()
@@ -393,17 +395,22 @@ class Speaker:
         self._worker.start()
 
     # ---------------------------------------------------------------- #
-    def update(self, voice: str | None = None, rate: str | None = None, volume: float | None = None) -> None:
+    def update(self, voice: str | None = None, rate: str | None = None, volume: float | None = None,
+               cloud_consent: bool | None = None) -> None:
         if voice:
             self.voice = voice
         if rate:
             self.rate = rate
         if volume is not None:
             self.volume = float(volume)
+        if cloud_consent is not None:
+            self.cloud_consent = bool(cloud_consent)
+            if not self.cloud_consent:
+                self.stop()
 
     def say(self, text: str) -> None:
         text = (text or "").strip()
-        if not text:
+        if not text or not self.cloud_consent:
             return
         for piece in self._split(text):
             self._queue.put(piece)
@@ -449,6 +456,8 @@ class Speaker:
         return chunks or [text]
 
     def _synth(self, text: str) -> str | None:
+        if not self.cloud_consent:
+            return None
         try:
             import edge_tts
 
@@ -472,6 +481,8 @@ class Speaker:
             text = self._queue.get()
             if text is None:
                 break
+            if not self.cloud_consent:
+                continue
             self._busy = True
             try:
                 if self.on_start:

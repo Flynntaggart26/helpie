@@ -13,12 +13,14 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import requests
 
@@ -52,6 +54,27 @@ def _parse(version: str) -> tuple[int, ...]:
 
 def is_newer(latest: str, current: str) -> bool:
     return _parse(latest) > _parse(current)
+
+
+def _is_release_asset(url: str, suffix: str) -> bool:
+    """Accept only HTTPS release assets for this configured GitHub repository."""
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return False
+    prefix = f"/{REPO}/releases/download/"
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "github.com"
+        and parsed.username is None
+        and parsed.password is None
+        and port in (None, 443)
+        and parsed.path.startswith(prefix)
+        and parsed.path.lower().endswith(suffix.lower())
+        and not parsed.query
+        and not parsed.fragment
+    )
 
 
 def check(timeout: float = 8.0) -> dict:
@@ -89,10 +112,15 @@ def check(timeout: float = 8.0) -> dict:
 
 
 def apply(url: str = "") -> dict:
+    release = check()
     if packaged():
-        return _apply_installer(url)
-    if not url:
-        return {"ok": False, "message": "No download URL."}
+        installer = release.get("installer", "")
+        if not release.get("available") or not _is_release_asset(installer, ".exe"):
+            return {"ok": False, "message": "No trusted installer is available for this release."}
+        return _apply_installer(installer)
+    expected = release.get("url", "")
+    if not release.get("available") or not expected or url != expected or not _is_release_asset(expected, ".zip"):
+        return {"ok": False, "message": "The update URL did not match the latest trusted release."}
     try:
         response = requests.get(url, timeout=60)
         response.raise_for_status()
@@ -104,7 +132,13 @@ def apply(url: str = "") -> dict:
     with tempfile.TemporaryDirectory() as temp:
         temp_path = Path(temp)
         try:
-            archive.extractall(temp_path)
+            for member in archive.infolist():
+                target = (temp_path / member.filename).resolve()
+                target.relative_to(temp_path.resolve())
+                mode = member.external_attr >> 16
+                if stat.S_ISLNK(mode):
+                    raise ValueError("symbolic links are not allowed in updates")
+                archive.extract(member, temp_path)
         except Exception as exc:
             return {"ok": False, "message": f"Unpack failed: {exc}"}
 
@@ -137,11 +171,8 @@ def _apply_installer(url: str) -> dict:
     A running exe cannot overwrite itself, so the installer is launched detached
     and waits a few seconds for both Helpie processes to be stopped.
     """
-    if not url or not url.lower().endswith(".exe"):
-        info = check()
-        url = info.get("installer", "")
-        if not url:
-            return {"ok": False, "message": "No installer published for this release."}
+    if not _is_release_asset(url, ".exe"):
+        return {"ok": False, "message": "The installer URL is not a trusted GitHub release asset."}
 
     target = Path(tempfile.gettempdir()) / "Helpie-update-setup.exe"
     try:
