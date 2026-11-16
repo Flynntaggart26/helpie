@@ -1540,3 +1540,85 @@ kbd { padding: 2px 6px; color: #dbe6f5; }
 .audit-action { color: #e2eaf6; font-weight: 550; }
 .audit-detail { color: #8494ab; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-empty { padding: 26px 18px; text-align: center; color: #64748b; font-size: 12px; }
+
+/* ---------------- Screen overlay (Phase 1) ---------------- */
+/* The overlay window is transparent and click-through. Everything that is not
+   the overlay layer is hidden so the desktop shows through. */
+html.overlay-mode,
+body.overlay-mode {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+body.overlay-mode > *:not(.overlay-root) {
+  display: none !important;
+}
+
+body.overlay-mode .overlay-root {
+  display: block;
+}
+
+.overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  user-select: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.overlay-marker {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+}
+
+.overlay-tag {
+  background: #0b1020;
+  color: #6ee7ff;
+  border: 1px solid #6ee7ff;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.overlay-highlight {
+  position: absolute;
+  border: 2px solid #6ee7ff;
+  border-radius: 10px;
+  background: rgba(110, 231, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(11, 16, 32, 0.35);
+}
+
+.overlay-highlight-label {
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #6ee7ff;
+  color: #0b1020;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-hint {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(11, 16, 32, 0.82);
+  color: #cfe6ff;
+  border: 1px solid rgba(110, 231, 255, 0.35);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+}

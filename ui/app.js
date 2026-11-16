@@ -1557,7 +1557,36 @@ function bind() {
 /* ------------------------------------------------------------------ */
 /*  Boot                                                               */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/*  Screen overlay (Phase 1)                                           */
+/* ------------------------------------------------------------------ */
+/* Rendered in a transparent, click-through window that covers the primary
+   monitor. It is a visual surface only: no input, no capture, no focus. */
+function startOverlay() {
+  document.body.classList.add("overlay-mode");
+  document.documentElement.classList.add("overlay-mode");
+  const root = document.createElement("div");
+  root.className = "overlay-root";
+  root.innerHTML = `
+    <div class="overlay-marker" style="left: 32%; top: 28%;">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+        <path d="M4 2l14 8-6 1.6L9.4 18z" fill="#6ee7ff" stroke="#0b1020" stroke-width="1.2"/>
+      </svg>
+      <span class="overlay-tag">Helpie</span>
+    </div>
+    <div class="overlay-highlight" style="left: 46%; top: 42%; width: 22%; height: 16%;">
+      <span class="overlay-highlight-label">1</span>
+    </div>
+    <div class="overlay-hint">Preview layer - hide it from the Helpie tray menu</div>
+  `;
+  document.body.appendChild(root);
+}
+
 async function boot() {
+  if (new URLSearchParams(location.search).get("view") === "overlay") {
+    startOverlay();
+    return;
+  }
   bind();
   renderCommands();
   try {
