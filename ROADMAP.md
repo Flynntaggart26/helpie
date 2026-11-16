@@ -33,6 +33,20 @@ consent, visual answers (highlights, equations, graphs, geometry), a
 policy-governed action broker, then tasks/plugins/chat consolidation and a
 signed beta.
 
+## Settled product scope
+
+These are decisions, not open questions:
+
+- **Windows 10 and 11, 64-bit.**
+- **Screen context is off by default.** Enabling it is a one-time grant in
+  Settings; nothing is captured until the user turns it on.
+- **Both a cloud provider (Gemini) and local models (Ollama).** The user
+  chooses. A local-only setup never sends data off the machine.
+- **Helpie does not click or type for you.** It highlights and points; the
+  overlay is click-through and never intercepts the pointer.
+- **English UI; commands work in English and Turkish.**
+- **Bundled, reviewed plugins only.** No third-party plugin distribution.
+
 ## Release rules
 
 - Tag must equal `v` + `VERSION`; `Cargo.toml` and `tauri.conf.json` must match.
