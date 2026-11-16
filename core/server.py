@@ -87,6 +87,7 @@ class App:
         self._listening = False
         self._closing = False
         self._speaking = False
+        self._cloud_voice_active = False
         self._turn = 0
         self.server: Optional[ThreadingHTTPServer] = None
 
@@ -162,10 +163,14 @@ class App:
 
     def _on_speak_start(self) -> None:
         self._speaking = True
+        self._cloud_voice_active = True
         self.push_state("speaking")
+        self.bus.push({"type": "cloud_voice", "active": True, "mode": "speak"})
 
     def _on_speak_end(self) -> None:
         self._speaking = False
+        self._cloud_voice_active = False
+        self.bus.push({"type": "cloud_voice", "active": False})
         if not self._listening:
             self.push_state("idle")
 
@@ -239,19 +244,27 @@ class App:
                     break
 
                 self.push_state("thinking", "transcribing…")
+                self._cloud_voice_active = True
+                self.bus.push({"type": "cloud_voice", "active": True, "mode": "transcribe"})
                 try:
                     text = self.listener.transcribe(wav, self.cfg.get("language", "en-US"))
                 except Exception as exc:
                     self.push_state("idle")
+                    self._cloud_voice_active = False
+                    self.bus.push({"type": "cloud_voice", "active": False})
                     self.bus.push({"type": "error",
                                    "text": f"Speech recognition failed ({type(exc).__name__}). Check your connection."})
                     break
 
                 if not text:
                     self.push_state("idle")
+                    self._cloud_voice_active = False
+                    self.bus.push({"type": "cloud_voice", "active": False})
                     self.bus.push({"type": "hint", "text": "I could not make out what you said."})
                     break
 
+                self._cloud_voice_active = False
+                self.bus.push({"type": "cloud_voice", "active": False})
                 self.bus.push({"type": "heard", "text": text})
                 self._listening = False
                 self.reply(text)
@@ -541,7 +554,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "version": updater.current_version()})
                 return
             if path == "/api/overlay/state":
-                self._json({"state": app.state})
+                self._json({"state": app.state, "cloud_voice_active": app._cloud_voice_active})
                 return
             if path == "/api/plugins":
                 self._json({"plugins": app.plugins.list_plugins()})

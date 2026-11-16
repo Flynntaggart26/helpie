@@ -1731,6 +1731,45 @@ body.overlay-mode .overlay-root {
   border-color: rgba(245, 158, 11, 0.5);
 }
 
+/* cloud active: blue pulse - voice data leaving device to cloud */
+.overlay-state-cloud-active .overlay-cloud {
+  display: block;
+  animation: overlay-pulse 2s ease-in-out infinite;
+}
+.overlay-state-cloud-active .overlay-cloud svg path {
+  fill: #2563eb;
+  stroke: #0b1020;
+}
+.overlay-state-cloud-active .overlay-hint {
+  background: rgba(37, 99, 235, 0.85);
+  color: #ffffff;
+  border-color: rgba(37, 99, 235, 0.5);
+}
+
+.overlay-cloud {
+  display: none;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+}
+.overlay-cloud svg {
+  width: 22px;
+  height: 22px;
+}
+.overlay-cloud-tag {
+  background: #0b1020;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 /* State-specific hint text via data attributes */
 .overlay-hint::before {
   content: attr(data-state-label);

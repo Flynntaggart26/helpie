@@ -1571,6 +1571,12 @@ function startOverlay() {
       </svg>
       <span class="overlay-tag">Helpie</span>
     </div>
+    <div class="overlay-cloud" style="left: 68%; top: 28%;">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-4.25 5-7 0-1.41-.61-2.75-1.65-3.77z"/>
+      </svg>
+      <span class="overlay-cloud-tag">Cloud</span>
+    </div>
     <div class="overlay-highlight" style="left: 46%; top: 42%; width: 22%; height: 16%;">
       <span class="overlay-highlight-label">1</span>
     </div>
@@ -1589,11 +1595,16 @@ function startOverlay() {
   pollOverlayState();
 }
 
-function setOverlayState(state) {
+function setOverlayState(state, cloudVoiceActive) {
   const root = document.querySelector(".overlay-root");
   if (!root) return;
   root.className = root.className.replace(/overlay-state-\S+/g, "").trim();
   root.classList.add(`overlay-state-${state}`);
+  if (cloudVoiceActive) {
+    root.classList.add("overlay-state-cloud-active");
+  } else {
+    root.classList.remove("overlay-state-cloud-active");
+  }
 
   const hint = document.querySelector(".overlay-hint");
   const labels = {
@@ -1613,13 +1624,16 @@ function setOverlayState(state) {
 
 async function pollOverlayState() {
   let lastState = null;
+  let lastCloudActive = null;
   while (document.querySelector(".overlay-root")) {
     try {
       const data = await api("/api/overlay/state");
       const state = data.state || "idle";
-      if (state !== lastState) {
-        setOverlayState(state);
+      const cloudActive = !!data.cloud_voice_active;
+      if (state !== lastState || cloudActive !== lastCloudActive) {
+        setOverlayState(state, cloudActive);
         lastState = state;
+        lastCloudActive = cloudActive;
       }
     } catch (e) {
       // Backend may not be ready yet; retry on the next tick.
