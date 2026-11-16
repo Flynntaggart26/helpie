@@ -38,6 +38,12 @@ struct Backend {
     port: Mutex<u16>,
 }
 
+/// Tracks every overlay window, one per monitor, so they can be shown and
+/// hidden together. Window names are unique (`overlay-0`, `overlay-1`, …).
+struct OverlayWindows {
+    handles: Mutex<Vec<WebviewWindow>>,
+}
+
 // --------------------------------------------------------------------------- //
 //  Paths and probing
 // --------------------------------------------------------------------------- //
@@ -305,51 +311,73 @@ fn hide_tiny(app: &AppHandle) {
 fn show_overlay(app: &AppHandle, port: u16) {
     let url = format!("{}/?view=overlay", base_url(port));
 
-    if let Some(window) = app.get_webview_window("overlay") {
-        let _ = window.eval(&format!("location.replace('{url}');"));
-        show_without_activation(&window);
-        return;
+    // Re-show existing overlay windows (re-navigate to refresh the URL).
+    {
+        let state = app.state::<OverlayWindows>();
+        let handles = state.handles.lock().unwrap();
+        if !handles.is_empty() {
+            for window in handles.iter() {
+                let _ = window.eval(&format!("location.replace('{url}');"));
+                show_without_activation(window);
+            }
+            return;
+        }
     }
 
-    let parsed = match Url::parse(&url) {
-        Ok(parsed) => parsed,
-        Err(_) => return,
-    };
+    // Create one overlay window per monitor so the annotation layer covers
+    // every display, including mixed-DPI setups. Physical coordinates place
+    // each window exactly on its monitor regardless of scale factor.
+    let mut new_handles = Vec::new();
+    match app.available_monitors() {
+        Ok(monitors) => {
+            for (index, monitor) in monitors.iter().enumerate() {
+                let window_name = format!("overlay-{}", index);
+                let parsed = match Url::parse(&url) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let built = WebviewWindowBuilder::new(app, &window_name, WebviewUrl::External(parsed))
+                    .title("Helpie overlay")
+                    .decorations(false)
+                    .transparent(true)
+                    .shadow(false)
+                    .resizable(false)
+                    .maximizable(false)
+                    .minimizable(false)
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .focused(false)
+                    .visible(false)
+                    .build();
 
-    let built = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::External(parsed))
-        .title("Helpie overlay")
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .visible(false)
-        .build();
-
-    match built {
-        Ok(window) => {
-            // Click-through: the overlay must never sit between the user and
-            // their work.
-            let _ = window.set_ignore_cursor_events(true);
-            if let Ok(Some(monitor)) = app.primary_monitor() {
-                let position = monitor.position();
-                let size = monitor.size();
-                let _ = window.set_position(PhysicalPosition::new(position.x, position.y));
-                let _ = window.set_size(PhysicalSize::new(size.width, size.height));
+                if let Ok(window) = built {
+                    // Click-through: the overlay must never sit between the
+                    // user and their work.
+                    let _ = window.set_ignore_cursor_events(true);
+                    let position = monitor.position();
+                    let size = monitor.size();
+                    let _ = window.set_position(PhysicalPosition::new(position.x, position.y));
+                    let _ = window.set_size(PhysicalSize::new(size.width, size.height));
+                    show_without_activation(&window);
+                    new_handles.push(window);
+                }
             }
-            show_without_activation(&window);
         }
-        Err(err) => eprintln!("[helpie] could not open overlay: {err}"),
+        Err(err) => eprintln!("[helpie] could not enumerate monitors: {err}"),
+    }
+
+    if !new_handles.is_empty() {
+        let state = app.state::<OverlayWindows>();
+        let mut handles = state.handles.lock().unwrap();
+        *handles = new_handles;
     }
 }
 
 fn hide_overlay(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("overlay") {
-        hide_without_activation(&window);
+    let state = app.state::<OverlayWindows>();
+    let handles = state.handles.lock().unwrap();
+    for window in handles.iter() {
+        hide_without_activation(window);
     }
 }
 
@@ -822,6 +850,9 @@ fn main() {
         .manage(Backend {
             child: Mutex::new(None),
             port: Mutex::new(0),
+        })
+        .manage(OverlayWindows {
+            handles: Mutex::new(Vec::new()),
         })
         .setup(|app| {
             let handle = app.handle().clone();
