@@ -3,10 +3,16 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.3
+## Current release: v1.16.4
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
+
+v1.16.4 is the v1.16.3 baseline plus a startup hotfix. v1.16.3 could not start:
+the shell's own health probe was rejected by the Host validation added in the
+same release, so the app always reported that the backend never answered. That
+release is withdrawn; upgrades from it are manual because it cannot self-update.
+
 v1.16.3 shipped the security baseline:
 
 - authenticated local API (per-run token, loopback Host/Origin checks, body cap)
