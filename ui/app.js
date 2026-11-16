@@ -25,7 +25,6 @@ const state = {
 const SETTINGS_PAGES = {
   general: ["General"],
   voice: ["Voice"],
-  wakeword: ["Wake Word"],
   "provider-gemini": ["AI Providers", "Gemini"],
   "provider-ollama": ["AI Providers", "Ollama"],
   "provider-custom": ["AI Providers", "Custom OpenAI"],
@@ -60,7 +59,6 @@ const COMMANDS = [
   ["Briefing", '"Good morning", "Give me a briefing"'],
   ["Chain commands", '"Open Chrome and search for cats", "Sesi kıs ve parlaklığı azalt", "Lock the screen, then take a screenshot"'],
   ["Organize files", '"Organize downloads by type", "Organize desktop by date", "Organize all preview", "Remove duplicates in downloads", "Clean empty folders"'],
-  ["Wake word", '"Hey Helpie" / "Jarvis" — starts listening without Ctrl+H (needs Porcupine AccessKey)'],
   ["Routines", '"Run start_work routine", "Save routine my_morning", "Run routine with params", "List routines"'],
   ["Email & Calendar", '"Read emails", "Send email to john@doe.com", "Show calendar", "Create meeting tomorrow 10am"'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
@@ -526,19 +524,12 @@ function applySettings() {
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
   $("set-background").checked = s.background_apps !== false;
-  $("set-wake-word").checked = !!s.wake_word;
   $("set-autostart").checked = !!s.autostart;
 
   // Voice settings
   $("set-voice").value = s.voice || "";
   $("set-language").value = s.language || "";
   $("set-rate").value = s.rate || "+0%";
-
-  // Wake word
-  $("set-wake-word").checked = !!s.wake_word;
-  const hasWakeWordKey = !!s.has_wake_word_key;
-  $("porcupine-key-state").textContent = hasWakeWordKey ? "connected" : "not set";
-  $("porcupine-key-state").className = "badge" + (hasWakeWordKey ? " has-key" : "");
 
   // AI Providers
   $("set-key").value = "";
@@ -584,9 +575,6 @@ async function saveSettings() {
     rate: $("set-rate").value,
     cloud_speech_consent: $("set-cloud-transcription").checked,
     cloud_tts_consent: $("set-cloud-tts").checked,
-    // Wake word
-    wake_word: $("set-wake-word").checked,
-    wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
     // AI providers
     api_key: $("set-key").value.trim() || undefined,
     ollama_url: $("set-ollama-url").value.trim() || "http://localhost:11434",
@@ -599,7 +587,6 @@ async function saveSettings() {
     const data = await api("/api/settings", { method: "POST", body: JSON.stringify(patch) });
     state.settings = data.settings;
     $("set-key").value = "";
-    $("set-porcupine-key").value = "";
     $("set-openai-key").value = "";
     applySettings();
     const hint = $("settings-saved");
@@ -1465,10 +1452,6 @@ function bind() {
   $("get-key").addEventListener("click", (event) => {
     event.preventDefault();
     window.open("https://aistudio.google.com/app/apikey", "_blank");
-  });
-  $("get-porcupine").addEventListener("click", (event) => {
-    event.preventDefault();
-    window.open("https://console.picovoice.ai/", "_blank");
   });
   $("mic-settings").addEventListener("click", (event) => {
     event.preventDefault();

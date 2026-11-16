@@ -26,11 +26,10 @@ import reminders
 import routines
 import updater
 from brain import Brain
-from voice import Listener, Speaker, WakeWordListener, list_microphones
+from voice import Listener, Speaker, list_microphones
 
 ROOT = config.APP_DIR
 UI_DIR = ROOT / "ui"
-TINY_W, TINY_H = 360, 180
 MAX_REQUEST_BODY = 1_048_576
 
 VOICES = [
@@ -75,76 +74,6 @@ class EventBus:
 
 
 # --------------------------------------------------------------------------- #
-#  Tiny window helper
-# --------------------------------------------------------------------------- #
-def open_tiny_window(port: int) -> None:
-    """Launch a small Edge app window near the cursor for wake-word interactions."""
-    try:
-        import shell
-
-        if shell.request("tiny"):
-            return
-    except Exception:
-        pass
-    try:
-        import ctypes
-        from pathlib import Path
-        import subprocess
-
-        EDGE_PATHS = [
-            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        ]
-        CHROME_PATHS = [
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        ]
-
-        user32 = ctypes.windll.user32
-        try:
-            user32.SetProcessDPIAware()
-        except Exception:
-            pass
-        width = int(user32.GetSystemMetrics(0))
-        height = int(user32.GetSystemMetrics(1))
-
-        # Get cursor position
-        pt = ctypes.wintypes.POINT()
-        user32.GetCursorPos(ctypes.byref(pt))
-        cursor_x, cursor_y = pt.x, pt.y
-
-        x = min(cursor_x + 20, width - TINY_W - 20)
-        y = min(cursor_y + 20, height - TINY_H - 20)
-
-        profile = config.DATA_DIR / "browser"
-        profile.mkdir(parents=True, exist_ok=True)
-
-        executable = next((p for p in EDGE_PATHS if Path(p).exists()), None)
-        if executable is None:
-            executable = next((p for p in CHROME_PATHS if Path(p).exists()), None)
-
-        url = f"http://127.0.0.1:{port}/?view=tiny"
-        if executable:
-            subprocess.Popen([
-                executable,
-                f"--app={url}",
-                f"--window-size={TINY_W},{TINY_H}",
-                f"--window-position={x},{y}",
-                f"--user-data-dir={profile}",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-sync",
-                "--no-service-autorun",
-                "--disable-notifications",
-                "--disable-features=msEdgeSyncPromo,msEdgeSplitScreen,msEdgeSidebar",
-            ])
-        else:
-            import webbrowser
-            webbrowser.open(url)
-    except Exception as e:
-        print(f"[TinyWindow] Failed to open: {e}")
-
-
 # --------------------------------------------------------------------------- #
 #  Application
 # --------------------------------------------------------------------------- #
@@ -170,7 +99,6 @@ class App:
             on_end=self._on_speak_end,
         )
         self.listener = Listener()
-        self.wake_word = WakeWordListener(on_wake=self._on_wake_word)
         self.brain = Brain(self.cfg, on_speak=self._speak, on_quit=self.shutdown,
                            on_event=self.bus.push)
         self.brain._app = self  # Give brain access to app for plugin commands
@@ -187,40 +115,8 @@ class App:
 
         # HELPIE_NO_VOICE=1 keeps the mic off during development and CI smoke tests.
         if os.environ.get("HELPIE_NO_VOICE") == "1":
-            self.cfg["wake_word"] = False
             self.cfg["auto_listen"] = False
             self.cfg["continuous"] = False
-
-        self._start_wake_word()
-
-    def _start_wake_word(self) -> None:
-        if self.cfg.get("wake_word", True):
-            access_key = self.cfg.get("wake_word_access_key", "")
-            mic_index = self.cfg.get("mic_index")
-            ok = self.wake_word.start(access_key=access_key, mic_index=mic_index)
-            if not ok:
-                print("[WakeWord] Could not start (pvporcupine not installed or no access key)")
-
-    def _on_wake_word(self) -> None:
-        """Called when wake word is detected."""
-        if self._closing or self._listen_lock.locked():
-            return
-        print("[WakeWord] Triggered -> opening tiny window and starting listen")
-
-        # Open tiny window near cursor
-        try:
-            open_tiny_window(self.port if hasattr(self, 'port') else 8765)
-        except Exception as e:
-            print(f"[WakeWord] Failed to open tiny window: {e}")
-
-        # Start listening
-        self.listen_async("wake_word")
-
-    def _stop_wake_word(self) -> None:
-        try:
-            self.wake_word.stop()
-        except Exception:
-            pass
 
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
@@ -348,7 +244,7 @@ class App:
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
         safe = {k: v for k, v in self.cfg.items()
-                if k not in ("api_key", "openai_key", "wake_word_access_key")}
+                if k not in ("api_key", "openai_key")}
         safe["has_key"] = bool(self.cfg.get("api_key"))
         safe["key_hint"] = ("•" * 6 + self.cfg["api_key"][-4:]) if self.cfg.get("api_key") else ""
         # Ollama settings
@@ -361,7 +257,6 @@ class App:
         openai_key = self.cfg.get("openai_key", "")
         safe["openai_key_hint"] = ("•" * 6 + openai_key[-4:]) if openai_key else ""
         safe["has_openai_key"] = bool(openai_key)
-        safe["has_wake_word_key"] = bool(self.cfg.get("wake_word_access_key"))
         try:
             safe["autostart"] = autostart.enabled()
         except Exception:
@@ -379,12 +274,12 @@ class App:
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "cloud_speech_consent", "cloud_tts_consent",
                    "auto_listen", "continuous", "auto_turns",
-                   "city", "check_updates", "background_apps", "wake_word", "wake_word_access_key",
+                   "city", "check_updates", "background_apps",
                    "theme", "ollama_url", "ollama_model", "openai_url", "openai_key", "openai_model"}
         for key, value in (patch or {}).items():
             if key in allowed:
                 # Empty password inputs mean "keep the saved credential".
-                if key in {"api_key", "openai_key", "wake_word_access_key"} and not value:
+                if key in {"api_key", "openai_key"} and not value:
                     continue
                 self.cfg[key] = value
         if isinstance(patch, dict) and "autostart" in patch:
@@ -395,10 +290,6 @@ class App:
             self.cfg = previous_cfg
             raise
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
-        # Restart wake word if settings changed
-        if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch:
-            self._stop_wake_word()
-            self._start_wake_word()
         self.brain.refresh(self.cfg)
         self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"),
                             cloud_consent=bool(self.cfg.get("cloud_tts_consent", False)))
@@ -412,7 +303,6 @@ class App:
             self.speaker.close()
         except Exception:
             pass
-        self._stop_wake_word()
         try:
             self.plugins.shutdown()
         except Exception:

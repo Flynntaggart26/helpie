@@ -68,7 +68,6 @@ HIDDEN_IMPORTS = [
     "comtypes.client",
     "pycaw",
     "pycaw.pycaw",
-    "pvporcupine",
     "keyboard",
     "requests",
     "PIL",
