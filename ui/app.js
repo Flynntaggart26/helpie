@@ -25,7 +25,6 @@ const state = {
 const SETTINGS_PAGES = {
   general: ["General"],
   voice: ["Voice"],
-  wakeword: ["Wake Word"],
   "provider-gemini": ["AI Providers", "Gemini"],
   "provider-ollama": ["AI Providers", "Ollama"],
   "provider-custom": ["AI Providers", "Custom OpenAI"],
@@ -60,7 +59,6 @@ const COMMANDS = [
   ["Briefing", '"Good morning", "Give me a briefing"'],
   ["Chain commands", '"Open Chrome and search for cats", "Sesi kıs ve parlaklığı azalt", "Lock the screen, then take a screenshot"'],
   ["Organize files", '"Organize downloads by type", "Organize desktop by date", "Organize all preview", "Remove duplicates in downloads", "Clean empty folders"'],
-  ["Wake word", '"Hey Helpie" / "Jarvis" — starts listening without Ctrl+H (needs Porcupine AccessKey)'],
   ["Routines", '"Run start_work routine", "Save routine my_morning", "Run routine with params", "List routines"'],
   ["Email & Calendar", '"Read emails", "Send email to john@doe.com", "Show calendar", "Create meeting tomorrow 10am"'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
@@ -522,23 +520,17 @@ function applySettings() {
   $("set-rate").value = s.rate || "+0%";
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
   $("set-cloud-tts").checked = !!s.cloud_tts_consent;
+  $("set-screen-context").checked = !!s.screen_context_consent;
   $("set-autolisten").checked = !!s.auto_listen;
   $("set-continuous").checked = !!s.continuous;
   $("set-updates").checked = !!s.check_updates;
   $("set-background").checked = s.background_apps !== false;
-  $("set-wake-word").checked = !!s.wake_word;
   $("set-autostart").checked = !!s.autostart;
 
   // Voice settings
   $("set-voice").value = s.voice || "";
   $("set-language").value = s.language || "";
   $("set-rate").value = s.rate || "+0%";
-
-  // Wake word
-  $("set-wake-word").checked = !!s.wake_word;
-  const hasWakeWordKey = !!s.has_wake_word_key;
-  $("porcupine-key-state").textContent = hasWakeWordKey ? "connected" : "not set";
-  $("porcupine-key-state").className = "badge" + (hasWakeWordKey ? " has-key" : "");
 
   // AI Providers
   $("set-key").value = "";
@@ -584,9 +576,7 @@ async function saveSettings() {
     rate: $("set-rate").value,
     cloud_speech_consent: $("set-cloud-transcription").checked,
     cloud_tts_consent: $("set-cloud-tts").checked,
-    // Wake word
-    wake_word: $("set-wake-word").checked,
-    wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
+    screen_context_consent: $("set-screen-context").checked,
     // AI providers
     api_key: $("set-key").value.trim() || undefined,
     ollama_url: $("set-ollama-url").value.trim() || "http://localhost:11434",
@@ -599,7 +589,6 @@ async function saveSettings() {
     const data = await api("/api/settings", { method: "POST", body: JSON.stringify(patch) });
     state.settings = data.settings;
     $("set-key").value = "";
-    $("set-porcupine-key").value = "";
     $("set-openai-key").value = "";
     applySettings();
     const hint = $("settings-saved");
@@ -1466,10 +1455,6 @@ function bind() {
     event.preventDefault();
     window.open("https://aistudio.google.com/app/apikey", "_blank");
   });
-  $("get-porcupine").addEventListener("click", (event) => {
-    event.preventDefault();
-    window.open("https://console.picovoice.ai/", "_blank");
-  });
   $("mic-settings").addEventListener("click", (event) => {
     event.preventDefault();
     window.open("ms-settings:privacy-microphone", "_blank");
@@ -1557,7 +1542,98 @@ function bind() {
 /* ------------------------------------------------------------------ */
 /*  Boot                                                               */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/*  Screen overlay (Phase 1)                                           */
+/* ------------------------------------------------------------------ */
+/* Rendered in a transparent, click-through window that covers the primary
+   monitor. It is a visual surface only: no input, no capture, no focus. */
+function startOverlay() {
+  document.body.classList.add("overlay-mode");
+  document.documentElement.classList.add("overlay-mode");
+  const root = document.createElement("div");
+  root.className = "overlay-root overlay-state-idle";
+  root.innerHTML = `
+    <div class="overlay-marker" style="left: 32%; top: 28%;">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+        <path d="M4 2l14 8-6 1.6L9.4 18z" stroke="#0b1020" stroke-width="1.2"/>
+      </svg>
+      <span class="overlay-tag">Helpie</span>
+    </div>
+    <div class="overlay-highlight" style="left: 46%; top: 42%; width: 22%; height: 16%;">
+      <span class="overlay-highlight-label">1</span>
+    </div>
+    <div class="overlay-hint" data-state-label="idle">Idle</div>
+  `;
+  document.body.appendChild(root);
+
+  // Escape stops the current task and hides the overlay.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      stopOverlay();
+    }
+  });
+
+  // Sync visual state with the backend.
+  pollOverlayState();
+}
+
+function setOverlayState(state) {
+  const root = document.querySelector(".overlay-root");
+  if (!root) return;
+  root.className = root.className.replace(/overlay-state-\S+/g, "").trim();
+  root.classList.add(`overlay-state-${state}`);
+
+  const hint = document.querySelector(".overlay-hint");
+  const labels = {
+    idle: "Idle",
+    listening: "Listening\u2026",
+    hearing: "Hearing\u2026",
+    thinking: "Thinking\u2026",
+    speaking: "Speaking\u2026",
+    paused: "Paused",
+    error: "Error",
+    drawing: "Drawing\u2026",
+  };
+  if (hint) {
+    hint.setAttribute("data-state-label", labels[state] || state);
+  }
+}
+
+async function pollOverlayState() {
+  let lastState = null;
+  while (document.querySelector(".overlay-root")) {
+    try {
+      const data = await api("/api/overlay/state");
+      const state = data.state || "idle";
+      if (state !== lastState) {
+        setOverlayState(state);
+        lastState = state;
+      }
+    } catch (e) {
+      // Backend may not be ready yet; retry on the next tick.
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
+async function stopOverlay() {
+  try {
+    await api("/api/stop", { method: "POST" });
+  } catch (e) {
+    // Ignore - the overlay will still reset to idle via state sync.
+  }
+  try {
+    await api("/api/overlay/hide", { method: "POST" });
+  } catch (e) {
+    // Ignore - the tray menu can still hide the overlay.
+  }
+}
+
 async function boot() {
+  if (new URLSearchParams(location.search).get("view") === "overlay") {
+    startOverlay();
+    return;
+  }
   bind();
   renderCommands();
   try {

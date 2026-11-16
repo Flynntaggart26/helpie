@@ -19,7 +19,7 @@ v1.16.3 shipped the security baseline:
 - tokenized shell control channel
 - DPAPI-encrypted provider and plugin secrets, no secret echo to the UI
 - explicit, off-by-default consent for cloud transcription and speech synthesis
-- no screen capture on wake word
+- no screen capture in overlay mode; annotation-only and click-through
 - plugins discoverable only from manifests, disabled by default, allowlisted,
   and documented as **not sandboxed**
 - packaging guards that fail the build if per-user state appears in a package

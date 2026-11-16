@@ -740,6 +740,9 @@ class Brain:
 
     # ------------------------------------------------------------------ #
     def _describe_screen(self, prompt: str) -> str:
+        if not self.cfg.get("screen_context_consent", False):
+            return ("Screen reading is off. Turn it on in Settings "
+                    "(Ctrl+H -> Settings -> Voice -> Allow screen reading).")
         if not self.llm.available:
             return ("Screen reading needs a free Gemini API key in Settings "
                     "(Ctrl+H -> Settings -> General).")

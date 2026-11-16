@@ -1540,3 +1540,198 @@ kbd { padding: 2px 6px; color: #dbe6f5; }
 .audit-action { color: #e2eaf6; font-weight: 550; }
 .audit-detail { color: #8494ab; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-empty { padding: 26px 18px; text-align: center; color: #64748b; font-size: 12px; }
+
+/* ---------------- Screen overlay (Phase 1) ---------------- */
+/* The overlay window is transparent and click-through. Everything that is not
+   the overlay layer is hidden so the desktop shows through. */
+html.overlay-mode,
+body.overlay-mode {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+body.overlay-mode > *:not(.overlay-root) {
+  display: none !important;
+}
+
+body.overlay-mode .overlay-root {
+  display: block;
+}
+
+.overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  user-select: none;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.overlay-marker {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+}
+
+.overlay-tag {
+  background: #0b1020;
+  color: #6ee7ff;
+  border: 1px solid #6ee7ff;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.overlay-highlight {
+  position: absolute;
+  border: 2px solid #6ee7ff;
+  border-radius: 10px;
+  background: rgba(110, 231, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(11, 16, 32, 0.35);
+}
+
+.overlay-highlight-label {
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #6ee7ff;
+  color: #0b1020;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-hint {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(11, 16, 32, 0.82);
+  color: #cfe6ff;
+  border: 1px solid rgba(110, 231, 255, 0.35);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* ---------------- Overlay state visuals ---------------- */
+
+@keyframes overlay-pulse {
+  0%, 100% {
+    opacity: 1;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+  }
+  50% {
+    opacity: 0.75;
+    filter: drop-shadow(0 2px 16px rgba(37, 99, 235, 0.6));
+  }
+}
+
+@keyframes overlay-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* idle: default, subtle cyan */
+.overlay-state-idle .overlay-marker svg path {
+  fill: #6ee7ff;
+  stroke: #0b1020;
+}
+.overlay-state-idle .overlay-hint {
+  background: rgba(11, 16, 32, 0.82);
+  color: #cfe6ff;
+  border-color: rgba(110, 231, 255, 0.35);
+}
+
+/* listening: pulsing blue */
+.overlay-state-listening .overlay-marker {
+  animation: overlay-pulse 2s ease-in-out infinite;
+}
+.overlay-state-listening .overlay-marker svg path {
+  fill: #2563eb;
+  stroke: #0b1020;
+}
+.overlay-state-listening .overlay-hint {
+  background: rgba(37, 99, 235, 0.85);
+  color: #ffffff;
+  border-color: rgba(37, 99, 235, 0.5);
+}
+
+/* thinking: spinning purple */
+.overlay-state-thinking .overlay-marker {
+  animation: overlay-spin 1s linear infinite;
+}
+.overlay-state-thinking .overlay-marker svg path {
+  fill: #7c3aed;
+  stroke: #0b1020;
+}
+.overlay-state-thinking .overlay-hint {
+  background: rgba(124, 58, 237, 0.85);
+  color: #ffffff;
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+/* speaking: green, solid */
+.overlay-state-speaking .overlay-marker svg path {
+  fill: #16a34a;
+  stroke: #0b1020;
+}
+.overlay-state-speaking .overlay-hint {
+  background: rgba(22, 163, 74, 0.85);
+  color: #ffffff;
+  border-color: rgba(22, 163, 74, 0.5);
+}
+
+/* error: pulsing red */
+.overlay-state-error .overlay-marker {
+  animation: overlay-pulse 1.5s ease-in-out infinite;
+}
+.overlay-state-error .overlay-marker svg path {
+  fill: #dc2626;
+  stroke: #0b1020;
+}
+.overlay-state-error .overlay-hint {
+  background: rgba(220, 38, 38, 0.85);
+  color: #ffffff;
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+/* paused: dimmed gray */
+.overlay-state-paused {
+  opacity: 0.55;
+}
+.overlay-state-paused .overlay-marker svg path {
+  fill: #64748b;
+  stroke: #0b1020;
+}
+.overlay-state-paused .overlay-hint {
+  background: rgba(100, 116, 139, 0.8);
+  color: #cbd5e1;
+  border-color: rgba(100, 116, 139, 0.35);
+}
+
+/* drawing: amber */
+.overlay-state-drawing .overlay-marker svg path {
+  fill: #f59e0b;
+  stroke: #0b1020;
+}
+.overlay-state-drawing .overlay-hint {
+  background: rgba(245, 158, 11, 0.85);
+  color: #ffffff;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+/* State-specific hint text via data attributes */
+.overlay-hint::before {
+  content: attr(data-state-label);
+}

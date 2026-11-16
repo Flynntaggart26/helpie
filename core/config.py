@@ -54,6 +54,7 @@ DEFAULTS = {
     "language": "en-US",
     "cloud_speech_consent": False,
     "cloud_tts_consent": False,
+    "screen_context_consent": False,
     "hotkey": "ctrl+h",
     "auto_listen": True,
     "continuous": True,
@@ -63,8 +64,6 @@ DEFAULTS = {
     "check_updates": True,
     "window": {"x": None, "y": None},
     "first_run": True,
-    "wake_word": True,
-    "wake_word_access_key": "",
     "theme": "dark",
     "ollama_url": "http://localhost:11434",
     "ollama_model": "llama3.2",
@@ -96,7 +95,7 @@ def load() -> dict:
             raw = {}
 
     legacy_plaintext = []
-    for field in ("api_key", "openai_key", "wake_word_access_key"):
+    for field in ("api_key", "openai_key"):
         encrypted = str(raw.get(f"{field}_enc") or "")
         plaintext = str(raw.get(field) or "")
         if encrypted:
@@ -129,7 +128,7 @@ def save(cfg: dict) -> None:
     clean.pop("_has_key", None)
     clean.pop("key_hint", None)
 
-    for field in ("api_key", "openai_key", "wake_word_access_key"):
+    for field in ("api_key", "openai_key"):
         key = str(clean.pop(field, "") or "").strip()
         encrypted_field = f"{field}_enc"
         if key:

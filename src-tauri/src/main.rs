@@ -14,7 +14,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager, PhysicalPosition, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, Url, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
+};
 
 /// Set by `--hidden` (autostart): start the backend without popping the window.
 static START_HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -31,6 +36,12 @@ const MAX_CONTROL_HEADER: usize = 4096;
 struct Backend {
     child: Mutex<Option<Child>>,
     port: Mutex<u16>,
+}
+
+/// Tracks every overlay window, one per monitor, so they can be shown and
+/// hidden together. Window names are unique (`overlay-0`, `overlay-1`, …).
+struct OverlayWindows {
+    handles: Mutex<Vec<WebviewWindow>>,
 }
 
 // --------------------------------------------------------------------------- //
@@ -291,6 +302,209 @@ fn hide_tiny(app: &AppHandle) {
 }
 
 // --------------------------------------------------------------------------- //
+//  Screen overlay
+// --------------------------------------------------------------------------- //
+// The overlay is the Phase 1 annotation layer: a transparent, click-through
+// window that covers the primary monitor and never takes focus. It draws a
+// marker that is deliberately distinct from the user's pointer. It is a visual
+// surface only - it cannot click, type, or read anything.
+fn show_overlay(app: &AppHandle, port: u16) {
+    let url = format!("{}/?view=overlay", base_url(port));
+
+    // Re-show existing overlay windows (re-navigate to refresh the URL).
+    {
+        let state = app.state::<OverlayWindows>();
+        let handles = state.handles.lock().unwrap();
+        if !handles.is_empty() {
+            for window in handles.iter() {
+                let _ = window.eval(&format!("location.replace('{url}');"));
+                show_without_activation(window);
+            }
+            return;
+        }
+    }
+
+    // Create one overlay window per monitor so the annotation layer covers
+    // every display, including mixed-DPI setups. Physical coordinates place
+    // each window exactly on its monitor regardless of scale factor.
+    let mut new_handles = Vec::new();
+    match app.available_monitors() {
+        Ok(monitors) => {
+            for (index, monitor) in monitors.iter().enumerate() {
+                let window_name = format!("overlay-{}", index);
+                let parsed = match Url::parse(&url) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let built = WebviewWindowBuilder::new(app, &window_name, WebviewUrl::External(parsed))
+                    .title("Helpie overlay")
+                    .decorations(false)
+                    .transparent(true)
+                    .shadow(false)
+                    .resizable(false)
+                    .maximizable(false)
+                    .minimizable(false)
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .focused(false)
+                    .visible(false)
+                    .build();
+
+                if let Ok(window) = built {
+                    // Click-through: the overlay must never sit between the
+                    // user and their work.
+                    let _ = window.set_ignore_cursor_events(true);
+                    let position = monitor.position();
+                    let size = monitor.size();
+                    let _ = window.set_position(PhysicalPosition::new(position.x, position.y));
+                    let _ = window.set_size(PhysicalSize::new(size.width, size.height));
+                    show_without_activation(&window);
+                    new_handles.push(window);
+                }
+            }
+        }
+        Err(err) => eprintln!("[helpie] could not enumerate monitors: {err}"),
+    }
+
+    if !new_handles.is_empty() {
+        let state = app.state::<OverlayWindows>();
+        let mut handles = state.handles.lock().unwrap();
+        *handles = new_handles;
+    }
+}
+
+fn hide_overlay(app: &AppHandle) {
+    let state = app.state::<OverlayWindows>();
+    let handles = state.handles.lock().unwrap();
+    for window in handles.iter() {
+        hide_without_activation(window);
+    }
+}
+
+/// Hide through Win32 rather than `window.hide()`.
+///
+/// The overlay is shown with a raw `ShowWindow`, so tao's tracked window flags
+/// still say "hidden". `hide()` only applies a *diff* against those flags, so it
+/// does nothing and the overlay stays on screen.
+#[cfg(windows)]
+fn hide_without_activation(window: &WebviewWindow) {
+    use std::ffi::c_void;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn ShowWindow(hwnd: *mut c_void, cmd: i32) -> i32;
+    }
+
+    const SW_HIDE: i32 = 0;
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            ShowWindow(hwnd.0 as *mut c_void, SW_HIDE);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn hide_without_activation(window: &WebviewWindow) {
+    let _ = window.hide();
+}
+
+/// Show a window without activating it, so the overlay never steals focus from
+/// whatever the user is doing.
+#[cfg(windows)]
+fn show_without_activation(window: &WebviewWindow) {
+    use std::ffi::c_void;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn ShowWindow(hwnd: *mut c_void, cmd: i32) -> i32;
+        fn GetWindowLongPtrW(hwnd: *mut c_void, index: i32) -> isize;
+        fn SetWindowLongPtrW(hwnd: *mut c_void, index: i32, value: isize) -> isize;
+    }
+
+    const GWL_EXSTYLE: i32 = -20;
+    const WS_EX_TRANSPARENT: isize = 0x0000_0020;
+    const WS_EX_TOOLWINDOW: isize = 0x0000_0080;
+    const WS_EX_NOACTIVATE: isize = 0x0800_0000;
+    const SW_SHOWNOACTIVATE: i32 = 4;
+
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let raw = hwnd.0 as *mut c_void;
+    unsafe {
+        let style = GetWindowLongPtrW(raw, GWL_EXSTYLE);
+        SetWindowLongPtrW(
+            raw,
+            GWL_EXSTYLE,
+            style | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+        );
+        ShowWindow(raw, SW_SHOWNOACTIVATE);
+    }
+}
+
+#[cfg(not(windows))]
+fn show_without_activation(window: &WebviewWindow) {
+    let _ = window.show();
+}
+
+// --------------------------------------------------------------------------- //
+//  Tray
+// --------------------------------------------------------------------------- //
+fn current_port(app: &AppHandle) -> Option<u16> {
+    let state = app.try_state::<Backend>()?;
+    let port = *state.port.lock().ok()?;
+    if port == 0 {
+        read_port_file()
+    } else {
+        Some(port)
+    }
+}
+
+fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Show Helpie", true, None::<&str>)?;
+    let tiny = MenuItem::with_id(app, "tiny", "Tiny window", true, None::<&str>)?;
+    let overlay = MenuItem::with_id(app, "overlay", "Show screen overlay", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide-overlay", "Hide screen overlay", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Helpie", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &tiny, &overlay, &hide, &separator, &quit])?;
+
+    let mut builder = TrayIconBuilder::with_id("helpie-tray")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("Helpie");
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => {
+                if let Some(port) = current_port(app) {
+                    show_main(app, port, true);
+                }
+            }
+            "tiny" => {
+                if let Some(port) = current_port(app) {
+                    show_tiny(app, port);
+                }
+            }
+            "overlay" => {
+                if let Some(port) = current_port(app) {
+                    show_overlay(app, port);
+                }
+            }
+            "hide-overlay" => hide_overlay(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+// --------------------------------------------------------------------------- //
 //  Control endpoint used by the Python backend
 // --------------------------------------------------------------------------- //
 fn new_control_token() -> Option<String> {
@@ -398,7 +612,7 @@ fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream
         .to_string();
     if !matches!(
         action.as_str(),
-        "full" | "focus" | "tiny" | "hide-tiny" | "quit"
+        "full" | "focus" | "tiny" | "hide-tiny" | "overlay" | "hide-overlay" | "quit"
     ) {
         let _ = stream
             .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
@@ -409,6 +623,8 @@ fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream
         "full" | "focus" => show_main(app, port, true),
         "tiny" => show_tiny(app, port),
         "hide-tiny" => hide_tiny(app),
+        "overlay" => show_overlay(app, port),
+        "hide-overlay" => hide_overlay(app),
         "quit" => app.exit(0),
         _ => {}
     }
@@ -635,6 +851,9 @@ fn main() {
             child: Mutex::new(None),
             port: Mutex::new(0),
         })
+        .manage(OverlayWindows {
+            handles: Mutex::new(Vec::new()),
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             let args: Vec<String> = std::env::args().collect();
@@ -682,6 +901,10 @@ fn main() {
 
             if hidden {
                 let _ = window.hide();
+            }
+
+            if let Err(err) = setup_tray(app.handle()) {
+                log(&format!("tray: {err}"));
             }
 
             std::thread::spawn(move || boot(handle));
