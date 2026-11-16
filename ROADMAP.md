@@ -3,10 +3,15 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.4
+## Current release: v1.16.6
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
+
+v1.16.6 ships capture-level screen context consent enforcement: `capture_screen()`
+returns None unless `screen_context_consent` is enabled in Settings -> Voice, so
+no plugin or internal path can read the user's screen without consent. v1.16.5
+(withdrawn) added the consent switch itself.
 
 v1.16.4 is the v1.16.3 baseline plus a startup hotfix. v1.16.3 could not start:
 the shell's own health probe was rejected by the Host validation added in the
@@ -24,20 +29,28 @@ v1.16.3 shipped the security baseline:
   and documented as **not sandboxed**
 - packaging guards that fail the build if per-user state appears in a package
 
-## Next: Phase 1, overlay shell and interaction model
+## Phase 1 — complete (shipped in v1.16.5 / v1.16.6)
 
 Goal: a Helpie presence that does not steal focus and can annotate the screen.
 
-- tray icon and configurable global hotkey
-- transparent, always-on-top annotation window with a distinct Helpie cursor
-- clear states: idle, listening, thinking, speaking, drawing, paused, error
-- a single Stop that hides annotations and cancels the current task
-- multi-monitor placement and DPI handling
+- tray icon and configurable global hotkey ✅
+- transparent, always-on-top annotation window with a distinct Helpie cursor ✅
+- clear states: idle, listening, thinking, speaking, drawing, paused, error ✅
+- a single Stop that hides annotations and cancels the current task ✅
+- multi-monitor placement and DPI handling ✅ (implemented; single-monitor tested)
+- consent-based screen context: off by default, one-time grant in Settings ✅
+  - consent enforced at the capture layer (`capture_screen()` returns None when off) ✅
 
-Planned after that: consent-based screen context, voice in/out with visible
-consent, visual answers (highlights, equations, graphs, geometry), a
-policy-governed action broker, then tasks/plugins/chat consolidation and a
-signed beta.
+## Next: Phase 2 candidates
+
+- wake word ("Hey Helpie") — requires Porcupine `.ppn` model + AccessKey bundling;
+  currently dropped; Ctrl+H opens the tiny window instead
+- voice in/out with visible consent (cloud_speech_consent and cloud_tts_consent
+  toggles already exist)
+- visual answers (highlights, equations, graphs, geometry)
+- policy-governed action broker
+- tasks/plugins/chat consolidation
+- signed beta (code-signing certificate required for SmartScreen)
 
 ## Settled product scope
 
