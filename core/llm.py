@@ -284,7 +284,8 @@ class Brain:
                 f"{base}/api/chat",
                 json={"model": self.ollama_model, "messages": messages,
                       "stream": False, "options": {"temperature": temperature}},
-                timeout=90,
+                # Local models can take minutes to load on the first request.
+                timeout=240,
             )
         except requests.RequestException:
             return None
