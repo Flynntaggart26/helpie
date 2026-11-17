@@ -58,14 +58,35 @@ SUMMARY_PROMPT = """You summarise documents for a desktop assistant whose answer
 class Brain:
     def __init__(self, api_key: str = "", provider: str = "gemini", model: str = "") -> None:
         self.api_key = (api_key or "").strip()
-        self.provider = provider or "gemini"
+        self.provider = (provider or "gemini").strip().lower()
         self.model = model or ""
+        self.ollama_url = "http://localhost:11434"
+        self.ollama_model = "llama3.2"
+        self.openai_url = ""
+        self.openai_key = ""
+        self.openai_model = ""
+        self.last_error = ""
         self.memory_text = ""
         self.history: list[dict] = []
         self._model_index = 0
 
+    def configure(self, cfg: dict) -> None:
+        """Apply provider settings. The single source of truth for startup and refresh."""
+        self.api_key = (cfg.get("api_key") or "").strip()
+        self.provider = (cfg.get("provider") or "gemini").strip().lower()
+        self.model = (cfg.get("model") or "").strip()
+        self.ollama_url = (cfg.get("ollama_url") or "http://localhost:11434").strip()
+        self.ollama_model = (cfg.get("ollama_model") or "llama3.2").strip()
+        self.openai_url = (cfg.get("openai_url") or "").strip()
+        self.openai_key = (cfg.get("openai_key") or "").strip()
+        self.openai_model = (cfg.get("openai_model") or "").strip()
+
     @property
     def available(self) -> bool:
+        if self.provider == "ollama":
+            return bool(self.ollama_url and self.ollama_model)
+        if self.provider == "openai":
+            return bool(self.openai_url)
         return bool(self.api_key)
 
     def reset(self) -> None:
@@ -82,14 +103,42 @@ class Brain:
         return [self.model or "llama-3.3-70b-versatile"]
 
     def chat(self, text: str) -> Optional[str]:
-        if not self.api_key:
+        self.last_error = ""
+        if not self.available:
+            self.last_error = self._not_ready_message()
             return None
         self.history.append({"role": "user", "text": text})
         self.history = self.history[-12:]
         try:
-            return self._gemini() if self.provider == "gemini" else self._openai_like()
+            if self.provider == "gemini":
+                reply = self._gemini()
+            elif self.provider == "ollama":
+                reply = self._ollama()
+            else:
+                reply = self._openai_like()
         except Exception:
-            return None
+            reply = None
+        if not reply:
+            self.last_error = self._unreachable_message()
+        return reply
+
+    def _not_ready_message(self) -> str:
+        if self.provider == "ollama":
+            return ("Ollama is not configured. Add the server URL and model in "
+                    "Settings -> AI Providers -> Ollama.")
+        if self.provider == "openai":
+            return ("The custom provider needs a base URL in "
+                    "Settings -> AI Providers -> Custom OpenAI.")
+        return ("Chat needs a Gemini API key. Add one in "
+                "Settings -> AI Providers -> Gemini.")
+
+    def _unreachable_message(self) -> str:
+        if self.provider == "ollama":
+            return (f"I could not reach Ollama at {self.ollama_url}. "
+                    "Make sure the Ollama app is running.")
+        if self.provider == "openai":
+            return f"I could not reach the model endpoint at {self.openai_url}."
+        return "I could not reach Gemini. Check your API key and your connection."
 
     def _gemini(self) -> Optional[str]:
         contents = [
@@ -158,7 +207,7 @@ class Brain:
     def summarize(self, text: str, name: str = "") -> Optional[str]:
         """Summarise a document without polluting the conversation history."""
         text = (text or "").strip()
-        if not text or not self.api_key:
+        if not text or not self.available:
             return None
         prompt = (f"Document name: {name or 'untitled'}\n"
                   f"Summarise it for the user.\n\n{text[:20000]}")
@@ -169,20 +218,42 @@ class Brain:
                 "generationConfig": {"temperature": 0.3, "maxOutputTokens": 600},
             }
             return self._gemini_request(payload)
-        base = self.model if self.model.startswith("http") else "https://api.groq.com/openai/v1"
-        base = base.rstrip("/")
-        model = "llama-3.3-70b-versatile" if "groq" in base else "gpt-4o-mini"
+        messages = [{"role": "system", "content": SUMMARY_PROMPT},
+                    {"role": "user", "content": prompt}]
+        if self.provider == "ollama":
+            return self._ollama_post(messages, temperature=0.3)
+        base = (self.openai_url or "").rstrip("/")
+        if not base:
+            return None
+        return self._openai_post(base, messages, self._openai_model(base), temperature=0.3)
+
+    def _openai_model(self, base: str) -> str:
+        return self.openai_model or (
+            "llama-3.3-70b-versatile" if "groq" in base else "gpt-4o-mini")
+
+    def _openai_like(self) -> Optional[str]:
+        base = (self.openai_url or "").rstrip("/")
+        if not base:
+            return None
+        messages = [{"role": "system", "content": self._system()}]
+        messages += [{"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]}
+                     for m in self.history]
+        reply = self._openai_post(base, messages, self._openai_model(base))
+        if reply:
+            self.history.append({"role": "model", "text": reply})
+        return reply
+
+    def _openai_post(self, base: str, messages: list[dict], model: str,
+                     temperature: float = 0.75) -> Optional[str]:
+        headers = {"Content-Type": "application/json"}
+        if self.openai_key:
+            headers["Authorization"] = f"Bearer {self.openai_key}"
         try:
             response = requests.post(
                 f"{base}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": model,
-                    "messages": [{"role": "system", "content": SUMMARY_PROMPT},
-                                 {"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 600,
-                },
+                headers=headers,
+                json={"model": model, "messages": messages,
+                      "temperature": temperature, "max_tokens": 500},
                 timeout=45,
             )
         except requests.RequestException:
@@ -194,28 +265,32 @@ class Brain:
         except (KeyError, IndexError):
             return None
 
-    def _openai_like(self) -> Optional[str]:
-        base = self.model if self.model.startswith("http") else "https://api.groq.com/openai/v1"
-        base = base.rstrip("/")
-        model = "llama-3.3-70b-versatile" if "groq" in base else "gpt-4o-mini"
+    def _ollama(self) -> Optional[str]:
         messages = [{"role": "system", "content": self._system()}]
         messages += [{"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]}
                      for m in self.history]
+        reply = self._ollama_post(messages)
+        if reply:
+            self.history.append({"role": "model", "text": reply})
+        return reply
+
+    def _ollama_post(self, messages: list[dict],
+                     temperature: float = 0.75) -> Optional[str]:
+        base = (self.ollama_url or "").rstrip("/")
+        if not base:
+            return None
         try:
             response = requests.post(
-                f"{base}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": messages, "temperature": 0.75, "max_tokens": 500},
-                timeout=30,
+                f"{base}/api/chat",
+                json={"model": self.ollama_model, "messages": messages,
+                      "stream": False, "options": {"temperature": temperature}},
+                timeout=90,
             )
         except requests.RequestException:
             return None
         if response.status_code != 200:
             return None
         try:
-            reply = response.json()["choices"][0]["message"]["content"].strip()
-        except (KeyError, IndexError):
+            return (response.json().get("message") or {}).get("content", "").strip() or None
+        except (ValueError, AttributeError):
             return None
-        if reply:
-            self.history.append({"role": "model", "text": reply})
-        return reply

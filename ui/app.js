@@ -25,6 +25,8 @@ const state = {
 const SETTINGS_PAGES = {
   general: ["General"],
   voice: ["Voice"],
+  wakeword: ["Wake Word"],
+  "provider-active": ["AI Providers", "Active provider"],
   "provider-gemini": ["AI Providers", "Gemini"],
   "provider-ollama": ["AI Providers", "Ollama"],
   "provider-custom": ["AI Providers", "Custom OpenAI"],
@@ -36,7 +38,7 @@ const SETTINGS_PAGES = {
 
 const SCOPE_PAGES = {
   all: null,
-  ai: ["provider-gemini", "provider-ollama", "provider-custom"],
+  ai: ["provider-active", "provider-gemini", "provider-ollama", "provider-custom"],
   plugins: ["plugins"],
 };
 
@@ -538,11 +540,13 @@ function applySettings() {
   $("set-rate").value = s.rate || "+0%";
 
   // AI Providers
+  $("set-provider").value = s.provider || "gemini";
   $("set-key").value = "";
   $("key-state").textContent = s.has_key ? "connected (" + s.key_hint + ")" : "not set";
   $("key-state").className = "badge" + (s.has_key ? " has-key" : "");
-  $("model-chip").className = "chip " + (s.has_key ? "on" : "off");
-  $("model-chip").innerHTML = `<span class="dot"></span> AI: ${s.has_key ? "Gemini connected" : "commands only"}`;
+  const chip = providerChip(s);
+  $("model-chip").className = "chip " + (chip.on ? "on" : "off");
+  $("model-chip").innerHTML = `<span class="dot"></span> AI: ${chip.label}`;
 
   // Ollama settings
   $("set-ollama-url").value = s.ollama_url || "http://localhost:11434";
@@ -560,6 +564,17 @@ function applySettings() {
 
   // Plugins
   renderPlugins();
+}
+
+function providerChip(s) {
+  const provider = s.provider || "gemini";
+  if (provider === "ollama") {
+    return { on: true, label: "Ollama (local)" };
+  }
+  if (provider === "openai") {
+    return { on: !!s.openai_url, label: s.openai_url ? "Custom provider" : "commands only" };
+  }
+  return { on: !!s.has_key, label: s.has_key ? "Gemini connected" : "commands only" };
 }
 
 async function saveSettings() {
@@ -585,6 +600,7 @@ async function saveSettings() {
     wake_word: $("set-wake-word").checked,
     wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
     // AI providers
+    provider: $("set-provider").value,
     api_key: $("set-key").value.trim() || undefined,
     ollama_url: $("set-ollama-url").value.trim() || "http://localhost:11434",
     ollama_model: $("set-ollama-model").value.trim() || "llama3.2",
@@ -1363,7 +1379,14 @@ function bind() {
   });
   $("settings-close").addEventListener("click", () => setView("chat"));
   $("settings-scope").addEventListener("change", (event) => {
-    state.scope = event.target.value;
+    const value = event.target.value;
+    if (SETTINGS_PAGES[value]) {
+      state.scope = "all";
+      refreshNav();
+      setSettingsPage(value);
+      return;
+    }
+    state.scope = value;
     refreshNav();
     const allowed = SCOPE_PAGES[state.scope];
     if (allowed && !allowed.includes(state.settingsPage)) setSettingsPage(allowed[0]);

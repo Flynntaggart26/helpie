@@ -180,15 +180,14 @@ class Brain:
         self.on_quit = on_quit or (lambda: None)
         self.on_event = on_event or (lambda _event: None)
         self.llm = LlmBrain(cfg.get("api_key", ""), cfg.get("provider", "gemini"), cfg.get("model", ""))
+        self.llm.configure(cfg)
         self.llm.memory_text = memory.as_prompt()
         self.pending: Optional[tuple[str, dict]] = None
         self._in_plan = False
 
     def refresh(self, cfg: dict) -> None:
         self.cfg = cfg
-        self.llm.api_key = (cfg.get("api_key") or "").strip()
-        self.llm.provider = cfg.get("provider") or "gemini"
-        self.llm.model = cfg.get("model") or ""
+        self.llm.configure(cfg)
         self.llm.memory_text = memory.as_prompt()
 
     def _refresh_memory(self) -> None:
@@ -729,13 +728,15 @@ class Brain:
                     spoken = self._dispatch(*action)
                     return f"{cleaned} {spoken}".strip() if cleaned else spoken
                 return cleaned or reply
+            if getattr(self.llm, "last_error", ""):
+                return self.llm.last_error
 
         if re.search(r"\b(open|close|set|start|stop|turn|delete|show)\b", t):
             return "Sorry, I did not understand that. Could you rephrase it?"
         if not self.llm.available:
             return ("Local features (time, weather, open apps, notes, reminders, "
-                    "calculations) work without a key. To chat and ask questions, "
-                    "add a free Gemini API key in Settings (Ctrl+H -> Settings -> General).")
+                    "calculations) work without a model. To chat and ask questions, "
+                    "add a provider in Settings (Ctrl+H -> Settings -> AI Providers).")
         return "Sorry, something went wrong while answering."
 
     # ------------------------------------------------------------------ #
@@ -744,10 +745,11 @@ class Brain:
             return ("Screen reading is off. Turn it on in Settings "
                     "(Ctrl+H -> Settings -> Voice -> Allow screen reading).")
         if not self.llm.available:
-            return ("Screen reading needs a free Gemini API key in Settings "
-                    "(Ctrl+H -> Settings -> General).")
+            return ("Screen reading needs a configured AI provider in Settings "
+                    "(Ctrl+H -> Settings -> AI Providers).")
         if getattr(self.llm, "provider", "gemini") != "gemini":
-            return "Screen reading works with the Gemini brain. Switch the provider in Settings."
+            return ("Screen reading currently works with the Gemini provider only. "
+                    "Switch it in Settings -> AI Providers.")
         image = actions.capture_screen()
         if not image:
             return "I could not capture the screen."

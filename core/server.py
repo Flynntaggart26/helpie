@@ -291,7 +291,7 @@ class App:
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
         safe = {k: v for k, v in self.cfg.items()
-                if k not in ("api_key", "openai_key")}
+                if k not in ("api_key", "openai_key", "wake_word_access_key")}
         safe["has_key"] = bool(self.cfg.get("api_key"))
         safe["key_hint"] = ("•" * 6 + self.cfg["api_key"][-4:]) if self.cfg.get("api_key") else ""
         # Ollama settings
@@ -331,6 +331,8 @@ class App:
             if key in allowed:
                 # Empty password inputs mean "keep the saved credential".
                 if key in {"api_key", "openai_key", "wake_word_access_key"} and not value:
+                    continue
+                if key == "provider" and value not in ("gemini", "ollama", "openai"):
                     continue
                 self.cfg[key] = value
         if isinstance(patch, dict) and "autostart" in patch:

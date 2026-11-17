@@ -3,15 +3,20 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.6
+## Current release: v1.16.8
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
 
-v1.16.6 ships capture-level screen context consent enforcement: `capture_screen()`
-returns None unless `screen_context_consent` is enabled in Settings -> Voice, so
-no plugin or internal path can read the user's screen without consent. v1.16.5
-(withdrawn) added the consent switch itself.
+v1.16.8 adds a visible cloud-voice indicator: while audio is sent to Google for
+transcription, or text is sent to Edge for speech, the overlay shows a pulsing
+"Cloud" badge. v1.16.7 restores the wake-word engine, off by default and gated
+behind a user-supplied Picovoice AccessKey (built-in "jarvis"/"computer"
+keywords; no custom "Hey Helpie" model is bundled). v1.16.6 enforces
+screen-context consent at capture time: `capture_screen()` returns None unless
+`screen_context_consent` is enabled in Settings -> Voice, so no plugin or
+internal path can read the screen without consent. v1.16.5 shipped the consent
+switch itself and completed Phase 1.
 
 v1.16.4 is the v1.16.3 baseline plus a startup hotfix. v1.16.3 could not start:
 the shell's own health probe was rejected by the Host validation added in the
@@ -43,14 +48,17 @@ Goal: a Helpie presence that does not steal focus and can annotate the screen.
 
 ## Next: Phase 2 candidates
 
-- wake word ("Hey Helpie") — requires Porcupine `.ppn` model + AccessKey bundling;
-  currently dropped; Ctrl+H opens the tiny window instead
-- voice in/out with visible consent (cloud_speech_consent and cloud_tts_consent
-  toggles already exist)
+- screen-context capture targets: monitor/window/region selection, a visible
+  capture indicator, and screenshot timestamp/window metadata. The consent gate
+  and capture-time enforcement are shipped; capture is still whole-desktop.
 - visual answers (highlights, equations, graphs, geometry)
 - policy-governed action broker
 - tasks/plugins/chat consolidation
+- interruptible speech and captions for voice replies
 - signed beta (code-signing certificate required for SmartScreen)
+
+Already shipped from this list: wake-word infrastructure (v1.16.7, off by
+default, AccessKey-gated) and visible voice consent (v1.16.8).
 
 ## Settled product scope
 

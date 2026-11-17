@@ -227,6 +227,7 @@
                 <option value="ai">AI models</option>
                 <option value="voice">Voice</option>
                 <option value="wakeword">Wake Word</option>
+                <option value="provider-active">AI Providers · Active</option>
                 <option value="provider-gemini">AI Providers · Gemini</option>
                 <option value="provider-ollama">AI Providers · Ollama</option>
                 <option value="provider-custom">AI Providers · Custom OpenAI</option>
@@ -252,6 +253,7 @@
                   <span class="sico">◇</span><span class="slabel">AI Providers</span><span class="caret">⌄</span>
                 </button>
                 <div class="settings-group-body">
+                  <button class="settings-nav-item sub" data-page="provider-active"><span class="sico">&#9673;</span><span class="slabel">Active provider</span></button>
                   <button class="settings-nav-item sub" data-page="provider-gemini"><span class="sico">&#10022;</span><span class="slabel">Gemini</span></button>
                   <button class="settings-nav-item sub" data-page="provider-ollama"><span class="sico">&#9677;</span><span class="slabel">Ollama</span></button>
                   <button class="settings-nav-item sub" data-page="provider-custom"><span class="sico">&#8984;</span><span class="slabel">Custom OpenAI</span></button>
@@ -472,6 +474,27 @@
                   </label>
                   <input id="set-porcupine-key" class="wide" type="password" placeholder="AccessKey." />
                   <p class="page-help">Required for the wake word. Get a free key from the Picovoice Console.</p>
+                </div>
+              </section>
+
+              <!-- --------------------------- Active provider --------------------------- -->
+              <section class="settings-page" data-page="provider-active">
+                <p class="page-lead">
+                  Choose which model Helpie talks to. Configure the provider on its own page first.
+                  Gemini and Custom OpenAI send data off this PC; Ollama runs locally.
+                </p>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-provider">Active provider</label>
+                  <select id="set-provider" class="wide">
+                    <option value="gemini">Gemini (cloud)</option>
+                    <option value="ollama">Ollama (local)</option>
+                    <option value="openai">Custom OpenAI-compatible</option>
+                  </select>
+                  <p class="page-help">
+                    If the chosen provider is unreachable, Helpie says so instead of switching
+                    to a different provider on its own.
+                  </p>
                 </div>
               </section>
 
