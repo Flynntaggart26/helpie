@@ -1984,6 +1984,11 @@ function clearOverlayAnnotations() {
 
 function updateOverlayAnnotations(payload, monitor) {
   const revision = Number(payload?.revision ?? 0);
+  if (payload?.schema_version !== 1) {
+    overlayAnnotationRevision = revision;
+    clearOverlayAnnotations();
+    return;
+  }
   if (revision === overlayAnnotationRevision) return;
   overlayAnnotationRevision = revision;
   clearOverlayAnnotations();

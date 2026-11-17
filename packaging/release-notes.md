@@ -20,6 +20,8 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
+- Visual annotations now use a versioned, bounded schema. Helpie clears them
+  instead of rendering data from a schema version it does not support.
 - When you explicitly ask the Ctrl+H companion to point something out, Helpie can
   show up to three temporary pins, highlight boxes, or arrows. The coordinates
   are checked and rendered as fixed SVG shapes; they disappear after 12 seconds

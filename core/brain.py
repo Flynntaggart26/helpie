@@ -95,6 +95,7 @@ SCREEN_REQUEST_RE = re.compile(
 )
 
 VISUAL_RESPONSE_MARKER = "[[HELPIE_VISUAL]]"
+VISUAL_SCHEMA_VERSION = 1
 
 
 def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
@@ -107,7 +108,11 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
         payload = json.loads(raw.strip())
     except (TypeError, ValueError):
         return spoken, []
-    if not isinstance(payload, dict) or set(payload) != {"items"}:
+    if (not isinstance(payload, dict)
+            or set(payload) != {"version", "items"}
+            or isinstance(payload.get("version"), bool)
+            or not isinstance(payload.get("version"), int)
+            or payload.get("version") != VISUAL_SCHEMA_VERSION):
         return spoken, []
     items = payload.get("items")
     if not isinstance(items, list) or not 1 <= len(items) <= 3:

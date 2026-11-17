@@ -106,7 +106,9 @@ class App:
         self._live_capture_status = {"state": "off", "active": False, "frame_ready": False,
                                      "target": "", "captured_at_ms": ""}
         self._visual_annotations_lock = threading.Lock()
-        self._visual_annotations = {"revision": 0, "items": [], "expires_at": 0.0}
+        self._visual_annotations = {
+            "schema_version": 1, "revision": 0, "items": [], "expires_at": 0.0,
+        }
         self._turn = 0
         self.server: Optional[ThreadingHTTPServer] = None
 
@@ -226,6 +228,7 @@ class App:
         with self._visual_annotations_lock:
             revision = int(self._visual_annotations.get("revision", 0)) + 1
             self._visual_annotations = {
+                "schema_version": 1,
                 "revision": revision,
                 "items": items,
                 "duration_ms": duration_ms,
@@ -235,7 +238,10 @@ class App:
     def clear_visual_annotations(self) -> None:
         with self._visual_annotations_lock:
             revision = int(self._visual_annotations.get("revision", 0)) + 1
-            self._visual_annotations = {"revision": revision, "items": [], "expires_at": 0.0}
+            self._visual_annotations = {
+                "schema_version": 1, "revision": revision,
+                "items": [], "expires_at": 0.0,
+            }
 
     def current_visual_annotations(self) -> dict:
         with self._visual_annotations_lock:
@@ -243,10 +249,12 @@ class App:
             if current.get("items") and current.get("expires_at", 0.0) <= time.monotonic():
                 revision = int(current.get("revision", 0)) + 1
                 self._visual_annotations = {
-                    "revision": revision, "items": [], "expires_at": 0.0,
+                    "schema_version": 1, "revision": revision,
+                    "items": [], "expires_at": 0.0,
                 }
                 current = self._visual_annotations
             return {
+                "schema_version": int(current.get("schema_version", 0)),
                 "revision": int(current.get("revision", 0)),
                 "items": list(current.get("items", [])),
                 "duration_ms": int(current.get("duration_ms", 0)),

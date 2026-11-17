@@ -14,6 +14,7 @@ from brain import SCREEN_REQUEST_RE, VISUAL_REQUEST_RE, _parse_visual_response  
 class VisualAnnotationTests(unittest.TestCase):
     def test_accepts_only_bounded_pin_rect_and_arrow(self) -> None:
         payload = {
+            "version": 1,
             "items": [
                 {"kind": "pin", "x": 0.25, "y": 0.5, "label": "OK\nbutton"},
                 {"kind": "rect", "x": 0.1, "y": 0.2, "width": 0.3,
@@ -31,7 +32,7 @@ class VisualAnnotationTests(unittest.TestCase):
         self.assertEqual(items[0]["label"], "OKbutton")
 
     def test_rejects_out_of_bounds_and_non_finite_coordinates(self) -> None:
-        payload = {"items": [
+        payload = {"version": 1, "items": [
             {"kind": "pin", "x": 1.1, "y": 0.5},
             {"kind": "rect", "x": 0.9, "y": 0.5, "width": 0.2, "height": 0.2},
             {"kind": "arrow", "x1": 0.1, "y1": float("nan"), "x2": 0.8, "y2": 0.8},
@@ -46,8 +47,11 @@ class VisualAnnotationTests(unittest.TestCase):
     def test_invalid_or_executable_payload_never_reaches_renderer(self) -> None:
         for payload in (
             "not-json",
-            '{"items":[{"kind":"pin","x":0.5,"y":0.5,"html":"<script>"}]}',
-            '{"items":[{"kind":"pin","x":0.5,"y":0.5}]} trailing text',
+            '{"version":1,"items":[{"kind":"pin","x":0.5,"y":0.5,"html":"<script>"}]}',
+            '{"version":1,"items":[{"kind":"pin","x":0.5,"y":0.5}]} trailing text',
+            '{"items":[{"kind":"pin","x":0.5,"y":0.5}]}',
+            '{"version":2,"items":[{"kind":"pin","x":0.5,"y":0.5}]}',
+            '{"version":true,"items":[{"kind":"pin","x":0.5,"y":0.5}]}',
         ):
             with self.subTest(payload=payload):
                 text, items = _parse_visual_response(

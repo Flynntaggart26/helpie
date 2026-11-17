@@ -13,6 +13,12 @@ local sketch pad in the Notes page. Visual notes store bounded vector strokes,
 not captured screen images. The Windows release workflow and visual-note tests
 passed; interactive desktop review remains useful for pointer feel and drawing.
 
+## Work in progress: v1.16.16 candidate (not released)
+
+Visual annotation proposals now use schema version 1. The backend rejects
+missing or unsupported schema versions, and the desktop overlay clears rather
+than rendering annotation data from an unknown version.
+
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
 
