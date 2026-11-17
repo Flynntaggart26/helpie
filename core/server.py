@@ -28,6 +28,7 @@ import plugins
 import reminders
 import routines
 import updater
+import visual_notes
 from brain import Brain
 from voice import Listener, Speaker, WakeWordListener, list_microphones
 
@@ -763,6 +764,24 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/notes":
                 self._json({"notes": list(reversed(actions.notes_list()))})
                 return
+            if path == "/api/visual-notes":
+                try:
+                    self._json({"notes": visual_notes.list_notes()})
+                except (OSError, ValueError):
+                    self._json({"error": "visual notes could not be read"}, 500)
+                return
+            if path.startswith("/api/visual-notes/"):
+                note_id = path.rsplit("/", 1)[-1]
+                try:
+                    note = visual_notes.get_note(note_id)
+                except (OSError, ValueError):
+                    self._json({"error": "visual note could not be read"}, 500)
+                    return
+                if not note:
+                    self._json({"error": "visual note not found"}, 404)
+                    return
+                self._json({"note": note})
+                return
             if path == "/api/update/check":
                 self._json(updater.check())
                 return
@@ -905,6 +924,35 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/notes/clear":
             actions.clear_notes()
+            self._json({"ok": True})
+            return
+        if path == "/api/visual-notes/save":
+            try:
+                note = visual_notes.save_note(
+                    str(body.get("id", "")), body.get("title", ""), body.get("strokes"),
+                )
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            except OSError:
+                self._json({"error": "visual note could not be saved"}, 500)
+                return
+            audit.log("Saved a visual note", source="notes")
+            self._json({"note": note})
+            return
+        if path == "/api/visual-notes/delete":
+            try:
+                removed = visual_notes.delete_note(str(body.get("id", "")))
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            except OSError:
+                self._json({"error": "visual note could not be deleted"}, 500)
+                return
+            if not removed:
+                self._json({"error": "visual note not found"}, 404)
+                return
+            audit.log("Deleted a visual note", source="notes")
             self._json({"ok": True})
             return
         if path == "/api/new_chat":

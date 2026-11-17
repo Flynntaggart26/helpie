@@ -21,6 +21,12 @@ const state = {
   pluginFilter: "all",
   auditSource: "",
   scope: "all",
+  visualNotes: [],
+  activeVisualNoteId: "",
+  visualNoteStrokes: [],
+  visualNotePointCount: 0,
+  activeVisualStroke: null,
+  visualNoteDirty: false,
 };
 
 const SETTINGS_PAGES = {
@@ -158,7 +164,9 @@ function setView(view) {
   document.body.classList.toggle("tiny-mode", view === "tiny");
   if (view === "notes") {
     loadNotes();
+    loadVisualNotes();
     loadMemory();
+    requestAnimationFrame(resizeVisualNoteCanvas);
   }
   if (view === "reminders") loadReminders();
   if (view === "routines") {
@@ -297,6 +305,178 @@ async function loadNotes() {
   } catch (error) {
     toast("Could not load notes.");
   }
+}
+
+const VISUAL_NOTE_COLORS = new Set(["#55d6ff", "#f59e0b", "#f472b6", "#f8fafc"]);
+
+function drawVisualNoteCanvas() {
+  const canvas = $("visual-note-canvas");
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const context = canvas.getContext("2d");
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+  for (const stroke of state.visualNoteStrokes) {
+    const points = stroke.points || [];
+    if (!points.length || !VISUAL_NOTE_COLORS.has(stroke.color)) continue;
+    context.strokeStyle = stroke.color;
+    context.fillStyle = stroke.color;
+    context.lineWidth = Math.max(1, Math.min(20, Number(stroke.size) || 4));
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    if (points.length === 1) {
+      context.beginPath();
+      context.arc(points[0].x * rect.width, points[0].y * rect.height,
+        context.lineWidth / 2, 0, Math.PI * 2);
+      context.fill();
+      continue;
+    }
+    context.beginPath();
+    context.moveTo(points[0].x * rect.width, points[0].y * rect.height);
+    for (const point of points.slice(1)) {
+      context.lineTo(point.x * rect.width, point.y * rect.height);
+    }
+    context.stroke();
+  }
+}
+
+function resizeVisualNoteCanvas() {
+  const canvas = $("visual-note-canvas");
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  const width = Math.round(rect.width * ratio);
+  const height = Math.round(rect.height * ratio);
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  drawVisualNoteCanvas();
+}
+
+function renderVisualNotes() {
+  const list = $("visual-note-list");
+  if (!list) return;
+  if (!state.visualNotes.length) {
+    list.innerHTML = `<div class="empty">No visual notes saved yet.</div>`;
+    return;
+  }
+  list.innerHTML = state.visualNotes.map((note) => (
+    `<div class="visual-note-item">` +
+    `<div class="visual-note-item-copy"><strong>${escapeHtml(note.title || "Untitled")}</strong>` +
+    `<span>${escapeHtml(note.updated_at || "")} · ${Number(note.stroke_count) || 0} strokes</span></div>` +
+    `<button class="ghost" type="button" data-visual-note-open="${escapeHtml(note.id)}">Open</button>` +
+    `<button class="ghost" type="button" data-visual-note-delete="${escapeHtml(note.id)}" aria-label="Delete ${escapeHtml(note.title || "visual note")}">Delete</button>` +
+    `</div>`
+  )).join("");
+}
+
+async function loadVisualNotes() {
+  try {
+    const data = await api("/api/visual-notes");
+    state.visualNotes = Array.isArray(data.notes) ? data.notes : [];
+    renderVisualNotes();
+  } catch (error) {
+    $("visual-note-list").innerHTML = `<div class="empty">Could not load visual notes.</div>`;
+  }
+}
+
+function newVisualNote() {
+  if (state.visualNoteDirty && !window.confirm("Discard unsaved visual note changes?")) return;
+  state.activeVisualNoteId = "";
+  state.visualNoteStrokes = [];
+  state.visualNotePointCount = 0;
+  state.visualNoteDirty = false;
+  $("visual-note-title").value = "";
+  $("visual-note-status").textContent = "New note. Draw a sketch, then save it.";
+  drawVisualNoteCanvas();
+  $("visual-note-title").focus();
+}
+
+async function openVisualNote(noteId) {
+  if (state.visualNoteDirty && !window.confirm("Discard unsaved visual note changes?")) return;
+  try {
+    const data = await api("/api/visual-notes/" + encodeURIComponent(noteId));
+    const note = data.note;
+    state.activeVisualNoteId = note.id;
+    state.visualNoteStrokes = Array.isArray(note.strokes) ? note.strokes : [];
+    state.visualNotePointCount = state.visualNoteStrokes.reduce(
+      (total, stroke) => total + (Array.isArray(stroke.points) ? stroke.points.length : 0), 0);
+    state.visualNoteDirty = false;
+    $("visual-note-title").value = note.title || "";
+    $("visual-note-status").textContent = "Editing saved visual note.";
+    drawVisualNoteCanvas();
+  } catch (error) {
+    toast("Could not open that visual note.");
+  }
+}
+
+async function saveVisualNote() {
+  const title = $("visual-note-title").value.trim();
+  if (!title) {
+    $("visual-note-status").textContent = "Add a title before saving.";
+    $("visual-note-title").focus();
+    return;
+  }
+  try {
+    const data = await api("/api/visual-notes/save", {
+      method: "POST",
+      body: JSON.stringify({
+        id: state.activeVisualNoteId,
+        title,
+        strokes: state.visualNoteStrokes,
+      }),
+    });
+    state.activeVisualNoteId = data.note.id;
+    state.visualNoteDirty = false;
+    $("visual-note-status").textContent = "Visual note saved on this device.";
+    await loadVisualNotes();
+  } catch (error) {
+    $("visual-note-status").textContent = "Could not save. Check the title and drawing size.";
+  }
+}
+
+function beginVisualNoteStroke(event) {
+  const canvas = $("visual-note-canvas");
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height || state.visualNoteStrokes.length >= 200
+    || state.visualNotePointCount >= 10000) {
+    $("visual-note-status").textContent = "This note reached its drawing limit. Save it or start a new note.";
+    return;
+  }
+  const color = $("visual-note-color").value;
+  if (!VISUAL_NOTE_COLORS.has(color)) return;
+  const point = {
+    x: Number(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)).toFixed(4)),
+    y: Number(Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)).toFixed(4)),
+  };
+  const stroke = {
+    color,
+    size: Math.max(1, Math.min(20, Number($("visual-note-size").value) || 4)),
+    points: [point],
+  };
+  state.visualNoteStrokes.push(stroke);
+  state.visualNotePointCount += 1;
+  state.visualNoteDirty = true;
+  state.activeVisualStroke = stroke;
+  canvas.setPointerCapture(event.pointerId);
+  drawVisualNoteCanvas();
+}
+
+function continueVisualNoteStroke(event) {
+  const stroke = state.activeVisualStroke;
+  if (!stroke || stroke.points.length >= 500 || state.visualNotePointCount >= 10000) return;
+  const canvas = $("visual-note-canvas");
+  const rect = canvas.getBoundingClientRect();
+  stroke.points.push({
+    x: Number(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)).toFixed(4)),
+    y: Number(Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)).toFixed(4)),
+  });
+  state.visualNotePointCount += 1;
+  drawVisualNoteCanvas();
 }
 
 function renderMemory(items) {
@@ -1608,6 +1788,63 @@ function bind() {
     await api("/api/notes/clear", { method: "POST", body: "{}" });
     loadNotes();
   });
+  $("visual-note-new").addEventListener("click", newVisualNote);
+  $("visual-note-save").addEventListener("click", saveVisualNote);
+  $("visual-note-title").addEventListener("input", () => { state.visualNoteDirty = true; });
+  $("visual-note-undo").addEventListener("click", () => {
+    const removed = state.visualNoteStrokes.pop();
+    state.visualNotePointCount = Math.max(0, state.visualNotePointCount - (removed?.points?.length || 0));
+    state.visualNoteDirty = true;
+    state.activeVisualStroke = null;
+    $("visual-note-status").textContent = "Last stroke removed. Save to keep this change.";
+    drawVisualNoteCanvas();
+  });
+  $("visual-note-clear").addEventListener("click", () => {
+    state.visualNoteStrokes = [];
+    state.visualNotePointCount = 0;
+    state.visualNoteDirty = true;
+    state.activeVisualStroke = null;
+    $("visual-note-status").textContent = "Canvas cleared. Save to keep this change.";
+    drawVisualNoteCanvas();
+  });
+  $("visual-note-canvas").addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    beginVisualNoteStroke(event);
+  });
+  $("visual-note-canvas").addEventListener("pointermove", continueVisualNoteStroke);
+  $("visual-note-canvas").addEventListener("pointerup", () => { state.activeVisualStroke = null; });
+  $("visual-note-canvas").addEventListener("pointercancel", () => { state.activeVisualStroke = null; });
+  $("visual-note-canvas").addEventListener("lostpointercapture", () => { state.activeVisualStroke = null; });
+  $("visual-note-list").addEventListener("click", async (event) => {
+    const open = event.target.closest("[data-visual-note-open]");
+    const remove = event.target.closest("[data-visual-note-delete]");
+    if (open) {
+      await openVisualNote(open.dataset.visualNoteOpen);
+    } else if (remove) {
+      const deletingActive = state.activeVisualNoteId === remove.dataset.visualNoteDelete;
+      const prompt = deletingActive && state.visualNoteDirty
+        ? "Delete this visual note and discard unsaved changes?"
+        : "Delete this visual note?";
+      if (!window.confirm(prompt)) return;
+      try {
+        await api("/api/visual-notes/delete", {
+          method: "POST",
+          body: JSON.stringify({ id: remove.dataset.visualNoteDelete }),
+        });
+        if (deletingActive) {
+          state.visualNoteDirty = false;
+          newVisualNote();
+        }
+        await loadVisualNotes();
+      } catch (error) {
+        toast("Could not delete that visual note.");
+      }
+    }
+  });
+  $("visual-note-color").addEventListener("change", (event) => {
+    if (!VISUAL_NOTE_COLORS.has(event.target.value)) event.target.value = "#55d6ff";
+  });
+  window.addEventListener("resize", resizeVisualNoteCanvas);
   $("reminders-clear").addEventListener("click", async () => {
     await api("/api/reminders/clear", { method: "POST", body: "{}" });
     renderReminders([]);

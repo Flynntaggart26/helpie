@@ -19,6 +19,9 @@ is pending before a release tag is created.
 The candidate also refreshes the companion cursor with a friendly face and
 replaces the spinning thinking marker with three small animated dots beside a
 stationary “Thinking” label. Reduced-motion preferences disable these animations.
+The Notes page also includes a local vector sketch pad with save, reopen, edit,
+undo, and clear controls. It stores normalized strokes only; no screen capture
+is stored with a visual note. Desktop review remains pending before a release tag.
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.

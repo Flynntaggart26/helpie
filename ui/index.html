@@ -120,10 +120,40 @@
       </section>
 
       <section class="view" id="view-notes">
+        <div class="panel visual-notes-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Visual notes</h2>
+              <p class="muted">Draw, save, reopen, and edit sketches on this device. No screen image is stored.</p>
+            </div>
+            <button class="ghost" id="visual-note-new" type="button">New note</button>
+          </div>
+          <label class="visual-note-title-label" for="visual-note-title">Title</label>
+          <input class="visual-note-title" id="visual-note-title" type="text" maxlength="120" placeholder="Untitled visual note" />
+          <div class="visual-note-toolbar">
+            <label for="visual-note-color">Pen</label>
+            <select id="visual-note-color" aria-label="Pen color">
+              <option value="#55d6ff">Cyan</option>
+              <option value="#f59e0b">Amber</option>
+              <option value="#f472b6">Pink</option>
+              <option value="#f8fafc">White</option>
+            </select>
+            <label for="visual-note-size">Size</label>
+            <input id="visual-note-size" type="range" min="1" max="20" value="4" aria-label="Pen size" />
+            <button class="ghost" id="visual-note-undo" type="button">Undo</button>
+            <button class="ghost" id="visual-note-clear" type="button">Clear canvas</button>
+            <button class="primary" id="visual-note-save" type="button">Save note</button>
+          </div>
+          <canvas id="visual-note-canvas" class="visual-note-canvas" aria-label="Visual note drawing canvas. Use a mouse, pen, or touch to draw."></canvas>
+          <div class="visual-note-status muted" id="visual-note-status" aria-live="polite">Draw a sketch, then save it.</div>
+          <h3>Saved visual notes</h3>
+          <div class="visual-note-list" id="visual-note-list"></div>
+        </div>
+
         <div class="panel">
           <div class="panel-head">
-            <h2>Notes</h2>
-            <button class="ghost" id="notes-clear">Clear all</button>
+            <h2>Text notes</h2>
+            <button class="ghost" id="notes-clear">Clear text notes</button>
           </div>
           <div class="note-list" id="note-list"></div>
         </div>
