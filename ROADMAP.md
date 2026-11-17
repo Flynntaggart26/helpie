@@ -3,25 +3,15 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.14
+## Current release: v1.16.15
 
-Installer and portable downloads are available on the [GitHub release page](https://github.com/Flynntaggart26/helpie/releases/tag/v1.16.14).
+Installer and portable downloads are available on the [GitHub release page](https://github.com/Flynntaggart26/helpie/releases/tag/v1.16.15).
 
-## Work in progress: v1.16.15 candidate (not released)
-
-The Ctrl+H companion can place a temporary pin, rectangle highlight, or arrow
-when the user explicitly asks Helpie to point something out. Model coordinates
-are validated, rendered as fixed SVG shapes, limited to three, and cleared by
-timeout, Stop, or an explicit clear-highlights command. This stays annotation
-only; it does not click, type, or execute screen content. Candidate validation
-is pending before a release tag is created.
-
-The candidate also refreshes the companion cursor with a friendly face and
-replaces the spinning thinking marker with three small animated dots beside a
-stationary “Thinking” label. Reduced-motion preferences disable these animations.
-The Notes page also includes a local vector sketch pad with save, reopen, edit,
-undo, and clear controls. It stores normalized strokes only; no screen capture
-is stored with a visual note. Desktop review remains pending before a release tag.
+v1.16.15 adds temporary, model-proposed screen pins/highlights/arrows for direct
+requests, a friendlier companion cursor with a three-dot thinking state, and a
+local sketch pad in the Notes page. Visual notes store bounded vector strokes,
+not captured screen images. The Windows release workflow and visual-note tests
+passed; interactive desktop review remains useful for pointer feel and drawing.
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
