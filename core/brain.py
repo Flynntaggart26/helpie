@@ -296,6 +296,87 @@ def _sample_graph(source: str) -> list[list[list[float]]]:
     return segments
 
 
+def _parse_geometry(item: dict) -> tuple[list[dict], list[dict]] | None:
+    """Validate a small geometry drawing and its references without solving it."""
+    raw_objects = item.get("objects")
+    raw_constraints = item.get("constraints", [])
+    if (not isinstance(raw_objects, list) or not 1 <= len(raw_objects) <= 12
+            or not isinstance(raw_constraints, list) or len(raw_constraints) > 8):
+        return None
+
+    def coord(value: object) -> Optional[float]:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        try:
+            number = float(value)
+        except OverflowError:
+            return None
+        return number if math.isfinite(number) and 0 <= number <= 1 else None
+
+    objects: list[dict] = []
+    for source in raw_objects:
+        if not isinstance(source, dict):
+            return None
+        kind = source.get("kind")
+        label = source.get("label", "")
+        if not isinstance(label, str):
+            return None
+        label = re.sub(r"[\x00-\x1f\x7f]", "", label).strip()[:32]
+        if kind == "point" and set(source) <= {"kind", "x", "y", "label"}:
+            x, y = coord(source.get("x")), coord(source.get("y"))
+            if x is None or y is None:
+                return None
+            objects.append({"kind": kind, "x": x, "y": y, "label": label})
+        elif kind == "segment" and set(source) <= {
+                "kind", "x1", "y1", "x2", "y2", "label"}:
+            values = {key: coord(source.get(key)) for key in ("x1", "y1", "x2", "y2")}
+            if any(value is None for value in values.values()) or (
+                    values["x1"] == values["x2"] and values["y1"] == values["y2"]):
+                return None
+            objects.append({"kind": kind, **values, "label": label})
+        elif kind == "circle" and set(source) <= {"kind", "cx", "cy", "radius", "label"}:
+            cx, cy, radius = (coord(source.get(key)) for key in ("cx", "cy", "radius"))
+            if (cx is None or cy is None or radius is None or radius <= 0
+                    or cx - radius < 0 or cx + radius > 1
+                    or cy - radius < 0 or cy + radius > 1):
+                return None
+            objects.append({"kind": kind, "cx": cx, "cy": cy,
+                            "radius": radius, "label": label})
+        elif kind == "polygon" and set(source) <= {"kind", "points", "label"}:
+            raw_points = source.get("points")
+            if not isinstance(raw_points, list) or not 3 <= len(raw_points) <= 8:
+                return None
+            points = []
+            for point in raw_points:
+                if not isinstance(point, list) or len(point) != 2:
+                    return None
+                px, py = coord(point[0]), coord(point[1])
+                if px is None or py is None:
+                    return None
+                points.append([px, py])
+            objects.append({"kind": kind, "points": points, "label": label})
+        else:
+            return None
+
+    constraints: list[dict] = []
+    for source in raw_constraints:
+        if not isinstance(source, dict):
+            return None
+        kind = source.get("kind")
+        refs = source.get("objects")
+        expected = 1 if kind in {"horizontal", "vertical"} else 2
+        if (kind not in {"horizontal", "vertical", "equal", "perpendicular", "parallel"}
+                or set(source) != {"kind", "objects"}
+                or not isinstance(refs, list) or len(refs) != expected
+                or any(isinstance(ref, bool) or not isinstance(ref, int)
+                       or not 0 <= ref < len(objects) or objects[ref]["kind"] != "segment"
+                       for ref in refs)
+                or len(set(refs)) != len(refs)):
+            return None
+        constraints.append({"kind": kind, "objects": refs})
+    return objects, constraints
+
+
 def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
     """Separate a model's optional visual proposal and accept only bounded shapes."""
     text, marker, raw = (reply or "").partition(VISUAL_RESPONSE_MARKER)
@@ -319,7 +400,10 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
     def coordinate(value: object) -> Optional[float]:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
-        number = float(value)
+        try:
+            number = float(value)
+        except OverflowError:
+            return None
         return number if math.isfinite(number) and 0.0 <= number <= 1.0 else None
 
     accepted: list[dict] = []
@@ -335,6 +419,8 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
             "arrow": {"kind", "x1", "y1", "x2", "y2", "label"},
             "equation": {"kind", "x", "y", "text"},
             "graph": {"kind", "x", "y", "width", "height", "expression"},
+            "geometry": {"kind", "x", "y", "width", "height", "objects",
+                         "constraints"},
         }.get(kind)
         if not fields or set(item) - fields:
             continue
@@ -358,6 +444,11 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
                 continue
             parsed["expression"] = expression[:96]
             parsed["segments"] = segments
+        elif kind == "geometry":
+            geometry = _parse_geometry(item)
+            if geometry is None:
+                continue
+            parsed["objects"], parsed["constraints"] = geometry
         else:
             label = item.get("label", "")
             if not isinstance(label, str):
@@ -369,13 +460,13 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
                 continue
             parsed["number"] = number
         keys = (("x", "y") if kind in {"pin", "callout", "equation"} else
-                ("x", "y", "width", "height") if kind in {"rect", "graph"} else
+                ("x", "y", "width", "height") if kind in {"rect", "graph", "geometry"} else
                 ("x1", "y1", "x2", "y2"))
         values = {key: coordinate(item.get(key)) for key in keys}
         if any(value is None for value in values.values()):
             continue
         parsed.update(values)
-        if kind in {"rect", "graph"} and (
+        if kind in {"rect", "graph", "geometry"} and (
                 parsed["width"] <= 0 or parsed["height"] <= 0
                 or parsed["x"] + parsed["width"] > 1
                 or parsed["y"] + parsed["height"] > 1):

@@ -64,6 +64,12 @@ items. Allowed kinds and fields:
 - graph: x, y, width, height, expression (at most 96 characters). Use only x,
   numbers, pi, e, +, -, *, /, ^, parentheses, and sin/cos/tan/sqrt/abs/ln/log/exp.
   Write multiplication explicitly, like 2*x. Helpie samples x from -5 to 5.
+- geometry: x, y, width, height, objects (1..12), optional constraints (0..8).
+  Object coordinates are normalized inside the geometry box. Objects can be
+  point{x,y,label}, segment{x1,y1,x2,y2,label}, circle{cx,cy,radius,label}, or
+  polygon{points:[[x,y],...],label} with 3..8 points. Constraints are visual
+  marks only: horizontal/vertical use one segment index; equal/perpendicular/
+  parallel use two segment indices, numbered from zero in object order.
 Use only visible, confidently located targets. If uncertain, omit the marker line.
 Never return HTML, SVG, JavaScript, or other executable content."""
 

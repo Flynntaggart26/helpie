@@ -26,6 +26,9 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 - Helpie can place a plain-text or Unicode equation on the overlay and plot a
   bounded function graph. Graphs use a small arithmetic grammar and fixed SVG
   shapes; model text is never evaluated as code.
+- Geometry answers can combine points, segments, circles and polygons with
+  bounded labels. Horizontal, vertical, equal, perpendicular and parallel
+  relationships show visual marks; Helpie does not solve or change coordinates.
 - When you explicitly ask the Ctrl+H companion to point something out, Helpie can
   show up to three temporary pins, numbered callouts, highlight boxes, or arrows.
   The coordinates are checked and rendered as fixed SVG shapes; they disappear

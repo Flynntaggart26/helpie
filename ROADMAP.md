@@ -22,6 +22,9 @@ also available alongside pins, rectangles and arrows.
 Visual answers can also render plain-text/Unicode equations and plot bounded
 functions with a fixed SVG renderer; the backend parses a small arithmetic
 grammar and samples a fixed domain without evaluating code.
+Basic point, segment, circle and polygon diagrams support plain-text labels and
+visual relation marks for horizontal, vertical, equal, perpendicular and
+parallel segments; these marks do not solve or alter geometry.
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.

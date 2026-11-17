@@ -1801,6 +1801,30 @@ body.overlay-mode .overlay-root {
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
 }
+.overlay-geometry-point {
+  fill: #ffca52;
+  stroke: #08111d;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-geometry-segment,
+.overlay-geometry-circle,
+.overlay-geometry-polygon {
+  fill: none;
+  stroke: #8be9ff;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-geometry-constraint {
+  fill: #ffdf85;
+  font: 700 18px "Segoe UI", sans-serif;
+  paint-order: stroke;
+  stroke: #08111d;
+  stroke-width: 5px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  vector-effect: non-scaling-stroke;
+}
 @keyframes overlay-annotation-in {
   from { opacity: 0; }
   to { opacity: 1; }

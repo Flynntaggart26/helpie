@@ -2123,6 +2123,102 @@ function updateOverlayAnnotations(payload, monitor) {
         svg.appendChild(curve);
       }
       addLabel(`f(x) = ${item.expression}`, x, y - 10);
+    } else if (item.kind === "geometry" && valid(item.x) && valid(item.y)
+      && valid(item.width) && valid(item.height) && item.width > 0 && item.height > 0
+      && item.x + item.width <= 1 && item.y + item.height <= 1
+      && Array.isArray(item.objects) && item.objects.length <= 12
+      && Array.isArray(item.constraints) && item.constraints.length <= 8) {
+      const x = item.x * monitor.width;
+      const y = item.y * monitor.height;
+      const width = item.width * monitor.width;
+      const height = item.height * monitor.height;
+      const positions = [];
+      for (const object of item.objects) {
+        if (!object || typeof object !== "object") {
+          positions.push(null);
+          continue;
+        }
+        const label = typeof object.label === "string" ? object.label.slice(0, 32) : "";
+        if (object.kind === "point" && valid(object.x) && valid(object.y)) {
+          const px = x + object.x * width;
+          const py = y + object.y * height;
+          const dot = document.createElementNS(svg.namespaceURI, "circle");
+          dot.setAttribute("cx", String(px));
+          dot.setAttribute("cy", String(py));
+          dot.setAttribute("r", "6");
+          dot.setAttribute("class", "overlay-geometry-point");
+          svg.appendChild(dot);
+          addLabel(label, px + 9, py - 9);
+          positions.push({ kind: "point", x: px, y: py });
+        } else if (object.kind === "segment" && valid(object.x1) && valid(object.y1)
+          && valid(object.x2) && valid(object.y2)
+          && (object.x1 !== object.x2 || object.y1 !== object.y2)) {
+          const x1 = x + object.x1 * width;
+          const y1 = y + object.y1 * height;
+          const x2 = x + object.x2 * width;
+          const y2 = y + object.y2 * height;
+          const line = document.createElementNS(svg.namespaceURI, "line");
+          line.setAttribute("x1", String(x1));
+          line.setAttribute("y1", String(y1));
+          line.setAttribute("x2", String(x2));
+          line.setAttribute("y2", String(y2));
+          line.setAttribute("class", "overlay-geometry-segment");
+          svg.appendChild(line);
+          addLabel(label, (x1 + x2) / 2 + 7, (y1 + y2) / 2 - 7);
+          positions.push({ kind: "segment", x: (x1 + x2) / 2, y: (y1 + y2) / 2 });
+        } else if (object.kind === "circle" && valid(object.cx) && valid(object.cy)
+          && valid(object.radius) && object.radius > 0
+          && object.cx - object.radius >= 0 && object.cx + object.radius <= 1
+          && object.cy - object.radius >= 0 && object.cy + object.radius <= 1) {
+          const cx = x + object.cx * width;
+          const cy = y + object.cy * height;
+          const circle = document.createElementNS(svg.namespaceURI, "ellipse");
+          circle.setAttribute("cx", String(cx));
+          circle.setAttribute("cy", String(cy));
+          circle.setAttribute("rx", String(object.radius * width));
+          circle.setAttribute("ry", String(object.radius * height));
+          circle.setAttribute("class", "overlay-geometry-circle");
+          svg.appendChild(circle);
+          addLabel(label, cx + object.radius * width + 6, cy);
+          positions.push({ kind: "circle", x: cx, y: cy });
+        } else if (object.kind === "polygon" && Array.isArray(object.points)
+          && object.points.length >= 3 && object.points.length <= 8
+          && object.points.every((point) => Array.isArray(point) && point.length === 2
+            && valid(point[0]) && valid(point[1]))) {
+          const points = object.points.map(([px, py]) => [x + px * width, y + py * height]);
+          const polygon = document.createElementNS(svg.namespaceURI, "polygon");
+          polygon.setAttribute("points", points.map(([px, py]) => `${px},${py}`).join(" "));
+          polygon.setAttribute("class", "overlay-geometry-polygon");
+          svg.appendChild(polygon);
+          const center = points.reduce((sum, point) => [sum[0] + point[0] / points.length,
+            sum[1] + point[1] / points.length], [0, 0]);
+          addLabel(label, center[0] + 7, center[1] - 7);
+          positions.push({ kind: "polygon", x: center[0], y: center[1] });
+        } else {
+          positions.push(null);
+        }
+      }
+      const constraintMarks = {
+        horizontal: "↔", vertical: "↕", equal: "=", perpendicular: "⊥", parallel: "∥",
+      };
+      for (const constraint of item.constraints) {
+        if (!constraint || !Object.prototype.hasOwnProperty.call(constraintMarks, constraint.kind)
+          || !Array.isArray(constraint.objects)
+          || constraint.objects.length !== (constraint.kind === "horizontal"
+            || constraint.kind === "vertical" ? 1 : 2)
+          || new Set(constraint.objects).size !== constraint.objects.length
+          || !constraint.objects.every((index) => Number.isInteger(index)
+            && index >= 0 && index < positions.length && positions[index]?.kind === "segment")) continue;
+        const linked = constraint.objects.map((index) => positions[index]);
+        const mark = document.createElementNS(svg.namespaceURI, "text");
+        mark.setAttribute("x", String(linked.reduce((sum, position) => sum + position.x, 0)
+          / linked.length));
+        mark.setAttribute("y", String(linked.reduce((sum, position) => sum + position.y, 0)
+          / linked.length));
+        mark.setAttribute("class", "overlay-geometry-constraint");
+        mark.textContent = constraintMarks[constraint.kind];
+        svg.appendChild(mark);
+      }
     } else if (item.kind === "rect" && valid(item.x) && valid(item.y)
       && valid(item.width) && valid(item.height) && item.width > 0 && item.height > 0
       && item.x + item.width <= 1 && item.y + item.height <= 1) {
@@ -2151,7 +2247,7 @@ function updateOverlayAnnotations(payload, monitor) {
         (item.y1 + item.y2) * monitor.height / 2 - 12);
     }
   }
-  if (!svg.querySelector("circle, rect, line, text, polyline")) return;
+  if (!svg.querySelector("circle, ellipse, rect, line, text, polygon, polyline")) return;
   root.appendChild(svg);
   overlayAnnotationTimer = setTimeout(clearOverlayAnnotations,
     Math.max(1000, Math.min(15000, Number(payload?.duration_ms) || 12000)));
