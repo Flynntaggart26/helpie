@@ -3,7 +3,9 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.13 (pending build)
+## Current release: v1.16.13
+
+Installer and portable downloads are available on the [GitHub release page](https://github.com/Flynntaggart26/helpie/releases/tag/v1.16.13).
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
