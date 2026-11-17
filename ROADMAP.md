@@ -3,7 +3,7 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.11 (pending build)
+## Current release: v1.16.11
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
@@ -71,8 +71,8 @@ Goal: a Helpie presence that does not steal focus and can annotate the screen.
 - screen-context capture targets: Windows Graphics Capture picker, one-frame
   capture, visible capture indicator and timestamp/target metadata are included
   in v1.16.10; interactive runtime review is still open.
-- vision adapters for Gemini, OpenRouter, Groq and local Ollama are being added
-  in v1.16.11; cloud providers require their own key and an image-capable model.
+- vision adapters for Gemini, OpenRouter, Groq and local Ollama are included in
+  v1.16.11; cloud providers require their own key and an image-capable model.
 - visual answers (highlights, equations, graphs, geometry)
 - policy-governed action broker
 - tasks/plugins/chat consolidation
