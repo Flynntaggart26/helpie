@@ -1634,6 +1634,47 @@ body.overlay-mode .overlay-root {
   will-change: left, top;
 }
 
+.overlay-annotations {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  animation: overlay-annotation-in 140ms ease-out;
+}
+.overlay-annotation-pin {
+  fill: #ffca52;
+  stroke: #111827;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-annotation-rect {
+  fill: rgba(255, 202, 82, 0.14);
+  stroke: #ffca52;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-annotation-arrow {
+  fill: none;
+  stroke: #55d6ff;
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-annotation-label {
+  fill: #fff;
+  font: 600 18px "Segoe UI", sans-serif;
+  paint-order: stroke;
+  stroke: #08111d;
+  stroke-width: 5px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+@keyframes overlay-annotation-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .overlay-tag {
   background: #0b1020;
   color: #6ee7ff;

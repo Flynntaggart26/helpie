@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import contextvars
 import json
+import math
 import random
 import re
 from pathlib import Path
@@ -66,6 +67,14 @@ CONFIRM_YES = ("yes", "yeah", "yep", "sure", "do it", "confirm", "ok", "okay",
 CONFIRM_NO = ("no", "nope", "cancel", "stop", "never mind", "don't",
               "hayır", "vazgeç", "iptal", "dur", "yok")
 
+VISUAL_REQUEST_RE = re.compile(
+    r"\b(?:point (?:to|at|out)|show me where|highlight|mark|circle|underline|"
+    r"draw (?:an? )?(?:arrow|circle|box|rectangle))\b|"
+    r"\b(?:işaretle|isaretle|vurgula|daire içine al|daire icine al|"
+    r"ok çiz|ok ciz|okla göster|okla goster|altını çiz|altini ciz)\b",
+    re.I,
+)
+
 SCREEN_REQUEST_RE = re.compile(
     r"\b(?:what(?:'s| is)? (?:on|in) my screen|what do you see on my screen|"
     r"read my screen|look at (?:my )?screen|describe (?:my |the )?screen|"
@@ -77,9 +86,74 @@ SCREEN_REQUEST_RE = re.compile(
     r"ekranda ne görüyorsun|ekranda ne goruyorsun|"
     r"ekranıma bak|ekranima bak|ekrana bak|ekranı oku|ekrani oku|"
     r"ekranı (?:anlat|incele)|ekrani (?:anlat|incele)|"
-    r"bu hatayı (?:açıkla|oku)|bu hatayi (?:acikla|oku))\b",
+    r"bu hatayı (?:açıkla|oku)|bu hatayi (?:acikla|oku))\b|"
+    r"\b(?:point (?:to|at|out)|show me where|highlight|mark|circle|underline|"
+    r"draw (?:an? )?(?:arrow|circle|box|rectangle)|"
+    r"işaretle|isaretle|vurgula|daire içine al|daire icine al|"
+    r"ok çiz|ok ciz|okla göster|okla goster|altını çiz|altini ciz)\b",
     re.I,
 )
+
+VISUAL_RESPONSE_MARKER = "[[HELPIE_VISUAL]]"
+
+
+def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
+    """Separate a model's optional visual proposal and accept only bounded shapes."""
+    text, marker, raw = (reply or "").partition(VISUAL_RESPONSE_MARKER)
+    if not marker:
+        return (reply or "").strip(), []
+    spoken = text.strip()
+    try:
+        payload = json.loads(raw.strip())
+    except (TypeError, ValueError):
+        return spoken, []
+    if not isinstance(payload, dict) or set(payload) != {"items"}:
+        return spoken, []
+    items = payload.get("items")
+    if not isinstance(items, list) or not 1 <= len(items) <= 3:
+        return spoken, []
+
+    def coordinate(value: object) -> Optional[float]:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        number = float(value)
+        return number if math.isfinite(number) and 0.0 <= number <= 1.0 else None
+
+    accepted: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("kind")
+        fields = {
+            "pin": {"kind", "x", "y", "label"},
+            "rect": {"kind", "x", "y", "width", "height", "label"},
+            "arrow": {"kind", "x1", "y1", "x2", "y2", "label"},
+        }.get(kind)
+        if not fields or set(item) - fields:
+            continue
+        label = item.get("label", "")
+        if not isinstance(label, str):
+            continue
+        label = re.sub(r"[\x00-\x1f\x7f]", "", label).strip()[:60]
+        parsed = {"kind": kind, "label": label}
+        keys = ("x", "y") if kind == "pin" else (
+            ("x", "y", "width", "height") if kind == "rect"
+            else ("x1", "y1", "x2", "y2")
+        )
+        values = {key: coordinate(item.get(key)) for key in keys}
+        if any(value is None for value in values.values()):
+            continue
+        parsed.update(values)
+        if kind == "rect" and (
+                parsed["width"] <= 0 or parsed["height"] <= 0
+                or parsed["x"] + parsed["width"] > 1
+                or parsed["y"] + parsed["height"] > 1):
+            continue
+        if kind == "arrow" and (parsed["x1"] == parsed["x2"]
+                                and parsed["y1"] == parsed["y2"]):
+            continue
+        accepted.append(parsed)
+    return spoken, accepted
 
 
 def _norm(text: str) -> str:
@@ -450,6 +524,12 @@ class Brain:
             return memory.remember_reply(item)
 
         # what is on the screen
+        if (self._screen_capture_source.get() == "companion"
+                and re.search(
+                    r"\b(?:clear|remove|hide) (?:all )?(?:the )?(?:highlights?|annotations?|markers?)\b|"
+                    r"\b(?:vurguları|işaretleri|işaretlemeleri) temizle\b", t)):
+            self.on_event({"type": "visual_annotations", "items": [], "duration_ms": 0})
+            return "I cleared the screen highlights."
         if SCREEN_REQUEST_RE.search(t):
             return self._describe_screen(raw)
 
@@ -864,9 +944,11 @@ class Brain:
             remote = urlparse(endpoint).hostname not in {"localhost", "127.0.0.1", "::1"}
         self.on_event({"type": "screen_frame_transfer", "active": True, "remote": remote})
         answer = None
+        annotate = source == "companion" and bool(VISUAL_REQUEST_RE.search(prompt or ""))
         try:
             answer = self.llm.vision(
                 capture_context + (prompt or "What is on my screen right now?"), image,
+                annotate=annotate,
             )
         finally:
             self.on_event({"type": "screen_frame_transfer", "active": False, "remote": False})
@@ -879,6 +961,17 @@ class Brain:
         if not answer:
             return ("I could not read the screen with this model. Check that the selected model "
                     "supports images and that the provider is reachable.")
+        if annotate:
+            answer, items = _parse_visual_response(answer)
+            if items:
+                try:
+                    import shell
+                    session = shell.live_capture_status(timeout=0.5)
+                except Exception:
+                    session = None
+                if session and session.get("active") and session.get("companion_active"):
+                    self.on_event({"type": "visual_annotations", "items": items,
+                                   "duration_ms": 12000})
         return answer
 
     @staticmethod

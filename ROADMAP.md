@@ -7,6 +7,15 @@ model and open product questions are maintained privately by the owner.
 
 Installer and portable downloads are available on the [GitHub release page](https://github.com/Flynntaggart26/helpie/releases/tag/v1.16.14).
 
+## Work in progress: v1.16.15 candidate (not released)
+
+The Ctrl+H companion can place a temporary pin, rectangle highlight, or arrow
+when the user explicitly asks Helpie to point something out. Model coordinates
+are validated, rendered as fixed SVG shapes, limited to three, and cleared by
+timeout, Stop, or an explicit clear-highlights command. This stays annotation
+only; it does not click, type, or execute screen content. Candidate validation
+is pending before a release tag is created.
+
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
 

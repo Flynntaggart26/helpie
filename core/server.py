@@ -104,6 +104,8 @@ class App:
         self._live_capture_last_stop = 0.0
         self._live_capture_status = {"state": "off", "active": False, "frame_ready": False,
                                      "target": "", "captured_at_ms": ""}
+        self._visual_annotations_lock = threading.Lock()
+        self._visual_annotations = {"revision": 0, "items": [], "expires_at": 0.0}
         self._turn = 0
         self.server: Optional[ThreadingHTTPServer] = None
 
@@ -218,6 +220,37 @@ class App:
                         }
         return dict(self._live_capture_status)
 
+    def set_visual_annotations(self, items: list[dict], duration_ms: int) -> None:
+        duration_ms = max(1000, min(15000, int(duration_ms)))
+        with self._visual_annotations_lock:
+            revision = int(self._visual_annotations.get("revision", 0)) + 1
+            self._visual_annotations = {
+                "revision": revision,
+                "items": items,
+                "duration_ms": duration_ms,
+                "expires_at": time.monotonic() + duration_ms / 1000,
+            }
+
+    def clear_visual_annotations(self) -> None:
+        with self._visual_annotations_lock:
+            revision = int(self._visual_annotations.get("revision", 0)) + 1
+            self._visual_annotations = {"revision": revision, "items": [], "expires_at": 0.0}
+
+    def current_visual_annotations(self) -> dict:
+        with self._visual_annotations_lock:
+            current = self._visual_annotations
+            if current.get("items") and current.get("expires_at", 0.0) <= time.monotonic():
+                revision = int(current.get("revision", 0)) + 1
+                self._visual_annotations = {
+                    "revision": revision, "items": [], "expires_at": 0.0,
+                }
+                current = self._visual_annotations
+            return {
+                "revision": int(current.get("revision", 0)),
+                "items": list(current.get("items", [])),
+                "duration_ms": int(current.get("duration_ms", 0)),
+            }
+
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
         self.bus.push(event)
@@ -234,6 +267,10 @@ class App:
                 "active": bool(event.get("active")),
                 "remote": bool(event.get("remote")),
             }
+        if event.get("type") == "visual_annotations":
+            items = event.get("items")
+            if isinstance(items, list):
+                self.set_visual_annotations(items, event.get("duration_ms", 12000))
         self.bus.push(event)
 
     def _start_wake_word(self) -> None:
@@ -741,7 +778,8 @@ class Handler(BaseHTTPRequestHandler):
                                 app.cfg.get("screen_context_consent", False)
                                 and app.cfg.get("companion_live_view_consent", False)
                             ),
-                            "pointer_echo": app.pointer_position()})
+                            "pointer_echo": app.pointer_position(),
+                            "visual_annotations": app.current_visual_annotations()})
                 return
             if path == "/api/plugins":
                 self._json({"plugins": app.plugins.list_plugins()})
@@ -808,7 +846,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/stop":
             app.speaker.stop()
+            app.clear_visual_annotations()
             app.push_state("idle")
+            self._json({"ok": True})
+            return
+        if path == "/api/overlay/annotations/clear":
+            app.clear_visual_annotations()
             self._json({"ok": True})
             return
         if path == "/api/screen/preview":
@@ -838,6 +881,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/overlay/hide":
             import shell
 
+            app.clear_visual_annotations()
             ok = shell.request("hide-overlay")
             if app._live_capture_status.get("active"):
                 audit.log("Stopped local companion screen capture", source="screen")

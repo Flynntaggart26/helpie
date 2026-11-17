@@ -1736,8 +1736,110 @@ function bind() {
 /* ------------------------------------------------------------------ */
 /* Rendered in a transparent, click-through window that covers the primary
    monitor. It is a visual surface only: no input, no capture, no focus. */
+let overlayAnnotationRevision = -1;
+let overlayAnnotationTimer = null;
+
+function clearOverlayAnnotations() {
+  if (overlayAnnotationTimer) clearTimeout(overlayAnnotationTimer);
+  overlayAnnotationTimer = null;
+  document.querySelector(".overlay-annotations")?.remove();
+}
+
+function updateOverlayAnnotations(payload, monitor) {
+  const revision = Number(payload?.revision ?? 0);
+  if (revision === overlayAnnotationRevision) return;
+  overlayAnnotationRevision = revision;
+  clearOverlayAnnotations();
+  if (!monitor?.primary || monitor.width <= 0 || monitor.height <= 0) return;
+  const items = Array.isArray(payload?.items) ? payload.items.slice(0, 3) : [];
+  const root = document.querySelector(".overlay-root");
+  if (!root || !items.length) return;
+
+  const valid = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "overlay-annotations");
+  svg.setAttribute("viewBox", `0 0 ${monitor.width} ${monitor.height}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  const defs = document.createElementNS(svg.namespaceURI, "defs");
+  const marker = document.createElementNS(svg.namespaceURI, "marker");
+  const markerId = `helpie-arrow-${revision}`;
+  marker.setAttribute("id", markerId);
+  marker.setAttribute("viewBox", "0 0 10 10");
+  marker.setAttribute("refX", "9");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("markerWidth", "7");
+  marker.setAttribute("markerHeight", "7");
+  marker.setAttribute("orient", "auto-start-reverse");
+  const arrowHead = document.createElementNS(svg.namespaceURI, "path");
+  arrowHead.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+  arrowHead.setAttribute("fill", "#55d6ff");
+  marker.appendChild(arrowHead);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const addLabel = (text, x, y) => {
+    if (typeof text !== "string" || !text.trim()) return;
+    const label = document.createElementNS(svg.namespaceURI, "text");
+    label.setAttribute("x", String(Math.max(8, Math.min(monitor.width - 8, x))));
+    label.setAttribute("y", String(Math.max(24, Math.min(monitor.height - 15, y))));
+    label.setAttribute("class", "overlay-annotation-label");
+    label.textContent = text.slice(0, 60);
+    svg.appendChild(label);
+  };
+
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    if (item.kind === "pin" && valid(item.x) && valid(item.y)) {
+      const x = item.x * monitor.width;
+      const y = item.y * monitor.height;
+      const circle = document.createElementNS(svg.namespaceURI, "circle");
+      circle.setAttribute("cx", String(x));
+      circle.setAttribute("cy", String(y));
+      circle.setAttribute("r", "13");
+      circle.setAttribute("class", "overlay-annotation-pin");
+      svg.appendChild(circle);
+      addLabel(item.label, x + 18, y - 15);
+    } else if (item.kind === "rect" && valid(item.x) && valid(item.y)
+      && valid(item.width) && valid(item.height) && item.width > 0 && item.height > 0
+      && item.x + item.width <= 1 && item.y + item.height <= 1) {
+      const x = item.x * monitor.width;
+      const y = item.y * monitor.height;
+      const rect = document.createElementNS(svg.namespaceURI, "rect");
+      rect.setAttribute("x", String(x));
+      rect.setAttribute("y", String(y));
+      rect.setAttribute("width", String(item.width * monitor.width));
+      rect.setAttribute("height", String(item.height * monitor.height));
+      rect.setAttribute("rx", "8");
+      rect.setAttribute("class", "overlay-annotation-rect");
+      svg.appendChild(rect);
+      addLabel(item.label, x, y - 10);
+    } else if (item.kind === "arrow" && valid(item.x1) && valid(item.y1)
+      && valid(item.x2) && valid(item.y2) && (item.x1 !== item.x2 || item.y1 !== item.y2)) {
+      const line = document.createElementNS(svg.namespaceURI, "line");
+      line.setAttribute("x1", String(item.x1 * monitor.width));
+      line.setAttribute("y1", String(item.y1 * monitor.height));
+      line.setAttribute("x2", String(item.x2 * monitor.width));
+      line.setAttribute("y2", String(item.y2 * monitor.height));
+      line.setAttribute("marker-end", `url(#${markerId})`);
+      line.setAttribute("class", "overlay-annotation-arrow");
+      svg.appendChild(line);
+      addLabel(item.label, (item.x1 + item.x2) * monitor.width / 2,
+        (item.y1 + item.y2) * monitor.height / 2 - 12);
+    }
+  }
+  if (!svg.querySelector("circle, rect, line")) return;
+  root.appendChild(svg);
+  overlayAnnotationTimer = setTimeout(clearOverlayAnnotations,
+    Math.max(1000, Math.min(15000, Number(payload?.duration_ms) || 12000)));
+}
+
 function startOverlay() {
   window.helpieOverlayActive = true;
+  window.helpieClearAnnotations = () => {
+    clearOverlayAnnotations();
+    api("/api/overlay/annotations/clear", { method: "POST" }).catch(() => {});
+  };
   document.body.classList.add("overlay-mode");
   document.documentElement.classList.add("overlay-mode");
   const root = document.createElement("div");
@@ -1844,6 +1946,7 @@ async function pollOverlayState() {
     top: Number(params.get("screen_y")),
     width: Number(params.get("screen_w")),
     height: Number(params.get("screen_h")),
+    primary: params.get("screen_primary") === "1",
   };
   const marker = document.querySelector(".overlay-marker");
   try {
@@ -1862,6 +1965,7 @@ async function pollOverlayState() {
           lastRemoteFrame = remoteFrame;
         }
         setCaptureIndicator(data.capture_session, !!data.screen_access_enabled, transfer);
+        updateOverlayAnnotations(data.visual_annotations, monitor);
         const point = data.pointer_echo;
         const inMonitor = point && monitor.width > 0 && monitor.height > 0
           && point.x >= monitor.left && point.x < monitor.left + monitor.width
@@ -1884,6 +1988,7 @@ async function pollOverlayState() {
 }
 
 async function stopOverlay() {
+  clearOverlayAnnotations();
   try {
     await api("/api/stop", { method: "POST" });
   } catch (e) {

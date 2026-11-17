@@ -336,12 +336,16 @@ fn show_overlay(app: &AppHandle, port: u16) {
     // every display, including mixed-DPI setups. Physical coordinates place
     // each window exactly on its monitor regardless of scale factor.
     let mut new_handles = Vec::new();
+    let primary_monitor = app.primary_monitor().ok().flatten();
     match app.available_monitors() {
         Ok(monitors) => {
             for (index, monitor) in monitors.iter().enumerate() {
                 let window_name = format!("overlay-{}", index);
                 let position = monitor.position();
                 let size = monitor.size();
+                let is_primary = primary_monitor.as_ref().map_or(index == 0, |primary| {
+                    primary.position() == position && primary.size() == size
+                });
                 let mut monitor_url = match Url::parse(&url) {
                     Ok(p) => p,
                     Err(_) => continue,
@@ -351,7 +355,8 @@ fn show_overlay(app: &AppHandle, port: u16) {
                     .append_pair("screen_x", &position.x.to_string())
                     .append_pair("screen_y", &position.y.to_string())
                     .append_pair("screen_w", &size.width.to_string())
-                    .append_pair("screen_h", &size.height.to_string());
+                    .append_pair("screen_h", &size.height.to_string())
+                    .append_pair("screen_primary", if is_primary { "1" } else { "0" });
                 let parsed = monitor_url;
                 let built =
                     WebviewWindowBuilder::new(app, &window_name, WebviewUrl::External(parsed))
@@ -398,7 +403,8 @@ fn hide_overlay(app: &AppHandle) {
     let state = app.state::<OverlayWindows>();
     let handles = state.handles.lock().unwrap();
     for window in handles.iter() {
-        let _ = window.eval("window.helpieOverlayActive = false;");
+        let _ =
+            window.eval("window.helpieClearAnnotations?.(); window.helpieOverlayActive = false;");
         hide_without_activation(window);
     }
 }

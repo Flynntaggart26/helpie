@@ -14,7 +14,7 @@ App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + smooth 
 | Voice | Global hotkey; transcription is opt-in; spoken replies use Windows locally or optional cloud neural speech |
 | Chat | Chat window with sidebar, saved history you can reopen and delete |
 | Apps | Opens and closes Chrome, Spotify, Notepad, VS Code, Word, Explorer, Terminal… without stealing focus |
-| Screen | Reads the current screen (including error messages) with an image-capable selected model |
+| Screen | Reads the current screen and can briefly mark a requested target with a pin, highlight, or arrow |
 | Documents | Summarises PDF, Word, PowerPoint and text files by name |
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
@@ -24,8 +24,9 @@ App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + smooth 
   seconds. It sends one frame to the selected model only after you explicitly ask about your
   screen; a remote provider receives that frame for the answer. Closing the companion or turning
   screen access off stops capture and clears the buffer. Full chat retains its separate Windows
-  picker for each screen question. The immediate pointer echo stays local. Drawing, highlights, notes on
-  the overlay, and approved mouse or keyboard actions remain future work.
+  picker for each screen question. The immediate pointer echo stays local. The companion can show
+  short-lived pins, highlight boxes, and arrows after an explicit request. Persistent visual notes
+  and approved mouse or keyboard actions remain future work.
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Wake word | Optional Jarvis / Computer wake word, off by default and requires a Picovoice AccessKey |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |
@@ -368,7 +369,9 @@ enabled, each screen question opens the Windows capture picker so the user selec
 window. Windows shows its capture border; Helpie captures one frame for that request and sends it
 through the selected provider. An optional proportional region can be selected from a local preview.
 The app records a capture timestamp and the picker target name when Windows provides one. Canceling
-the picker sends no image.
+the picker sends no image. In the Ctrl+H companion, a direct request to point something out can send
+one current frame and display a validated, short-lived pin, rectangle, or arrow. The annotation is
+not saved and never operates the desktop.
 
 **AI providers:** Settings → AI Providers lets you select Gemini, local Ollama, or an OpenAI-compatible
 endpoint such as OpenRouter or Groq. Helpie uses only the selected provider and does not silently fall

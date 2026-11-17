@@ -1,6 +1,6 @@
 [package]
 name = "helpie"
-version = "1.16.14"
+version = "1.16.15"
 description = "Helpie - voice assistant for Windows"
 authors = ["Flynntaggart26"]
 edition = "2021"
