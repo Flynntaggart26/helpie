@@ -112,7 +112,13 @@ function toast(message) {
 
 function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g, (char) => {
-    const map = { "&": "&", "<": "<", ">": ">", '"': '"', "'": "'" };
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
     return map[char];
   });
 }

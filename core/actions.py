@@ -421,7 +421,10 @@ def open_app(name: str) -> str:
         if not _launch(cleaned):
             previous = _foreground_hwnd()
             before = _visible_hwnds()
-            subprocess.Popen(["cmd", "/c", "start", "", cleaned], creationflags=CREATE_NO_WINDOW)
+            # Do not pass model- or user-controlled app text through cmd.exe.
+            # CreateProcess receives one executable token and does not interpret
+            # shell metacharacters such as `&`, `|`, or redirections.
+            subprocess.Popen([cleaned], creationflags=CREATE_NO_WINDOW)
             if BACKGROUND_APPS:
                 threading.Thread(target=_watch_launch, args=(set(), before, previous),
                                  daemon=True, name="helpie-launch-watch").start()
