@@ -24,7 +24,9 @@ const state = {
   visualNotes: [],
   activeVisualNoteId: "",
   visualNoteStrokes: [],
+  visualNoteItems: [],
   visualNotePointCount: 0,
+  visualNoteUndoStack: [],
   activeVisualStroke: null,
   visualNoteDirty: false,
 };
@@ -318,6 +320,7 @@ function drawVisualNoteCanvas() {
   const ratio = Math.max(1, window.devicePixelRatio || 1);
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, rect.width, rect.height);
+  drawVisualNoteItems(context, rect.width, rect.height);
   for (const stroke of state.visualNoteStrokes) {
     const points = stroke.points || [];
     if (!points.length || !VISUAL_NOTE_COLORS.has(stroke.color)) continue;
@@ -340,6 +343,128 @@ function drawVisualNoteCanvas() {
     }
     context.stroke();
   }
+}
+
+function drawVisualNoteItems(context, width, height) {
+  const px = (value) => value * width;
+  const py = (value) => value * height;
+  const label = (text, x, y, size = 14) => {
+    if (typeof text !== "string" || !text.trim()) return;
+    context.font = `600 ${size}px Segoe UI, sans-serif`;
+    context.lineWidth = 4;
+    context.strokeStyle = "#08111d";
+    context.fillStyle = "#ffffff";
+    context.lineJoin = "round";
+    context.strokeText(text.slice(0, 60), x, y);
+    context.fillText(text.slice(0, 60), x, y);
+  };
+  context.save();
+  context.lineWidth = 3;
+  context.strokeStyle = "#55d6ff";
+  context.fillStyle = "#ffca52";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  for (const item of state.visualNoteItems.slice(0, 3)) {
+    if (!item || typeof item !== "object") continue;
+    if (item.kind === "pin" && Number.isFinite(item.x) && Number.isFinite(item.y)) {
+      context.beginPath(); context.arc(px(item.x), py(item.y), 9, 0, Math.PI * 2); context.fill();
+      label(item.label, px(item.x) + 13, py(item.y) - 9);
+    } else if (item.kind === "callout" && Number.isFinite(item.x) && Number.isFinite(item.y)
+      && Number.isInteger(item.number) && item.number >= 1 && item.number <= 3) {
+      context.beginPath(); context.arc(px(item.x), py(item.y), 11, 0, Math.PI * 2); context.fill();
+      context.fillStyle = "#07111f"; context.font = "700 13px Segoe UI, sans-serif";
+      context.textAlign = "center"; context.textBaseline = "middle";
+      context.fillText(String(item.number), px(item.x), py(item.y));
+      context.textAlign = "left"; context.textBaseline = "alphabetic"; context.fillStyle = "#ffca52";
+      label(item.label, px(item.x) + 15, py(item.y) - 12);
+    } else if (item.kind === "rect" && [item.x, item.y, item.width, item.height].every(Number.isFinite)) {
+      context.fillStyle = "rgba(255, 202, 82, 0.12)";
+      context.fillRect(px(item.x), py(item.y), px(item.width), py(item.height));
+      context.strokeRect(px(item.x), py(item.y), px(item.width), py(item.height));
+      context.fillStyle = "#ffca52"; label(item.label, px(item.x), py(item.y) - 7);
+    } else if (item.kind === "arrow" && [item.x1, item.y1, item.x2, item.y2].every(Number.isFinite)) {
+      const x1 = px(item.x1), y1 = py(item.y1), x2 = px(item.x2), y2 = py(item.y2);
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      context.strokeStyle = "#55d6ff"; context.beginPath(); context.moveTo(x1, y1); context.lineTo(x2, y2); context.stroke();
+      context.beginPath(); context.moveTo(x2, y2);
+      context.lineTo(x2 - 11 * Math.cos(angle - 0.45), y2 - 11 * Math.sin(angle - 0.45));
+      context.lineTo(x2 - 11 * Math.cos(angle + 0.45), y2 - 11 * Math.sin(angle + 0.45));
+      context.closePath(); context.fillStyle = "#55d6ff"; context.fill();
+      label(item.label, (x1 + x2) / 2, (y1 + y2) / 2 - 8);
+    } else if (item.kind === "equation" && typeof item.text === "string") {
+      label(item.text.slice(0, 120), px(item.x), py(item.y), 20);
+    } else if (item.kind === "graph" && Array.isArray(item.segments)) {
+      const gx = px(item.x), gy = py(item.y), gw = px(item.width), gh = py(item.height);
+      context.fillStyle = "rgba(8, 17, 29, 0.84)"; context.fillRect(gx, gy, gw, gh);
+      context.strokeStyle = "#8299b4"; context.strokeRect(gx, gy, gw, gh);
+      context.strokeStyle = "rgba(176, 205, 235, 0.3)"; context.lineWidth = 1;
+      for (let tick = 1; tick < 4; tick += 1) {
+        context.beginPath(); context.moveTo(gx + gw * tick / 4, gy); context.lineTo(gx + gw * tick / 4, gy + gh); context.stroke();
+        context.beginPath(); context.moveTo(gx, gy + gh * tick / 4); context.lineTo(gx + gw, gy + gh * tick / 4); context.stroke();
+      }
+      context.strokeStyle = "#55d6ff"; context.lineWidth = 2;
+      for (const segment of item.segments.slice(0, 65)) {
+        if (!Array.isArray(segment) || segment.length < 2 || segment.length > 65
+          || !segment.every((point) => Array.isArray(point) && point.length === 2
+            && point.every((value) => Number.isFinite(value) && value >= 0 && value <= 1))) continue;
+        context.beginPath(); context.moveTo(gx + segment[0][0] * gw, gy + segment[0][1] * gh);
+        for (const point of segment.slice(1)) context.lineTo(gx + point[0] * gw, gy + point[1] * gh);
+        context.stroke();
+      }
+      label(`f(x) = ${String(item.expression || "").slice(0, 96)}`, gx, gy - 5);
+    } else if (item.kind === "geometry" && Array.isArray(item.objects)) {
+      const gx = px(item.x), gy = py(item.y), gw = px(item.width), gh = py(item.height);
+      for (const object of item.objects.slice(0, 12)) {
+        if (!object || typeof object !== "object") continue;
+        context.strokeStyle = "#8be9ff"; context.fillStyle = "#ffca52"; context.lineWidth = 2;
+        if (object.kind === "point" && Number.isFinite(object.x) && Number.isFinite(object.y)) {
+          const ox = gx + object.x * gw, oy = gy + object.y * gh;
+          context.beginPath(); context.arc(ox, oy, 4, 0, Math.PI * 2); context.fill();
+          label(object.label, ox + 7, oy - 6, 12);
+        } else if (object.kind === "segment" && [object.x1, object.y1, object.x2, object.y2].every(Number.isFinite)) {
+          const x1 = gx + object.x1 * gw, y1 = gy + object.y1 * gh;
+          const x2 = gx + object.x2 * gw, y2 = gy + object.y2 * gh;
+          context.beginPath(); context.moveTo(x1, y1); context.lineTo(x2, y2); context.stroke();
+          label(object.label, (x1 + x2) / 2 + 5, (y1 + y2) / 2 - 5, 12);
+        } else if (object.kind === "circle" && Number.isFinite(object.radius)) {
+          const cx = gx + object.cx * gw, cy = gy + object.cy * gh;
+          context.beginPath(); context.ellipse(cx, cy, object.radius * gw, object.radius * gh, 0, 0, Math.PI * 2); context.stroke();
+          label(object.label, cx + object.radius * gw + 4, cy, 12);
+        } else if (object.kind === "polygon" && Array.isArray(object.points) && object.points.length >= 3 && object.points.length <= 8) {
+          context.beginPath(); context.moveTo(gx + object.points[0][0] * gw, gy + object.points[0][1] * gh);
+          let centerX = object.points[0][0] / object.points.length;
+          let centerY = object.points[0][1] / object.points.length;
+          for (const point of object.points.slice(1)) {
+            context.lineTo(gx + point[0] * gw, gy + point[1] * gh);
+            centerX += point[0] / object.points.length;
+            centerY += point[1] / object.points.length;
+          }
+          context.closePath(); context.stroke();
+          label(object.label, gx + centerX * gw + 5, gy + centerY * gh - 5, 12);
+        }
+      }
+      const marks = { horizontal: "↔", vertical: "↕", equal: "=", perpendicular: "⊥", parallel: "∥" };
+      for (const constraint of (Array.isArray(item.constraints) ? item.constraints : []).slice(0, 8)) {
+        if (!constraint || !Object.prototype.hasOwnProperty.call(marks, constraint.kind)
+          || !Array.isArray(constraint.objects)
+          || constraint.objects.length !== (constraint.kind === "horizontal"
+            || constraint.kind === "vertical" ? 1 : 2)
+          || !constraint.objects.every((index) => Number.isInteger(index)
+            && index >= 0 && index < item.objects.length
+            && item.objects[index]?.kind === "segment")) continue;
+        const linked = constraint.objects.map((index) => {
+          const segment = item.objects[index];
+          return {
+            x: gx + (segment.x1 + segment.x2) * gw / 2,
+            y: gy + (segment.y1 + segment.y2) * gh / 2,
+          };
+        });
+        label(marks[constraint.kind], linked.reduce((sum, point) => sum + point.x, 0) / linked.length,
+          linked.reduce((sum, point) => sum + point.y, 0) / linked.length, 16);
+      }
+    }
+  }
+  context.restore();
 }
 
 function resizeVisualNoteCanvas() {
@@ -367,7 +492,7 @@ function renderVisualNotes() {
   list.innerHTML = state.visualNotes.map((note) => (
     `<div class="visual-note-item">` +
     `<div class="visual-note-item-copy"><strong>${escapeHtml(note.title || "Untitled")}</strong>` +
-    `<span>${escapeHtml(note.updated_at || "")} · ${Number(note.stroke_count) || 0} strokes</span></div>` +
+    `<span>${escapeHtml(note.updated_at || "")} · ${Number(note.stroke_count) || 0} strokes · ${Number(note.visual_count) || 0} visual items</span></div>` +
     `<button class="ghost" type="button" data-visual-note-open="${escapeHtml(note.id)}">Open</button>` +
     `<button class="ghost" type="button" data-visual-note-delete="${escapeHtml(note.id)}" aria-label="Delete ${escapeHtml(note.title || "visual note")}">Delete</button>` +
     `</div>`
@@ -388,6 +513,8 @@ function newVisualNote() {
   if (state.visualNoteDirty && !window.confirm("Discard unsaved visual note changes?")) return;
   state.activeVisualNoteId = "";
   state.visualNoteStrokes = [];
+  state.visualNoteItems = [];
+  state.visualNoteUndoStack = [];
   state.visualNotePointCount = 0;
   state.visualNoteDirty = false;
   $("visual-note-title").value = "";
@@ -403,6 +530,8 @@ async function openVisualNote(noteId) {
     const note = data.note;
     state.activeVisualNoteId = note.id;
     state.visualNoteStrokes = Array.isArray(note.strokes) ? note.strokes : [];
+    state.visualNoteItems = Array.isArray(note.visual_items) ? note.visual_items : [];
+    state.visualNoteUndoStack = [];
     state.visualNotePointCount = state.visualNoteStrokes.reduce(
       (total, stroke) => total + (Array.isArray(stroke.points) ? stroke.points.length : 0), 0);
     state.visualNoteDirty = false;
@@ -428,15 +557,76 @@ async function saveVisualNote() {
         id: state.activeVisualNoteId,
         title,
         strokes: state.visualNoteStrokes,
+        visual_items: state.visualNoteItems,
       }),
     });
     state.activeVisualNoteId = data.note.id;
+    state.visualNoteItems = Array.isArray(data.note.visual_items)
+      ? data.note.visual_items : state.visualNoteItems;
     state.visualNoteDirty = false;
     $("visual-note-status").textContent = "Visual note saved on this device.";
     await loadVisualNotes();
   } catch (error) {
     $("visual-note-status").textContent = "Could not save. Check the title and drawing size.";
   }
+}
+
+function pushVisualNoteUndo() {
+  state.visualNoteUndoStack.push({
+    strokes: JSON.parse(JSON.stringify(state.visualNoteStrokes)),
+    visualItems: JSON.parse(JSON.stringify(state.visualNoteItems)),
+  });
+  if (state.visualNoteUndoStack.length > 20) state.visualNoteUndoStack.shift();
+}
+
+async function importLatestVisualAnswer() {
+  try {
+    const data = await api("/api/visual-notes/current");
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      $("visual-note-status").textContent = "No recent Helpie answer is available to import.";
+      return;
+    }
+    if (state.visualNoteItems.length + items.length > 3) {
+      $("visual-note-status").textContent = "This note can contain up to three visual items.";
+      return;
+    }
+    pushVisualNoteUndo();
+    state.visualNoteItems.push(...items);
+    if (!$("visual-note-title").value.trim()) $("visual-note-title").value = "Helpie visual answer";
+    state.visualNoteDirty = true;
+    $("visual-note-status").textContent = "Imported the recent vector answer. Save to keep it on this device.";
+    drawVisualNoteCanvas();
+  } catch (error) {
+    $("visual-note-status").textContent = "Could not import the recent Helpie answer.";
+  }
+}
+
+async function exportVisualNote() {
+  const title = $("visual-note-title").value.trim() || "Untitled visual note";
+  try {
+    await api("/api/visual-notes/exported", { method: "POST", body: "{}" });
+  } catch (error) {
+    $("visual-note-status").textContent = "Could not prepare the note export.";
+    return;
+  }
+  const payload = {
+    format: "helpie-visual-note",
+    version: 1,
+    title,
+    strokes: state.visualNoteStrokes,
+    visual_items: state.visualNoteItems,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${title.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 60) || "visual-note"}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  $("visual-note-status").textContent = "Exported this note as a local JSON file.";
 }
 
 function beginVisualNoteStroke(event) {
@@ -458,6 +648,7 @@ function beginVisualNoteStroke(event) {
     size: Math.max(1, Math.min(20, Number($("visual-note-size").value) || 4)),
     points: [point],
   };
+  pushVisualNoteUndo();
   state.visualNoteStrokes.push(stroke);
   state.visualNotePointCount += 1;
   state.visualNoteDirty = true;
@@ -1790,21 +1981,36 @@ function bind() {
   });
   $("visual-note-new").addEventListener("click", newVisualNote);
   $("visual-note-save").addEventListener("click", saveVisualNote);
+  $("visual-note-import-answer").addEventListener("click", importLatestVisualAnswer);
+  $("visual-note-export").addEventListener("click", exportVisualNote);
   $("visual-note-title").addEventListener("input", () => { state.visualNoteDirty = true; });
   $("visual-note-undo").addEventListener("click", () => {
-    const removed = state.visualNoteStrokes.pop();
-    state.visualNotePointCount = Math.max(0, state.visualNotePointCount - (removed?.points?.length || 0));
+    const previous = state.visualNoteUndoStack.pop();
+    if (!previous) return;
+    state.visualNoteStrokes = previous.strokes;
+    state.visualNoteItems = previous.visualItems;
+    state.visualNotePointCount = state.visualNoteStrokes.reduce(
+      (total, stroke) => total + (stroke.points?.length || 0), 0);
     state.visualNoteDirty = true;
     state.activeVisualStroke = null;
-    $("visual-note-status").textContent = "Last stroke removed. Save to keep this change.";
+    $("visual-note-status").textContent = "Last change undone. Save to keep this change.";
     drawVisualNoteCanvas();
   });
   $("visual-note-clear").addEventListener("click", () => {
+    if (state.visualNoteStrokes.length) pushVisualNoteUndo();
     state.visualNoteStrokes = [];
     state.visualNotePointCount = 0;
     state.visualNoteDirty = true;
     state.activeVisualStroke = null;
     $("visual-note-status").textContent = "Canvas cleared. Save to keep this change.";
+    drawVisualNoteCanvas();
+  });
+  $("visual-note-clear-answer").addEventListener("click", () => {
+    if (!state.visualNoteItems.length) return;
+    pushVisualNoteUndo();
+    state.visualNoteItems = [];
+    state.visualNoteDirty = true;
+    $("visual-note-status").textContent = "Imported answers removed. Save to keep this change.";
     drawVisualNoteCanvas();
   });
   $("visual-note-canvas").addEventListener("pointerdown", (event) => {

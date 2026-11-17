@@ -34,8 +34,10 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
   The coordinates are checked and rendered as fixed SVG shapes; they disappear
   after 12 seconds or when you say “clear highlights” / press Stop. The overlay
   stays click-through.
-- The Notes page includes a local vector sketch pad. Drawings can be saved,
-  reopened and edited; only the strokes are stored, and no screen image is saved.
+- The Notes page can import a recent Helpie vector answer, combine it with a
+  local sketch, save/reopen/edit it, undo the last changes, and export JSON.
+  The latest answer stays in memory for up to 10 minutes for import. Stored notes
+  contain validated vector shapes and strokes; no screen image is saved.
 - Ctrl+H now opens a compact desktop companion at the lower-right and hides the
   full chat window. A distinct Helpie pointer follows your cursor with a
   short smoothing transition; its current position is sampled locally and is not uploaded.

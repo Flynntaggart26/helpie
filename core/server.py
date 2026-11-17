@@ -110,6 +110,7 @@ class App:
             "schema_version": VISUAL_SCHEMA_VERSION,
             "revision": 0, "items": [], "expires_at": 0.0,
         }
+        self._latest_visual_answer = {"items": [], "expires_at": 0.0}
         self._turn = 0
         self.server: Optional[ThreadingHTTPServer] = None
 
@@ -235,6 +236,19 @@ class App:
                 "duration_ms": duration_ms,
                 "expires_at": time.monotonic() + duration_ms / 1000,
             }
+            if items:
+                self._latest_visual_answer = {
+                    "items": items,
+                    "expires_at": time.monotonic() + 600,
+                }
+
+    def latest_visual_answer(self) -> list[dict]:
+        with self._visual_annotations_lock:
+            current = self._latest_visual_answer
+            if current.get("expires_at", 0.0) <= time.monotonic():
+                self._latest_visual_answer = {"items": [], "expires_at": 0.0}
+                return []
+            return list(current.get("items", []))
 
     def clear_visual_annotations(self) -> None:
         with self._visual_annotations_lock:
@@ -779,6 +793,9 @@ class Handler(BaseHTTPRequestHandler):
                 except (OSError, ValueError):
                     self._json({"error": "visual notes could not be read"}, 500)
                 return
+            if path == "/api/visual-notes/current":
+                self._json({"items": app.latest_visual_answer()})
+                return
             if path.startswith("/api/visual-notes/"):
                 note_id = path.rsplit("/", 1)[-1]
                 try:
@@ -939,6 +956,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 note = visual_notes.save_note(
                     str(body.get("id", "")), body.get("title", ""), body.get("strokes"),
+                    body.get("visual_items"),
                 )
             except ValueError as exc:
                 self._json({"error": str(exc)}, 400)
@@ -948,6 +966,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             audit.log("Saved a visual note", source="notes")
             self._json({"note": note})
+            return
+        if path == "/api/visual-notes/exported":
+            audit.log("Exported a visual note", source="notes")
+            self._json({"ok": True})
             return
         if path == "/api/visual-notes/delete":
             try:

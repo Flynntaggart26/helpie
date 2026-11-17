@@ -27,8 +27,9 @@ App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + smooth 
   picker for each screen question. The immediate pointer echo stays local and now uses a friendly
   face cursor; while Helpie thinks, three small dots appear beside a still “Thinking” label. The
   companion can show short-lived pins, highlight boxes, and arrows after an explicit request.
-  The Notes page also has a local sketch pad where you can draw, save, reopen, and edit vector
-  visual notes; it does not store screen images. Approved mouse or keyboard actions remain future work.
+  The Notes page also has a local sketch pad where you can draw, import recent vector answers,
+  save/reopen/edit notes, undo changes, and export JSON; it does not store screen images.
+  Approved mouse or keyboard actions remain future work.
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Wake word | Optional Jarvis / Computer wake word, off by default and requires a Picovoice AccessKey |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |

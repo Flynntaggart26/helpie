@@ -1,4 +1,4 @@
-"""Local, bounded storage for editable visual notes (vector strokes only)."""
+"""Local, bounded storage for editable strokes and validated vector answers."""
 from __future__ import annotations
 
 import datetime as dt
@@ -17,6 +17,7 @@ MAX_POINTS_PER_STROKE = 500
 MAX_POINTS_TOTAL = 10_000
 MAX_TITLE_LENGTH = 120
 MAX_STORE_BYTES = 5_000_000
+MAX_VISUAL_ITEMS = 3
 ALLOWED_COLORS = {"#55d6ff", "#f59e0b", "#f472b6", "#f8fafc"}
 _ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _lock = threading.RLock()
@@ -38,7 +39,9 @@ def _read_unlocked() -> list[dict]:
     notes = []
     seen_ids: set[str] = set()
     for item in payload:
-        if (not isinstance(item, dict) or set(item) != {"id", "title", "updated_at", "strokes"}
+        if (not isinstance(item, dict)
+                or set(item) not in ({"id", "title", "updated_at", "strokes"},
+                                     {"id", "title", "updated_at", "strokes", "visual_items"})
                 or not isinstance(item.get("id"), str) or not _ID_RE.fullmatch(item["id"])
                 or item["id"] in seen_ids
                 or not isinstance(item.get("title"), str) or not item["title"].strip()
@@ -50,7 +53,8 @@ def _read_unlocked() -> list[dict]:
         seen_ids.add(item["id"])
         notes.append({"id": item["id"], "title": item["title"],
                       "updated_at": item["updated_at"],
-                      "strokes": _normalize_strokes(item["strokes"])})
+                      "strokes": _normalize_strokes(item["strokes"]),
+                      "visual_items": _normalize_visual_items(item.get("visual_items", []))})
     return notes
 
 
@@ -90,18 +94,50 @@ def _normalize_strokes(value: object) -> list[dict]:
                 raise ValueError("A point has an invalid format.")
             x, y = point["x"], point["y"]
             if any(isinstance(number, bool) or not isinstance(number, (int, float))
-                   or not math.isfinite(number) or not 0 <= number <= 1 for number in (x, y)):
+                   for number in (x, y)):
                 raise ValueError("A point is outside the note canvas.")
-            clean_points.append({"x": float(x), "y": float(y)})
+            try:
+                x, y = float(x), float(y)
+            except OverflowError as exc:
+                raise ValueError("A point is outside the note canvas.") from exc
+            if any(not math.isfinite(number) or not 0 <= number <= 1 for number in (x, y)):
+                raise ValueError("A point is outside the note canvas.")
+            clean_points.append({"x": x, "y": y})
         result.append({"color": color, "size": float(size), "points": clean_points})
     return result
+
+
+def _normalize_visual_items(value: object) -> list[dict]:
+    if not isinstance(value, list) or len(value) > MAX_VISUAL_ITEMS:
+        raise ValueError("A visual note can contain up to three visual items.")
+    if not value:
+        return []
+    raw_items = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("A visual answer has an invalid format.")
+        source = dict(item)
+        if source.get("kind") == "graph":
+            source.pop("segments", None)  # Recompute bounded points from its expression.
+        raw_items.append(source)
+    try:
+        from brain import VISUAL_RESPONSE_MARKER, VISUAL_SCHEMA_VERSION, _parse_visual_response
+        payload = json.dumps({"version": VISUAL_SCHEMA_VERSION, "items": raw_items},
+                             ensure_ascii=True, allow_nan=False, separators=(",", ":"))
+        _, clean = _parse_visual_response(VISUAL_RESPONSE_MARKER + payload)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("A visual answer could not be validated.") from exc
+    if len(clean) != len(value):
+        raise ValueError("A visual answer could not be validated.")
+    return clean
 
 
 def list_notes() -> list[dict]:
     with _lock:
         notes = _read_unlocked()
         return [{"id": note["id"], "title": note["title"], "updated_at": note["updated_at"],
-                 "stroke_count": len(note["strokes"])} for note in reversed(notes)]
+                 "stroke_count": len(note["strokes"]),
+                 "visual_count": len(note["visual_items"])} for note in reversed(notes)]
 
 
 def get_note(note_id: str) -> dict | None:
@@ -111,7 +147,8 @@ def get_note(note_id: str) -> dict | None:
         return next((dict(note) for note in _read_unlocked() if note["id"] == note_id), None)
 
 
-def save_note(note_id: str, title: str, strokes: object) -> dict:
+def save_note(note_id: str, title: str, strokes: object,
+              visual_items: object = None) -> dict:
     if not isinstance(title, str):
         raise ValueError("Enter a title up to 120 characters.")
     title = title.strip()
@@ -130,8 +167,12 @@ def save_note(note_id: str, title: str, strokes: object) -> dict:
                 raise ValueError("That visual note no longer exists.")
         elif len(notes) >= MAX_NOTES:
             raise ValueError("Helpie can keep up to 100 visual notes. Delete one to make room.")
+        visual_source = (existing["visual_items"] if visual_items is None and existing
+                         else [] if visual_items is None else visual_items)
+        clean_visual_items = _normalize_visual_items(visual_source)
         note = {"id": existing["id"] if existing else uuid.uuid4().hex,
-                "title": title, "updated_at": now, "strokes": clean_strokes}
+                "title": title, "updated_at": now, "strokes": clean_strokes,
+                "visual_items": clean_visual_items}
         if existing:
             notes[notes.index(existing)] = note
         else:

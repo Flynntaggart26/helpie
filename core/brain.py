@@ -363,6 +363,8 @@ def _parse_geometry(item: dict) -> tuple[list[dict], list[dict]] | None:
         if not isinstance(source, dict):
             return None
         kind = source.get("kind")
+        if not isinstance(kind, str):
+            return None
         refs = source.get("objects")
         expected = 1 if kind in {"horizontal", "vertical"} else 2
         if (kind not in {"horizontal", "vertical", "equal", "perpendicular", "parallel"}
@@ -412,6 +414,8 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
         if not isinstance(item, dict):
             continue
         kind = item.get("kind")
+        if not isinstance(kind, str):
+            continue
         fields = {
             "pin": {"kind", "x", "y", "label"},
             "callout": {"kind", "x", "y", "number", "label"},

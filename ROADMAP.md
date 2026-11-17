@@ -9,9 +9,9 @@ Installer and portable downloads are available on the [GitHub release page](http
 
 v1.16.15 adds temporary, model-proposed screen pins/highlights/arrows for direct
 requests, a friendlier companion cursor with a three-dot thinking state, and a
-local sketch pad in the Notes page. Visual notes store bounded vector strokes,
-not captured screen images. The Windows release workflow and visual-note tests
-passed; interactive desktop review remains useful for pointer feel and drawing.
+local sketch pad in the Notes page. Visual notes store bounded vector strokes
+and, in the unreleased v1.16.16 candidate, validated vector answers; no screen
+images are stored.
 
 ## Work in progress: v1.16.16 candidate (not released)
 
@@ -25,6 +25,8 @@ grammar and samples a fixed domain without evaluating code.
 Basic point, segment, circle and polygon diagrams support plain-text labels and
 visual relation marks for horizontal, vertical, equal, perpendicular and
 parallel segments; these marks do not solve or alter geometry.
+The Notes editor can import the latest vector answer while it remains in memory,
+save and reopen it with sketch strokes, undo edits, and export a local JSON file.
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.

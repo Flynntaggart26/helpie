@@ -31,7 +31,7 @@ class VisualNoteTests(unittest.TestCase):
         self.assertEqual(visual_notes.get_note(created["id"]), created)
         self.assertEqual(visual_notes.list_notes(), [{
             "id": created["id"], "title": "Sketch", "updated_at": created["updated_at"],
-            "stroke_count": 1,
+            "stroke_count": 1, "visual_count": 0,
         }])
 
         updated = visual_notes.save_note(created["id"], "Updated sketch", [])

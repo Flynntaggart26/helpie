@@ -124,7 +124,8 @@
           <div class="panel-head">
             <div>
               <h2>Visual notes</h2>
-              <p class="muted">Draw, save, reopen, and edit sketches on this device. No screen image is stored.</p>
+              <p class="muted">Save sketches and Helpie’s vector answers on this device. No screen image is stored.</p>
+              <p class="muted">The latest vector answer stays in memory for up to 10 minutes so you can import it.</p>
             </div>
             <button class="ghost" id="visual-note-new" type="button">New note</button>
           </div>
@@ -142,6 +143,9 @@
             <input id="visual-note-size" type="range" min="1" max="20" value="4" aria-label="Pen size" />
             <button class="ghost" id="visual-note-undo" type="button">Undo</button>
             <button class="ghost" id="visual-note-clear" type="button">Clear canvas</button>
+            <button class="ghost" id="visual-note-clear-answer" type="button">Remove answer</button>
+            <button class="ghost" id="visual-note-import-answer" type="button">Import last Helpie answer</button>
+            <button class="ghost" id="visual-note-export" type="button">Export note</button>
             <button class="primary" id="visual-note-save" type="button">Save note</button>
           </div>
           <canvas id="visual-note-canvas" class="visual-note-canvas" aria-label="Visual note drawing canvas. Use a mouse, pen, or touch to draw."></canvas>
