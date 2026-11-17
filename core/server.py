@@ -12,7 +12,6 @@ import socket
 import threading
 import time
 import traceback
-from collections import deque
 from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -105,8 +104,6 @@ class App:
         self._live_capture_last_stop = 0.0
         self._live_capture_status = {"state": "off", "active": False, "frame_ready": False,
                                      "target": "", "captured_at_ms": ""}
-        self._pointer_samples: deque[tuple[float, int, int]] = deque()
-        self._pointer_samples_lock = threading.Lock()
         self._turn = 0
         self.server: Optional[ThreadingHTTPServer] = None
 
@@ -117,6 +114,7 @@ class App:
             cloud_consent=bool(self.cfg.get("cloud_tts_consent", False)),
             on_start=self._on_speak_start,
             on_end=self._on_speak_end,
+            on_error=self._on_speak_error,
         )
         self.listener = Listener()
         self.wake_word = WakeWordListener(on_wake=self._on_wake_word)
@@ -141,8 +139,8 @@ class App:
 
         self._start_wake_word()
 
-    def delayed_pointer(self, delay_seconds: float = 2.0) -> Optional[dict]:
-        """Return a locally sampled cursor position from two seconds ago."""
+    def pointer_position(self) -> Optional[dict]:
+        """Return the current cursor position, sampled locally for the overlay."""
         if os.name != "nt":
             return None
         try:
@@ -152,18 +150,7 @@ class App:
         except (AttributeError, OSError):
             return None
 
-        now = time.monotonic()
-        with self._pointer_samples_lock:
-            samples = self._pointer_samples
-            if not samples or now - samples[-1][0] >= 0.025:
-                samples.append((now, int(point.x), int(point.y)))
-            cutoff = now - max(0.25, min(float(delay_seconds), 5.0))
-            while len(samples) > 1 and samples[1][0] <= cutoff:
-                samples.popleft()
-            if samples and samples[0][0] <= cutoff:
-                _, x, y = samples[0]
-                return {"x": x, "y": y}
-        return None
+        return {"x": int(point.x), "y": int(point.y)}
 
     def overlay_capture_status(self) -> dict:
         """Keep a consented local frame session aligned with the visible companion."""
@@ -282,9 +269,10 @@ class App:
 
     def _on_speak_start(self) -> None:
         self._speaking = True
-        self._cloud_voice_active = True
+        self._cloud_voice_active = bool(self.speaker.cloud_consent)
         self.push_state("speaking")
-        self.bus.push({"type": "cloud_voice", "active": True, "mode": "speak"})
+        self.bus.push({"type": "cloud_voice", "active": self._cloud_voice_active,
+                       "mode": "speak" if self._cloud_voice_active else "speak-local"})
 
     def _on_speak_end(self) -> None:
         self._speaking = False
@@ -292,6 +280,9 @@ class App:
         self.bus.push({"type": "cloud_voice", "active": False})
         if not self._listening:
             self.push_state("idle")
+
+    def _on_speak_error(self, message: str) -> None:
+        self.bus.push({"type": "error", "text": message})
 
     def _speak(self, text: str) -> None:
         self.speaker.say(text)
@@ -750,7 +741,7 @@ class Handler(BaseHTTPRequestHandler):
                                 app.cfg.get("screen_context_consent", False)
                                 and app.cfg.get("companion_live_view_consent", False)
                             ),
-                            "pointer_echo": app.delayed_pointer()})
+                            "pointer_echo": app.pointer_position()})
                 return
             if path == "/api/plugins":
                 self._json({"plugins": app.plugins.list_plugins()})

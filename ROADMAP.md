@@ -3,9 +3,9 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.13
+## Current release: v1.16.14 (pending build)
 
-Installer and portable downloads are available on the [GitHub release page](https://github.com/Flynntaggart26/helpie/releases/tag/v1.16.13).
+v1.16.13 installer and portable downloads are available on the [GitHub release page](https://github.com/Flynntaggart26/helpie/releases/tag/v1.16.13).
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
@@ -21,8 +21,13 @@ processing. Full chat retains its separate one-frame Windows picker flow.
 Drawing, highlights, notes on the overlay, and approved desktop actions are
 still future work.
 
-v1.16.12 introduced Ctrl+H companion placement, a distinct local pointer echo
-delayed by two seconds, and tray/full-window lifecycle behavior.
+v1.16.14 removes the two-second pointer lag; Helpie's distinct marker follows
+the current cursor with a short smoothing transition. Replies now use an
+installed Windows voice locally when cloud neural speech is not enabled, and
+fall back to local speech if the online synthesizer or audio playback fails.
+
+v1.16.12 introduced Ctrl+H companion placement, a distinct local pointer echo,
+and tray/full-window lifecycle behavior.
 
 v1.16.11 adds image-capable vision requests for OpenRouter, Groq and local
 Ollama models. Cloud vision sends the selected frame to the selected provider;

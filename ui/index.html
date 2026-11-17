@@ -384,8 +384,8 @@
 
                 <div class="split-row">
                   <div class="split-text">
-                    <span class="split-label">Allow Microsoft Edge to create spoken replies</span>
-                    <span class="split-desc">When enabled, Helpie sends reply text to Microsoft’s online speech service. Off by default; replies still appear as text.</span>
+                    <span class="split-label">Use Microsoft Edge neural voice for replies</span>
+                    <span class="split-desc">When enabled, reply text is sent to Microsoft’s online speech service. When off, Helpie uses an installed Windows voice locally.</span>
                   </div>
                   <div class="split-control">
                     <label class="switch"><input type="checkbox" id="set-cloud-tts" /><span class="track"></span></label>
@@ -441,7 +441,7 @@
                 <div class="form-block">
                   <label class="page-label" for="set-voice">Answering voice</label>
                   <select id="set-voice" class="wide"></select>
-                  <p class="page-help">Neural voice used for spoken replies.</p>
+                  <p class="page-help">Used when Microsoft Edge neural voice is enabled. Otherwise Helpie uses the default installed Windows voice.</p>
                 </div>
 
                 <div class="form-block">

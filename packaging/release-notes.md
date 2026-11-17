@@ -22,7 +22,11 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 - Ctrl+H now opens a compact desktop companion at the lower-right and hides the
   full chat window. A distinct Helpie pointer follows your cursor with a
-  two-second delay; its position is sampled locally and is not uploaded.
+  short smoothing transition; its current position is sampled locally and is not uploaded.
+- Spoken assistant replies work without cloud speech permission through the
+  installed Windows voice. Microsoft Edge neural speech remains optional; if it
+  fails, Helpie falls back to the local Windows voice. Voice input consent is
+  separate from voice output.
 - When both screen-reading permissions are enabled, the Ctrl+H companion
   captures the primary display locally at up to one frame per second. It keeps
   only the newest reduced frame in memory for three seconds and captures a

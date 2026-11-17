@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Helpie",
-  "version": "1.16.13",
+  "version": "1.16.14",
   "identifier": "com.flynntaggart.helpie",
   "build": {
     "frontendDist": "../web"

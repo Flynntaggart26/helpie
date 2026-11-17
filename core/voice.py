@@ -400,6 +400,7 @@ class Speaker:
         cloud_consent: bool = False,
         on_start: Optional[Callable[[], None]] = None,
         on_end: Optional[Callable[[], None]] = None,
+        on_error: Optional[Callable[[str], None]] = None,
     ) -> None:
         self.voice = voice
         self.rate = rate
@@ -407,6 +408,7 @@ class Speaker:
         self.cloud_consent = bool(cloud_consent)
         self.on_start = on_start
         self.on_end = on_end
+        self.on_error = on_error
         self._queue: "queue.Queue[Optional[str]]" = queue.Queue()
         self._stop = threading.Event()
         self._busy = False
@@ -429,7 +431,7 @@ class Speaker:
 
     def say(self, text: str) -> None:
         text = (text or "").strip()
-        if not text or not self.cloud_consent:
+        if not text:
             return
         for piece in self._split(text):
             self._queue.put(piece)
@@ -487,6 +489,48 @@ class Speaker:
         except Exception:
             return None
 
+    def _speak_local(self, text: str) -> bool:
+        """Speak through the installed Windows voice without sending text online."""
+        if os.name != "nt":
+            return False
+        try:
+            import comtypes
+            from comtypes.client import CreateObject
+
+            comtypes.CoInitialize()
+            try:
+                voice = CreateObject("SAPI.SpVoice")
+                voice.Volume = max(0, min(100, round(self.volume * 100)))
+                try:
+                    rate = float(str(self.rate).rstrip("%"))
+                except (TypeError, ValueError):
+                    rate = 0.0
+                voice.Rate = max(-10, min(10, round(rate / 10)))
+                voice.Speak(text)
+                return True
+            finally:
+                comtypes.CoUninitialize()
+        except Exception:
+            return False
+
+    def _play_file(self, path: str) -> bool:
+        try:
+            import pygame
+
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(frequency=44100)
+            pygame.mixer.music.load(path)
+            pygame.mixer.music.set_volume(max(0.0, min(1.0, self.volume)))
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                if self._stop.is_set():
+                    pygame.mixer.music.stop()
+                    return False
+                time.sleep(0.05)
+            return True
+        except Exception:
+            return False
+
     def _run(self) -> None:
         try:
             import pygame
@@ -500,37 +544,27 @@ class Speaker:
             text = self._queue.get()
             if text is None:
                 break
-            if not self.cloud_consent:
-                continue
             self._busy = True
             try:
                 if self.on_start:
                     self.on_start()
-                path = self._synth(text)
-                if path:
-                    try:
-                        import pygame
-
-                        if not pygame.mixer.get_init():
-                            pygame.mixer.init(frequency=44100)
-                        pygame.mixer.music.load(path)
-                        pygame.mixer.music.set_volume(self.volume)
-                        pygame.mixer.music.play()
-                        while pygame.mixer.music.get_busy():
-                            if self._stop.is_set():
-                                pygame.mixer.music.stop()
-                                break
-                            time.sleep(0.05)
-                    except Exception:
-                        pass
-                    finally:
+                spoken = False
+                if self.cloud_consent:
+                    path = self._synth(text)
+                    if path:
                         try:
-                            os.remove(path)
-                        except OSError:
-                            pass
-                else:
-                    # internet yok / edge-tts çalışmadı: kısa süre bekle, balon görünsün
-                    time.sleep(min(4.0, max(1.0, len(text) / 22)))
+                            spoken = self._play_file(path)
+                        finally:
+                            try:
+                                os.remove(path)
+                            except OSError:
+                                pass
+                if not spoken:
+                    spoken = self._speak_local(text)
+                if not spoken and self.on_error:
+                    self.on_error(
+                        "I could not play a spoken reply. Check Windows audio output and the Voice settings."
+                    )
             finally:
                 self._busy = False
                 if self._queue.empty() and self.on_end:

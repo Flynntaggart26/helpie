@@ -4,14 +4,14 @@ A screen-aware assistant for Windows. Open the full Helpie window for chat and s
 or press **Ctrl + H** to bring up the compact desktop companion and speak.
 
 ```
-App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + delayed Helpie pointer
+App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + smooth Helpie pointer
 ```
 
 ## Features
 
 | Area | What it does |
 | --- | --- |
-| Voice | Global hotkey; cloud transcription and spoken replies are separate, opt-in settings |
+| Voice | Global hotkey; transcription is opt-in; spoken replies use Windows locally or optional cloud neural speech |
 | Chat | Chat window with sidebar, saved history you can reopen and delete |
 | Apps | Opens and closes Chrome, Spotify, Notepad, VS Code, Word, Explorer, Terminal… without stealing focus |
 | Screen | Reads the current screen (including error messages) with an image-capable selected model |
@@ -24,7 +24,7 @@ App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + delayed
   seconds. It sends one frame to the selected model only after you explicitly ask about your
   screen; a remote provider receives that frame for the answer. Closing the companion or turning
   screen access off stops capture and clears the buffer. Full chat retains its separate Windows
-  picker for each screen question. The delayed pointer stays local. Drawing, highlights, notes on
+  picker for each screen question. The immediate pointer echo stays local. Drawing, highlights, notes on
   the overlay, and approved mouse or keyboard actions remain future work.
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Wake word | Optional Jarvis / Computer wake word, off by default and requires a Picovoice AccessKey |
@@ -361,8 +361,9 @@ Settings opens as its own full-window surface (the chat sidebar hides while it i
   each plugin's `settings_schema` (for example Spotify client id / secret / device / refresh token)
 - **Save settings** in the footer applies everything
 
-**Privacy controls:** Settings → Voice separately controls Google voice transcription, Microsoft
-online speech synthesis, and screen-context access. Each is off by default. When screen access is
+**Privacy controls:** Settings → Voice separately controls Google voice transcription, optional Microsoft
+online speech synthesis, and screen-context access. Cloud services are opt-in. Spoken replies use an
+installed Windows voice locally when Microsoft speech is off. When screen access is
 enabled, each screen question opens the Windows capture picker so the user selects a display or app
 window. Windows shows its capture border; Helpie captures one frame for that request and sends it
 through the selected provider. An optional proportional region can be selected from a local preview.
