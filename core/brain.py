@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import contextvars
 import json
 import random
 import re
@@ -185,6 +186,9 @@ class Brain:
         self.llm.memory_text = memory.as_prompt()
         self.pending: Optional[tuple[str, dict]] = None
         self._in_plan = False
+        self._screen_capture_allowed = contextvars.ContextVar(
+            "helpie_screen_capture_allowed", default=True,
+        )
 
     def refresh(self, cfg: dict) -> None:
         self.cfg = cfg
@@ -320,7 +324,14 @@ class Brain:
         return " ".join(replies) or "I could not run those steps."
 
     # ------------------------------------------------------------------ #
-    def handle(self, text: str) -> str:
+    def handle(self, text: str, allow_screen_capture: bool = True) -> str:
+        token = self._screen_capture_allowed.set(bool(allow_screen_capture))
+        try:
+            return self._handle(text)
+        finally:
+            self._screen_capture_allowed.reset(token)
+
+    def _handle(self, text: str) -> str:
         raw = (text or "").strip()
         if not raw:
             return "I didn't hear anything. Try again?"
@@ -763,6 +774,9 @@ class Brain:
 
     # ------------------------------------------------------------------ #
     def _describe_screen(self, prompt: str) -> str:
+        if not self._screen_capture_allowed.get():
+            return ("Live screen understanding is not available in the companion yet. "
+                    "Open the full Helpie chat to ask about a screen capture.")
         if not self.cfg.get("screen_context_consent", False):
             return ("Screen reading is off. Turn it on in Settings "
                     "(Ctrl+H -> Settings -> Voice -> Allow screen reading).")

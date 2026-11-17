@@ -191,11 +191,15 @@ def main() -> None:
         open_window(url)
     print(f"Helpie running at {url}  (version {updater.current_version()})")
 
-    # global hotkey: Ctrl+H -> focus window + listen
+    # Global hotkey: summon the desktop companion without opening full chat.
     def hotkey() -> None:
-        if not focus_window():
-            open_window(url)
-        app.listen_async("manual")
+        if shell.available():
+            if not shell.request("companion"):
+                if not focus_window():
+                    open_window(url)
+        else:
+            open_tiny_window(url)
+        app.listen_async("companion")
 
     try:
         import keyboard

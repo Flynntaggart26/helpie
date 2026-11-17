@@ -20,6 +20,12 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
+- Ctrl+H now opens a compact desktop companion at the lower-right and hides the
+  full chat window. A distinct Helpie pointer follows your cursor with a
+  two-second delay; its position is sampled locally and is not uploaded.
+- The existing one-frame screen question in the full chat remains explicit.
+  The companion does not stream desktop images to an AI provider. Drawing,
+  highlights and approved mouse/keyboard actions are future work.
 - Screen questions now support image-capable OpenRouter and Groq models, as
   well as local Ollama vision models. No Gemini key is required when using
   those providers; cloud providers send the selected frame to their service.

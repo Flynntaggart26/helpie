@@ -18,7 +18,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
     AppHandle, Manager, PhysicalPosition, PhysicalSize, Url, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    WebviewWindowBuilder, WindowEvent,
 };
 
 #[cfg(windows)]
@@ -134,7 +134,10 @@ fn sidecar_path() -> Option<PathBuf> {
     // it under src-tauri/sidecar. Try both so `cargo run` works too.
     let candidates = [
         exe_dir.join("helpie-core").join("helpie-core.exe"),
-        exe_dir.join("sidecar").join("helpie-core").join("helpie-core.exe"),
+        exe_dir
+            .join("sidecar")
+            .join("helpie-core")
+            .join("helpie-core.exe"),
         exe_dir.join("helpie-core.exe"),
         exe_dir
             .join("sidecar")
@@ -212,6 +215,8 @@ fn show_main(app: &AppHandle, port: u16, force: bool) {
     if force || !START_HIDDEN.load(Ordering::Relaxed) {
         if force {
             USER_SHOWED.store(true, Ordering::Relaxed);
+            hide_tiny(app);
+            hide_overlay(app);
         }
         let _ = window.show();
         let _ = window.set_focus();
@@ -235,28 +240,25 @@ fn show_main(app: &AppHandle, port: u16, force: bool) {
     });
 }
 
-#[cfg(windows)]
-fn cursor_pos() -> (i32, i32) {
-    #[repr(C)]
-    struct Point {
-        x: i32,
-        y: i32,
-    }
-
-    extern "system" {
-        fn GetCursorPos(point: *mut Point) -> i32;
-    }
-
-    let mut point = Point { x: 0, y: 0 };
-    unsafe {
-        GetCursorPos(&mut point);
-    }
-    (point.x, point.y)
-}
-
-#[cfg(not(windows))]
-fn cursor_pos() -> (i32, i32) {
-    (200, 200)
+fn tiny_position(app: &AppHandle) -> PhysicalPosition<i32> {
+    let monitor = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| app.available_monitors().ok()?.into_iter().next());
+    let Some(monitor) = monitor else {
+        return PhysicalPosition::new(16, 16);
+    };
+    let origin = monitor.position();
+    let size = monitor.size();
+    let scale = monitor.scale_factor();
+    let width = (TINY_W * scale).round() as i32;
+    let height = (TINY_H * scale).round() as i32;
+    let margin = (16.0 * scale).round() as i32;
+    PhysicalPosition::new(
+        origin.x + (size.width as i32 - width - margin).max(0),
+        origin.y + (size.height as i32 - height - margin).max(0),
+    )
 }
 
 fn show_tiny(app: &AppHandle, port: u16) {
@@ -265,8 +267,7 @@ fn show_tiny(app: &AppHandle, port: u16) {
 
     if let Some(window) = app.get_webview_window("tiny") {
         let _ = window.eval(&format!("location.replace('{url}');"));
-        let (x, y) = cursor_pos();
-        let _ = window.set_position(PhysicalPosition::new(x + 24, y + 24));
+        let _ = window.set_position(tiny_position(app));
         let _ = window.show();
         let _ = window.set_focus();
         return;
@@ -276,11 +277,9 @@ fn show_tiny(app: &AppHandle, port: u16) {
         Ok(parsed) => parsed,
         Err(_) => return,
     };
-    let (x, y) = cursor_pos();
     let built = WebviewWindowBuilder::new(app, "tiny", WebviewUrl::External(parsed))
         .title("Helpie")
         .inner_size(TINY_W, TINY_H)
-        .position(x as f64 + 24.0, y as f64 + 24.0)
         .resizable(false)
         .maximizable(false)
         .always_on_top(true)
@@ -291,6 +290,7 @@ fn show_tiny(app: &AppHandle, port: u16) {
 
     match built {
         Ok(window) => {
+            let _ = window.set_position(tiny_position(app));
             let _ = window.show();
             let _ = window.set_focus();
         }
@@ -310,17 +310,18 @@ fn hide_tiny(app: &AppHandle) {
 // The overlay is the Phase 1 annotation layer: a transparent, click-through
 // window that covers the primary monitor and never takes focus. It draws a
 // marker that is deliberately distinct from the user's pointer. It is a visual
-// surface only - it cannot click, type, or read anything.
+// surface only - it cannot click, type, or capture screen pixels. The delayed
+// pointer echo is sampled locally by the backend while this window is visible.
 fn show_overlay(app: &AppHandle, port: u16) {
     let url = format!("{}/?view=overlay", base_url(port));
 
-    // Re-show existing overlay windows (re-navigate to refresh the URL).
+    // Existing overlay windows already have their monitor bounds in the URL.
     {
         let state = app.state::<OverlayWindows>();
         let handles = state.handles.lock().unwrap();
         if !handles.is_empty() {
             for window in handles.iter() {
-                let _ = window.eval(&format!("location.replace('{url}');"));
+                let _ = window.eval("window.helpieResumeOverlay?.();");
                 show_without_activation(window);
             }
             return;
@@ -335,30 +336,38 @@ fn show_overlay(app: &AppHandle, port: u16) {
         Ok(monitors) => {
             for (index, monitor) in monitors.iter().enumerate() {
                 let window_name = format!("overlay-{}", index);
-                let parsed = match Url::parse(&url) {
+                let position = monitor.position();
+                let size = monitor.size();
+                let mut monitor_url = match Url::parse(&url) {
                     Ok(p) => p,
                     Err(_) => continue,
                 };
-                let built = WebviewWindowBuilder::new(app, &window_name, WebviewUrl::External(parsed))
-                    .title("Helpie overlay")
-                    .decorations(false)
-                    .transparent(true)
-                    .shadow(false)
-                    .resizable(false)
-                    .maximizable(false)
-                    .minimizable(false)
-                    .always_on_top(true)
-                    .skip_taskbar(true)
-                    .focused(false)
-                    .visible(false)
-                    .build();
+                monitor_url
+                    .query_pairs_mut()
+                    .append_pair("screen_x", &position.x.to_string())
+                    .append_pair("screen_y", &position.y.to_string())
+                    .append_pair("screen_w", &size.width.to_string())
+                    .append_pair("screen_h", &size.height.to_string());
+                let parsed = monitor_url;
+                let built =
+                    WebviewWindowBuilder::new(app, &window_name, WebviewUrl::External(parsed))
+                        .title("Helpie overlay")
+                        .decorations(false)
+                        .transparent(true)
+                        .shadow(false)
+                        .resizable(false)
+                        .maximizable(false)
+                        .minimizable(false)
+                        .always_on_top(true)
+                        .skip_taskbar(true)
+                        .focused(false)
+                        .visible(false)
+                        .build();
 
                 if let Ok(window) = built {
                     // Click-through: the overlay must never sit between the
                     // user and their work.
                     let _ = window.set_ignore_cursor_events(true);
-                    let position = monitor.position();
-                    let size = monitor.size();
                     let _ = window.set_position(PhysicalPosition::new(position.x, position.y));
                     let _ = window.set_size(PhysicalSize::new(size.width, size.height));
                     show_without_activation(&window);
@@ -380,8 +389,17 @@ fn hide_overlay(app: &AppHandle) {
     let state = app.state::<OverlayWindows>();
     let handles = state.handles.lock().unwrap();
     for window in handles.iter() {
+        let _ = window.eval("window.helpieOverlayActive = false;");
         hide_without_activation(window);
     }
+}
+
+fn show_companion(app: &AppHandle, port: u16) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.hide();
+    }
+    show_overlay(app, port);
+    show_tiny(app, port);
 }
 
 /// Hide through Win32 rather than `window.hide()`.
@@ -466,9 +484,15 @@ fn current_port(app: &AppHandle) -> Option<u16> {
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Helpie", true, None::<&str>)?;
-    let tiny = MenuItem::with_id(app, "tiny", "Tiny window", true, None::<&str>)?;
+    let tiny = MenuItem::with_id(app, "tiny", "Show companion", true, None::<&str>)?;
     let overlay = MenuItem::with_id(app, "overlay", "Show screen overlay", true, None::<&str>)?;
-    let hide = MenuItem::with_id(app, "hide-overlay", "Hide screen overlay", true, None::<&str>)?;
+    let hide = MenuItem::with_id(
+        app,
+        "hide-overlay",
+        "Hide screen overlay",
+        true,
+        None::<&str>,
+    )?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Helpie", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &tiny, &overlay, &hide, &separator, &quit])?;
@@ -490,7 +514,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             }
             "tiny" => {
                 if let Some(port) = current_port(app) {
-                    show_tiny(app, port);
+                    show_companion(app, port);
                 }
             }
             "overlay" => {
@@ -655,7 +679,7 @@ fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream
     }
     if !matches!(
         action.as_str(),
-        "full" | "focus" | "tiny" | "hide-tiny" | "overlay" | "hide-overlay" | "quit"
+        "full" | "focus" | "companion" | "tiny" | "hide-tiny" | "overlay" | "hide-overlay" | "quit"
     ) {
         let _ = stream
             .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
@@ -671,6 +695,7 @@ fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream
 
     match action.as_str() {
         "full" | "focus" => show_main(app, port, true),
+        "companion" => show_companion(app, port),
         "tiny" => show_tiny(app, port),
         "hide-tiny" => hide_tiny(app),
         "overlay" => show_overlay(app, port),
@@ -964,6 +989,14 @@ fn main() {
 
             std::thread::spawn(move || boot(handle));
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .build(tauri::generate_context!())
         .unwrap_or_else(|err| {

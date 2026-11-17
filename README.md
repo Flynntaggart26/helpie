@@ -1,10 +1,10 @@
 # Helpie
 
-A screen-aware assistant for Windows. Press **Ctrl + H** to open Helpie, ask by text or
-voice, and get help with the current screen, documents, and everyday desktop tasks.
+A screen-aware assistant for Windows. Open the full Helpie window for chat and settings,
+or press **Ctrl + H** to bring up the compact desktop companion and speak.
 
 ```
-Ctrl + H  →  Helpie opens  →  ask by text or voice  →  get an answer or request an action
+App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + delayed Helpie pointer
 ```
 
 ## Features
@@ -18,6 +18,10 @@ Ctrl + H  →  Helpie opens  →  ask by text or voice  →  get an answer or re
 | Documents | Summarises PDF, Word, PowerPoint and text files by name |
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
+
+The companion's two-second pointer echo is local-only. It does not capture or upload desktop
+frames continuously. The full chat retains the explicit, one-frame screen question flow. Drawing,
+highlights, and user-approved keyboard or mouse actions are planned follow-up work.
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Wake word | Optional Jarvis / Computer wake word, off by default and requires a Picovoice AccessKey |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |

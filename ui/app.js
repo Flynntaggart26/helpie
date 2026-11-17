@@ -434,9 +434,9 @@ async function send() {
   }
 }
 
-async function startListening() {
+async function startListening(reason = "chat") {
   try {
-    await api("/api/listen", { method: "POST", body: "{}" });
+    await api("/api/listen", { method: "POST", body: JSON.stringify({ reason }) });
   } catch (error) {
     toast("Could not start the microphone.");
   }
@@ -1698,7 +1698,7 @@ function bind() {
     }
     if (event.ctrlKey && event.key.toLowerCase() === "h") {
       event.preventDefault();
-      startListening();
+      startListening("companion");
       return;
     }
     if (event.ctrlKey && event.key.toLowerCase() === "k") {
@@ -1728,12 +1728,13 @@ function bind() {
 /* Rendered in a transparent, click-through window that covers the primary
    monitor. It is a visual surface only: no input, no capture, no focus. */
 function startOverlay() {
+  window.helpieOverlayActive = true;
   document.body.classList.add("overlay-mode");
   document.documentElement.classList.add("overlay-mode");
   const root = document.createElement("div");
   root.className = "overlay-root overlay-state-idle";
   root.innerHTML = `
-    <div class="overlay-marker" style="left: 32%; top: 28%;">
+    <div class="overlay-marker" style="left: 32%; top: 28%; visibility: hidden;">
       <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
         <path d="M4 2l14 8-6 1.6L9.4 18z" stroke="#0b1020" stroke-width="1.2"/>
       </svg>
@@ -1744,9 +1745,6 @@ function startOverlay() {
         <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-4.25 5-7 0-1.41-.61-2.75-1.65-3.77z"/>
       </svg>
       <span class="overlay-cloud-tag">Cloud</span>
-    </div>
-    <div class="overlay-highlight" style="left: 46%; top: 42%; width: 22%; height: 16%;">
-      <span class="overlay-highlight-label">1</span>
     </div>
     <div class="overlay-hint" data-state-label="idle">Idle</div>
   `;
@@ -1760,6 +1758,10 @@ function startOverlay() {
   });
 
   // Sync visual state with the backend.
+  window.helpieResumeOverlay = () => {
+    window.helpieOverlayActive = true;
+    pollOverlayState();
+  };
   pollOverlayState();
 }
 
@@ -1792,22 +1794,47 @@ function setOverlayState(state, cloudVoiceActive) {
 }
 
 async function pollOverlayState() {
+  if (window.helpieOverlayPolling) return;
+  window.helpieOverlayPolling = true;
   let lastState = null;
   let lastCloudActive = null;
-  while (document.querySelector(".overlay-root")) {
-    try {
-      const data = await api("/api/overlay/state");
-      const state = data.state || "idle";
-      const cloudActive = !!data.cloud_voice_active;
-      if (state !== lastState || cloudActive !== lastCloudActive) {
-        setOverlayState(state, cloudActive);
-        lastState = state;
-        lastCloudActive = cloudActive;
+  const params = new URLSearchParams(location.search);
+  const monitor = {
+    left: Number(params.get("screen_x")),
+    top: Number(params.get("screen_y")),
+    width: Number(params.get("screen_w")),
+    height: Number(params.get("screen_h")),
+  };
+  const marker = document.querySelector(".overlay-marker");
+  try {
+    while (document.querySelector(".overlay-root") && window.helpieOverlayActive) {
+      try {
+        const data = await api("/api/overlay/state");
+        const state = data.state || "idle";
+        const cloudActive = !!data.cloud_voice_active;
+        if (state !== lastState || cloudActive !== lastCloudActive) {
+          setOverlayState(state, cloudActive);
+          lastState = state;
+          lastCloudActive = cloudActive;
+        }
+        const point = data.pointer_echo;
+        const inMonitor = point && monitor.width > 0 && monitor.height > 0
+          && point.x >= monitor.left && point.x < monitor.left + monitor.width
+          && point.y >= monitor.top && point.y < monitor.top + monitor.height;
+        if (marker) {
+          marker.style.visibility = inMonitor ? "visible" : "hidden";
+          if (inMonitor) {
+            marker.style.left = `${((point.x - monitor.left) / monitor.width) * 100}%`;
+            marker.style.top = `${((point.y - monitor.top) / monitor.height) * 100}%`;
+          }
+        }
+      } catch (e) {
+        // Backend may not be ready yet; retry on the next tick.
       }
-    } catch (e) {
-      // Backend may not be ready yet; retry on the next tick.
+      await new Promise((r) => setTimeout(r, 40));
     }
-    await new Promise((r) => setTimeout(r, 300));
+  } finally {
+    window.helpieOverlayPolling = false;
   }
 }
 

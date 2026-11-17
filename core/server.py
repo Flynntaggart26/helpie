@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import itertools
 import base64
+import ctypes
 import hmac
 import json
 import mimetypes
@@ -11,6 +12,8 @@ import socket
 import threading
 import time
 import traceback
+from collections import deque
+from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
@@ -96,6 +99,8 @@ class App:
         self._closing = False
         self._speaking = False
         self._cloud_voice_active = False
+        self._pointer_samples: deque[tuple[float, int, int]] = deque()
+        self._pointer_samples_lock = threading.Lock()
         self._turn = 0
         self.server: Optional[ThreadingHTTPServer] = None
 
@@ -131,6 +136,30 @@ class App:
 
         self._start_wake_word()
 
+    def delayed_pointer(self, delay_seconds: float = 2.0) -> Optional[dict]:
+        """Return a locally sampled cursor position from two seconds ago."""
+        if os.name != "nt":
+            return None
+        try:
+            point = wintypes.POINT()
+            if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+                return None
+        except (AttributeError, OSError):
+            return None
+
+        now = time.monotonic()
+        with self._pointer_samples_lock:
+            samples = self._pointer_samples
+            if not samples or now - samples[-1][0] >= 0.025:
+                samples.append((now, int(point.x), int(point.y)))
+            cutoff = now - max(0.25, min(float(delay_seconds), 5.0))
+            while len(samples) > 1 and samples[1][0] <= cutoff:
+                samples.popleft()
+            if samples and samples[0][0] <= cutoff:
+                _, x, y = samples[0]
+                return {"x": x, "y": y}
+        return None
+
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
         self.bus.push(event)
@@ -162,7 +191,7 @@ class App:
         # Open tiny window near cursor via shell control endpoint.
         try:
             import shell
-            shell.request("tiny")
+            shell.request("companion")
         except Exception as e:
             print(f"[WakeWord] Failed to open tiny window: {e}")
 
@@ -192,12 +221,12 @@ class App:
         self.speaker.say(text)
 
     # -- conversation ---------------------------------------------------- #
-    def reply(self, user_text: str) -> str:
+    def reply(self, user_text: str, source: str = "chat") -> str:
         self.bus.push({"type": "message", "role": "user", "text": user_text})
         self.history.append("user", user_text)
         self.push_state("thinking")
         try:
-            answer = self.brain.handle(user_text)
+            answer = self.brain.handle(user_text, allow_screen_capture=(source == "chat"))
         except Exception:
             traceback.print_exc()
             answer = "Something went wrong on my side, but I'm still here."
@@ -285,7 +314,7 @@ class App:
                 self.bus.push({"type": "cloud_voice", "active": False})
                 self.bus.push({"type": "heard", "text": text})
                 self._listening = False
-                self.reply(text)
+                self.reply(text, source="chat" if reason == "chat" else "companion")
                 self.speaker.wait_idle(60)
                 self._listening = True
 
@@ -600,7 +629,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "version": updater.current_version()})
                 return
             if path == "/api/overlay/state":
-                self._json({"state": app.state, "cloud_voice_active": app._cloud_voice_active})
+                self._json({"state": app.state,
+                            "cloud_voice_active": app._cloud_voice_active,
+                            "pointer_echo": app.delayed_pointer()})
                 return
             if path == "/api/plugins":
                 self._json({"plugins": app.plugins.list_plugins()})
@@ -656,11 +687,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/ask":
             text = str(body.get("text", "")).strip()
-            answer = app.reply(text)
+            source = str(body.get("source", "chat"))
+            answer = app.reply(text, source="companion" if source == "companion" else "chat")
             self._json({"reply": answer})
             return
         if path == "/api/listen":
-            app.listen_async("manual")
+            reason = str(body.get("reason", "chat"))
+            app.listen_async("companion" if reason == "companion" else "chat")
             self._json({"ok": True})
             return
         if path == "/api/stop":

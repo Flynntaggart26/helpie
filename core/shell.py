@@ -1,7 +1,7 @@
 """Bridge between the Python backend and the Tauri shell.
 
 When Helpie runs inside the Tauri desktop shell, window control (show the full
-app, pop the tiny window, quit) is owned by Rust. The shell exposes a tiny
+app, pop the companion, show the overlay, quit) is owned by Rust. The shell exposes a tiny
 localhost control endpoint and passes its port to us through the
 ``HELPIE_CONTROL_PORT`` environment variable.
 
@@ -48,7 +48,7 @@ def available() -> bool:
 
 
 def request(action: str, timeout: float = 2.5) -> bool:
-    """Ask the shell to perform ``action`` (full, tiny, hide-tiny, focus, quit).
+    """Ask the shell to perform a window action (full, focus, companion, quit).
 
     Returns False if no shell is listening, so callers can fall back to opening
     a browser window themselves.
