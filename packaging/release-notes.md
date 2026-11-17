@@ -44,8 +44,9 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
   disabling either permission stops capture and clears the buffer.
 - A visible overlay indicator labels local screen capture and shows when a
   single frame is being sent to a remote model. Full chat retains its separate
-  explicit Windows picker for each screen question. Drawing, highlights, notes
-  on the overlay and approved mouse/keyboard actions remain future work.
+  explicit Windows picker for each screen question. Freehand drawing and saved
+  notes directly over the live desktop, plus approved mouse/keyboard actions,
+  remain future work. The Notes-page sketch pad is a separate local canvas.
 - Screen questions now support image-capable OpenRouter and Groq models, as
   well as local Ollama vision models. No Gemini key is required when using
   those providers; cloud providers send the selected frame to their service.
