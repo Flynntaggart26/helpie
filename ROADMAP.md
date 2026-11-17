@@ -3,10 +3,17 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.8
+## Current release: v1.16.9
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
+
+v1.16.9 makes provider selection explicit and real: Settings -> AI Providers has
+an "Active provider" page for Gemini, local Ollama, or a custom
+OpenAI-compatible endpoint. Ollama runs locally without an API key, and if the
+chosen provider is unreachable Helpie says so instead of falling back to
+another one. This release also stops echoing the wake-word AccessKey to the
+settings page and makes the Wake Word settings page reachable again.
 
 v1.16.8 adds a visible cloud-voice indicator: while audio is sent to Google for
 transcription, or text is sent to Edge for speech, the overlay shows a pulsing
