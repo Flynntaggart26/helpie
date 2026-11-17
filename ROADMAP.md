@@ -19,6 +19,9 @@ Visual annotation proposals now use schema version 1. The backend rejects
 missing or unsupported schema versions, and the desktop overlay clears rather
 than rendering annotation data from an unknown version. Numbered callouts are
 also available alongside pins, rectangles and arrows.
+Visual answers can also render plain-text/Unicode equations and plot bounded
+functions with a fixed SVG renderer; the backend parses a small arithmetic
+grammar and samples a fixed domain without evaluating code.
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.

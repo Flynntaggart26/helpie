@@ -1773,6 +1773,34 @@ body.overlay-mode .overlay-root {
   font: 700 15px/1 system-ui, sans-serif;
   pointer-events: none;
 }
+.overlay-annotation-equation {
+  fill: #fff;
+  font: 600 24px "Segoe UI", sans-serif;
+  paint-order: stroke;
+  stroke: #08111d;
+  stroke-width: 7px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-annotation-graph-frame {
+  fill: rgba(8, 17, 29, 0.82);
+  stroke: #83a4c8;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-annotation-graph-grid {
+  stroke: rgba(176, 205, 235, 0.3);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-annotation-graph-curve {
+  fill: none;
+  stroke: #55d6ff;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
 @keyframes overlay-annotation-in {
   from { opacity: 0; }
   to { opacity: 1; }

@@ -29,7 +29,7 @@ import reminders
 import routines
 import updater
 import visual_notes
-from brain import Brain
+from brain import Brain, VISUAL_SCHEMA_VERSION
 from voice import Listener, Speaker, WakeWordListener, list_microphones
 
 ROOT = config.APP_DIR
@@ -107,7 +107,8 @@ class App:
                                      "target": "", "captured_at_ms": ""}
         self._visual_annotations_lock = threading.Lock()
         self._visual_annotations = {
-            "schema_version": 1, "revision": 0, "items": [], "expires_at": 0.0,
+            "schema_version": VISUAL_SCHEMA_VERSION,
+            "revision": 0, "items": [], "expires_at": 0.0,
         }
         self._turn = 0
         self.server: Optional[ThreadingHTTPServer] = None
@@ -228,7 +229,7 @@ class App:
         with self._visual_annotations_lock:
             revision = int(self._visual_annotations.get("revision", 0)) + 1
             self._visual_annotations = {
-                "schema_version": 1,
+                "schema_version": VISUAL_SCHEMA_VERSION,
                 "revision": revision,
                 "items": items,
                 "duration_ms": duration_ms,
@@ -239,7 +240,7 @@ class App:
         with self._visual_annotations_lock:
             revision = int(self._visual_annotations.get("revision", 0)) + 1
             self._visual_annotations = {
-                "schema_version": 1, "revision": revision,
+                "schema_version": VISUAL_SCHEMA_VERSION, "revision": revision,
                 "items": [], "expires_at": 0.0,
             }
 
@@ -249,7 +250,7 @@ class App:
             if current.get("items") and current.get("expires_at", 0.0) <= time.monotonic():
                 revision = int(current.get("revision", 0)) + 1
                 self._visual_annotations = {
-                    "schema_version": 1, "revision": revision,
+                    "schema_version": VISUAL_SCHEMA_VERSION, "revision": revision,
                     "items": [], "expires_at": 0.0,
                 }
                 current = self._visual_annotations

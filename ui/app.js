@@ -1973,6 +1973,7 @@ function bind() {
 /* ------------------------------------------------------------------ */
 /* Rendered in a transparent, click-through window that covers the primary
    monitor. It is a visual surface only: no input, no capture, no focus. */
+const VISUAL_ANNOTATION_SCHEMA_VERSION = 1;
 let overlayAnnotationRevision = -1;
 let overlayAnnotationTimer = null;
 
@@ -1984,7 +1985,7 @@ function clearOverlayAnnotations() {
 
 function updateOverlayAnnotations(payload, monitor) {
   const revision = Number(payload?.revision ?? 0);
-  if (payload?.schema_version !== 1) {
+  if (payload?.schema_version !== VISUAL_ANNOTATION_SCHEMA_VERSION) {
     overlayAnnotationRevision = revision;
     clearOverlayAnnotations();
     return;
@@ -2061,6 +2062,67 @@ function updateOverlayAnnotations(payload, monitor) {
       number.textContent = String(item.number);
       svg.appendChild(number);
       addLabel(item.label, x + 20, y - 17);
+    } else if (item.kind === "equation" && valid(item.x) && valid(item.y)
+      && typeof item.text === "string" && item.text.trim() && item.text.length <= 120) {
+      const equation = document.createElementNS(svg.namespaceURI, "text");
+      equation.setAttribute("x", String(item.x * monitor.width));
+      equation.setAttribute("y", String(item.y * monitor.height));
+      equation.setAttribute("class", "overlay-annotation-equation");
+      equation.textContent = item.text.slice(0, 120);
+      svg.appendChild(equation);
+    } else if (item.kind === "graph" && valid(item.x) && valid(item.y)
+      && valid(item.width) && valid(item.height) && item.width > 0 && item.height > 0
+      && item.x + item.width <= 1 && item.y + item.height <= 1
+      && typeof item.expression === "string" && item.expression.length <= 96
+      && Array.isArray(item.segments)) {
+      const segments = [];
+      let graphPointBudget = 65;
+      for (const segment of item.segments.slice(0, 65)) {
+        if (!Array.isArray(segment) || segment.length < 2
+          || segment.length > graphPointBudget
+          || !segment.every((point) => Array.isArray(point) && point.length === 2
+            && valid(point[0]) && valid(point[1]))) continue;
+        segments.push(segment);
+        graphPointBudget -= segment.length;
+      }
+      if (!segments.length) continue;
+      const x = item.x * monitor.width;
+      const y = item.y * monitor.height;
+      const width = item.width * monitor.width;
+      const height = item.height * monitor.height;
+      const frame = document.createElementNS(svg.namespaceURI, "rect");
+      frame.setAttribute("x", String(x));
+      frame.setAttribute("y", String(y));
+      frame.setAttribute("width", String(width));
+      frame.setAttribute("height", String(height));
+      frame.setAttribute("class", "overlay-annotation-graph-frame");
+      svg.appendChild(frame);
+      for (let index = 1; index < 4; index += 1) {
+        const vertical = document.createElementNS(svg.namespaceURI, "line");
+        vertical.setAttribute("x1", String(x + width * index / 4));
+        vertical.setAttribute("x2", String(x + width * index / 4));
+        vertical.setAttribute("y1", String(y));
+        vertical.setAttribute("y2", String(y + height));
+        vertical.setAttribute("class", "overlay-annotation-graph-grid");
+        svg.appendChild(vertical);
+        const horizontal = document.createElementNS(svg.namespaceURI, "line");
+        horizontal.setAttribute("x1", String(x));
+        horizontal.setAttribute("x2", String(x + width));
+        horizontal.setAttribute("y1", String(y + height * index / 4));
+        horizontal.setAttribute("y2", String(y + height * index / 4));
+        horizontal.setAttribute("class", "overlay-annotation-graph-grid");
+        svg.appendChild(horizontal);
+      }
+      for (const segment of segments) {
+        const curve = document.createElementNS(svg.namespaceURI, "polyline");
+        const points = segment.map(([px, py]) =>
+          `${x + px * width},${y + py * height}`
+        ).join(" ");
+        curve.setAttribute("points", points);
+        curve.setAttribute("class", "overlay-annotation-graph-curve");
+        svg.appendChild(curve);
+      }
+      addLabel(`f(x) = ${item.expression}`, x, y - 10);
     } else if (item.kind === "rect" && valid(item.x) && valid(item.y)
       && valid(item.width) && valid(item.height) && item.width > 0 && item.height > 0
       && item.x + item.width <= 1 && item.y + item.height <= 1) {
@@ -2089,7 +2151,7 @@ function updateOverlayAnnotations(payload, monitor) {
         (item.y1 + item.y2) * monitor.height / 2 - 12);
     }
   }
-  if (!svg.querySelector("circle, rect, line")) return;
+  if (!svg.querySelector("circle, rect, line, text, polyline")) return;
   root.appendChild(svg);
   overlayAnnotationTimer = setTimeout(clearOverlayAnnotations,
     Math.max(1000, Math.min(15000, Number(payload?.duration_ms) || 12000)));

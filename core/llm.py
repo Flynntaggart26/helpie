@@ -60,6 +60,10 @@ items. Allowed kinds and fields:
 - callout: x, y, number (1..3), optional label; number callouts in reading order
 - rect: x, y, width, height, optional label
 - arrow: x1, y1, x2, y2, optional label
+- equation: x, y, text (plain text or Unicode math, at most 120 characters)
+- graph: x, y, width, height, expression (at most 96 characters). Use only x,
+  numbers, pi, e, +, -, *, /, ^, parentheses, and sin/cos/tan/sqrt/abs/ln/log/exp.
+  Write multiplication explicitly, like 2*x. Helpie samples x from -5 to 5.
 Use only visible, confidently located targets. If uncertain, omit the marker line.
 Never return HTML, SVG, JavaScript, or other executable content."""
 

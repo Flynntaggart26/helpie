@@ -23,6 +23,9 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 - Visual annotations now use a versioned, bounded schema. Helpie clears them
   instead of rendering data from a schema version it does not support. You can
   ask it to add up to three numbered callouts along with pins, boxes and arrows.
+- Helpie can place a plain-text or Unicode equation on the overlay and plot a
+  bounded function graph. Graphs use a small arithmetic grammar and fixed SVG
+  shapes; model text is never evaluated as code.
 - When you explicitly ask the Ctrl+H companion to point something out, Helpie can
   show up to three temporary pins, numbered callouts, highlight boxes, or arrows.
   The coordinates are checked and rendered as fixed SVG shapes; they disappear

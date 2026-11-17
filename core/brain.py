@@ -96,6 +96,204 @@ SCREEN_REQUEST_RE = re.compile(
 
 VISUAL_RESPONSE_MARKER = "[[HELPIE_VISUAL]]"
 VISUAL_SCHEMA_VERSION = 1
+GRAPH_TOKEN_RE = re.compile(
+    r"(?P<space>\s+)|(?P<number>(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)|"
+    r"(?P<name>[A-Za-z]+)|(?P<operator>[+\-*/^()])"
+)
+GRAPH_FUNCTIONS = {
+    "sin": math.sin, "cos": math.cos, "tan": math.tan,
+    "sqrt": math.sqrt, "abs": abs, "ln": math.log, "log": math.log10,
+    "exp": math.exp,
+}
+
+
+class _GraphExpressionParser:
+    """Parse a small arithmetic grammar without Python eval or attribute access."""
+
+    def __init__(self, source: str) -> None:
+        if not isinstance(source, str) or not source.strip() or len(source) > 96:
+            raise ValueError("Graph expression is empty or too long")
+        self.tokens: list[tuple[str, str]] = []
+        position = 0
+        while position < len(source):
+            match = GRAPH_TOKEN_RE.match(source, position)
+            if not match:
+                raise ValueError("Graph expression contains an unsupported character")
+            position = match.end()
+            kind = match.lastgroup
+            if kind != "space":
+                self.tokens.append((kind or "", match.group(kind or "")))
+                if len(self.tokens) > 64:
+                    raise ValueError("Graph expression is too complex")
+        self.index = 0
+        self.depth = 0
+
+    def _peek(self, value: str | None = None) -> bool:
+        if self.index >= len(self.tokens):
+            return False
+        return value is None or self.tokens[self.index][1] == value
+
+    def _take(self) -> tuple[str, str]:
+        if not self._peek():
+            raise ValueError("Graph expression ended unexpectedly")
+        token = self.tokens[self.index]
+        self.index += 1
+        return token
+
+    def parse(self) -> tuple:
+        tree = self._sum()
+        if self.index != len(self.tokens):
+            raise ValueError("Graph expression has trailing tokens")
+        return tree
+
+    def _sum(self) -> tuple:
+        node = self._product()
+        while self._peek("+") or self._peek("-"):
+            operator = self._take()[1]
+            node = (operator, node, self._product())
+        return node
+
+    def _product(self) -> tuple:
+        node = self._unary()
+        while self._peek("*") or self._peek("/"):
+            operator = self._take()[1]
+            node = (operator, node, self._unary())
+        return node
+
+    def _unary(self) -> tuple:
+        if self._peek("+") or self._peek("-"):
+            operator = self._take()[1]
+            return ("unary" + operator, self._unary())
+        return self._power()
+
+    def _power(self) -> tuple:
+        node = self._primary()
+        if self._peek("^"):
+            self._take()
+            node = ("^", node, self._unary())
+        return node
+
+    def _primary(self) -> tuple:
+        kind, value = self._take()
+        if kind == "number":
+            number = float(value)
+            if not math.isfinite(number) or abs(number) > 1e6:
+                raise ValueError("Graph number is out of range")
+            return ("number", number)
+        if kind == "name":
+            name = value.lower()
+            if name == "x":
+                return ("x",)
+            if name in {"pi", "e"}:
+                return ("number", math.pi if name == "pi" else math.e)
+            if name not in GRAPH_FUNCTIONS or not self._peek("("):
+                raise ValueError("Graph expression uses an unsupported name")
+            self._take()
+            return self._parenthesized(("function", name))
+        if kind == "operator" and value == "(":
+            return self._parenthesized()
+        raise ValueError("Graph expression expected a number or x")
+
+    def _parenthesized(self, prefix: tuple | None = None) -> tuple:
+        self.depth += 1
+        if self.depth > 16:
+            raise ValueError("Graph expression nesting is too deep")
+        try:
+            node = self._sum()
+            if not self._peek(")"):
+                raise ValueError("Graph expression has an unclosed parenthesis")
+            self._take()
+            return (*prefix, node) if prefix else node
+        finally:
+            self.depth -= 1
+
+
+def _eval_graph_expression(node: tuple, x: float) -> float:
+    kind = node[0]
+    if kind == "number":
+        return node[1]
+    if kind == "x":
+        return x
+    if kind == "unary+":
+        return _eval_graph_expression(node[1], x)
+    if kind == "unary-":
+        return -_eval_graph_expression(node[1], x)
+    if kind == "function":
+        name, child = node[1], node[2]
+        argument = _eval_graph_expression(child, x)
+        if name == "exp" and not -20 <= argument <= 20:
+            raise ValueError("Graph exponent is out of range")
+        return GRAPH_FUNCTIONS[name](argument)
+    left = _eval_graph_expression(node[1], x)
+    right = _eval_graph_expression(node[2], x)
+    if kind == "+":
+        return left + right
+    if kind == "-":
+        return left - right
+    if kind == "*":
+        return left * right
+    if kind == "/":
+        if right == 0:
+            raise ValueError("Graph expression divides by zero")
+        return left / right
+    if kind == "^":
+        if abs(right) > 12:
+            raise ValueError("Graph power is out of range")
+        return left ** right
+    raise ValueError("Graph expression contains an unsupported operation")
+
+
+def _sample_graph(source: str) -> list[list[list[float]]]:
+    """Return a bounded list of normalized polyline segments, or reject the graph."""
+    tree = _GraphExpressionParser(source).parse()
+    samples: list[tuple[float, float] | None] = []
+    for index in range(65):
+        x = -5.0 + 10.0 * index / 64
+        try:
+            y = _eval_graph_expression(tree, x)
+            if isinstance(y, bool) or not isinstance(y, (int, float)):
+                raise ValueError("Graph result is not a real number")
+            if abs(y) > 1e6:
+                raise ValueError("Graph result is out of range")
+            y = float(y)
+            if not math.isfinite(y):
+                raise ValueError("Graph result is not finite")
+        except (ArithmeticError, OverflowError, TypeError, ValueError):
+            samples.append(None)
+            continue
+        samples.append((x, y))
+    values = [sample[1] for sample in samples if sample is not None]
+    if len(values) < 2:
+        raise ValueError("Graph expression has too few finite points")
+    low, high = min(values), max(values)
+    if high - low < 1e-9:
+        pad = max(1.0, abs(low) * 0.1)
+        low -= pad
+        high += pad
+    else:
+        pad = (high - low) * 0.05
+        low -= pad
+        high += pad
+    span = high - low
+    threshold = span * 0.65
+    segments: list[list[list[float]]] = []
+    current: list[list[float]] = []
+    previous_y: float | None = None
+    for index, sample in enumerate(samples):
+        if sample is None or (previous_y is not None and abs(sample[1] - previous_y) > threshold):
+            if len(current) >= 2:
+                segments.append(current)
+            current = []
+        if sample is not None:
+            current.append([index / 64, (high - sample[1]) / span])
+            previous_y = sample[1]
+        else:
+            previous_y = None
+    if len(current) >= 2:
+        segments.append(current)
+    if not segments:
+        raise ValueError("Graph expression could not be plotted")
+    return segments
 
 
 def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
@@ -135,28 +333,49 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
             "callout": {"kind", "x", "y", "number", "label"},
             "rect": {"kind", "x", "y", "width", "height", "label"},
             "arrow": {"kind", "x1", "y1", "x2", "y2", "label"},
+            "equation": {"kind", "x", "y", "text"},
+            "graph": {"kind", "x", "y", "width", "height", "expression"},
         }.get(kind)
         if not fields or set(item) - fields:
             continue
-        label = item.get("label", "")
-        if not isinstance(label, str):
-            continue
-        label = re.sub(r"[\x00-\x1f\x7f]", "", label).strip()[:60]
-        parsed = {"kind": kind, "label": label}
+        parsed = {"kind": kind}
+        if kind == "equation":
+            text_value = item.get("text")
+            if not isinstance(text_value, str):
+                continue
+            text_value = re.sub(r"[\x00-\x1f\x7f]", "", text_value).strip()[:120]
+            if not text_value:
+                continue
+            parsed["text"] = text_value
+        elif kind == "graph":
+            expression = item.get("expression")
+            if not isinstance(expression, str):
+                continue
+            expression = expression.strip()
+            try:
+                segments = _sample_graph(expression)
+            except (ArithmeticError, OverflowError, ValueError):
+                continue
+            parsed["expression"] = expression[:96]
+            parsed["segments"] = segments
+        else:
+            label = item.get("label", "")
+            if not isinstance(label, str):
+                continue
+            parsed["label"] = re.sub(r"[\x00-\x1f\x7f]", "", label).strip()[:60]
         if kind == "callout":
             number = item.get("number")
             if isinstance(number, bool) or not isinstance(number, int) or not 1 <= number <= 3:
                 continue
             parsed["number"] = number
-        keys = ("x", "y") if kind in {"pin", "callout"} else (
-            ("x", "y", "width", "height") if kind == "rect"
-            else ("x1", "y1", "x2", "y2")
-        )
+        keys = (("x", "y") if kind in {"pin", "callout", "equation"} else
+                ("x", "y", "width", "height") if kind in {"rect", "graph"} else
+                ("x1", "y1", "x2", "y2"))
         values = {key: coordinate(item.get(key)) for key in keys}
         if any(value is None for value in values.values()):
             continue
         parsed.update(values)
-        if kind == "rect" and (
+        if kind in {"rect", "graph"} and (
                 parsed["width"] <= 0 or parsed["height"] <= 0
                 or parsed["x"] + parsed["width"] > 1
                 or parsed["y"] + parsed["height"] > 1):
