@@ -1767,6 +1767,12 @@ body.overlay-mode .overlay-root {
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
+
+.overlay-annotation-number {
+  fill: #07111f;
+  font: 700 15px/1 system-ui, sans-serif;
+  pointer-events: none;
+}
 @keyframes overlay-annotation-in {
   from { opacity: 0; }
   to { opacity: 1; }

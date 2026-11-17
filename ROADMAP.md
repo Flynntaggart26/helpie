@@ -17,7 +17,8 @@ passed; interactive desktop review remains useful for pointer feel and drawing.
 
 Visual annotation proposals now use schema version 1. The backend rejects
 missing or unsupported schema versions, and the desktop overlay clears rather
-than rendering annotation data from an unknown version.
+than rendering annotation data from an unknown version. Numbered callouts are
+also available alongside pins, rectangles and arrows.
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.

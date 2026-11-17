@@ -125,12 +125,14 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
         return number if math.isfinite(number) and 0.0 <= number <= 1.0 else None
 
     accepted: list[dict] = []
+    callout_numbers: set[int] = set()
     for item in items:
         if not isinstance(item, dict):
             continue
         kind = item.get("kind")
         fields = {
             "pin": {"kind", "x", "y", "label"},
+            "callout": {"kind", "x", "y", "number", "label"},
             "rect": {"kind", "x", "y", "width", "height", "label"},
             "arrow": {"kind", "x1", "y1", "x2", "y2", "label"},
         }.get(kind)
@@ -141,7 +143,12 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
             continue
         label = re.sub(r"[\x00-\x1f\x7f]", "", label).strip()[:60]
         parsed = {"kind": kind, "label": label}
-        keys = ("x", "y") if kind == "pin" else (
+        if kind == "callout":
+            number = item.get("number")
+            if isinstance(number, bool) or not isinstance(number, int) or not 1 <= number <= 3:
+                continue
+            parsed["number"] = number
+        keys = ("x", "y") if kind in {"pin", "callout"} else (
             ("x", "y", "width", "height") if kind == "rect"
             else ("x1", "y1", "x2", "y2")
         )
@@ -157,6 +164,10 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
         if kind == "arrow" and (parsed["x1"] == parsed["x2"]
                                 and parsed["y1"] == parsed["y2"]):
             continue
+        if kind == "callout":
+            if parsed["number"] in callout_numbers:
+                continue
+            callout_numbers.add(parsed["number"])
         accepted.append(parsed)
     return spoken, accepted
 

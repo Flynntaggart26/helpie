@@ -21,11 +21,13 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 ## What changed
 
 - Visual annotations now use a versioned, bounded schema. Helpie clears them
-  instead of rendering data from a schema version it does not support.
+  instead of rendering data from a schema version it does not support. You can
+  ask it to add up to three numbered callouts along with pins, boxes and arrows.
 - When you explicitly ask the Ctrl+H companion to point something out, Helpie can
-  show up to three temporary pins, highlight boxes, or arrows. The coordinates
-  are checked and rendered as fixed SVG shapes; they disappear after 12 seconds
-  or when you say “clear highlights” / press Stop. The overlay stays click-through.
+  show up to three temporary pins, numbered callouts, highlight boxes, or arrows.
+  The coordinates are checked and rendered as fixed SVG shapes; they disappear
+  after 12 seconds or when you say “clear highlights” / press Stop. The overlay
+  stays click-through.
 - The Notes page includes a local vector sketch pad. Drawings can be saved,
   reopened and edited; only the strokes are stored, and no screen image is saved.
 - Ctrl+H now opens a compact desktop companion at the lower-right and hides the

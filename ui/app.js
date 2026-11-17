@@ -2042,6 +2042,25 @@ function updateOverlayAnnotations(payload, monitor) {
       circle.setAttribute("class", "overlay-annotation-pin");
       svg.appendChild(circle);
       addLabel(item.label, x + 18, y - 15);
+    } else if (item.kind === "callout" && valid(item.x) && valid(item.y)
+      && Number.isInteger(item.number) && item.number >= 1 && item.number <= 3) {
+      const x = item.x * monitor.width;
+      const y = item.y * monitor.height;
+      const circle = document.createElementNS(svg.namespaceURI, "circle");
+      circle.setAttribute("cx", String(x));
+      circle.setAttribute("cy", String(y));
+      circle.setAttribute("r", "15");
+      circle.setAttribute("class", "overlay-annotation-pin");
+      svg.appendChild(circle);
+      const number = document.createElementNS(svg.namespaceURI, "text");
+      number.setAttribute("x", String(x));
+      number.setAttribute("y", String(y));
+      number.setAttribute("class", "overlay-annotation-number");
+      number.setAttribute("text-anchor", "middle");
+      number.setAttribute("dominant-baseline", "central");
+      number.textContent = String(item.number);
+      svg.appendChild(number);
+      addLabel(item.label, x + 20, y - 17);
     } else if (item.kind === "rect" && valid(item.x) && valid(item.y)
       && valid(item.width) && valid(item.height) && item.width > 0 && item.height > 0
       && item.x + item.width <= 1 && item.y + item.height <= 1) {

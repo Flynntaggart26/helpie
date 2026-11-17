@@ -12,13 +12,13 @@ from brain import SCREEN_REQUEST_RE, VISUAL_REQUEST_RE, _parse_visual_response  
 
 
 class VisualAnnotationTests(unittest.TestCase):
-    def test_accepts_only_bounded_pin_rect_and_arrow(self) -> None:
+    def test_accepts_only_bounded_pin_callout_and_arrow(self) -> None:
         payload = {
             "version": 1,
             "items": [
                 {"kind": "pin", "x": 0.25, "y": 0.5, "label": "OK\nbutton"},
-                {"kind": "rect", "x": 0.1, "y": 0.2, "width": 0.3,
-                 "height": 0.4, "label": "target"},
+                {"kind": "callout", "x": 0.6, "y": 0.5, "number": 2,
+                 "label": "second item"},
                 {"kind": "arrow", "x1": 0.2, "y1": 0.2,
                  "x2": 0.9, "y2": 0.8, "label": ""},
             ],
@@ -28,8 +28,10 @@ class VisualAnnotationTests(unittest.TestCase):
         )
 
         self.assertEqual(text, "The button is near the center.")
-        self.assertEqual([item["kind"] for item in items], ["pin", "rect", "arrow"])
+        self.assertEqual([item["kind"] for item in items],
+                         ["pin", "callout", "arrow"])
         self.assertEqual(items[0]["label"], "OKbutton")
+        self.assertEqual(items[1]["number"], 2)
 
     def test_rejects_out_of_bounds_and_non_finite_coordinates(self) -> None:
         payload = {"version": 1, "items": [
