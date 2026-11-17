@@ -1846,10 +1846,24 @@ function startOverlay() {
   root.className = "overlay-root overlay-state-idle";
   root.innerHTML = `
     <div class="overlay-marker" style="left: 32%; top: 28%; visibility: hidden;">
-      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
-        <path d="M4 2l14 8-6 1.6L9.4 18z" stroke="#0b1020" stroke-width="1.2"/>
+      <svg class="overlay-cursor" viewBox="0 0 36 36" width="36" height="36" aria-hidden="true">
+        <defs>
+          <linearGradient id="helpie-cursor-gradient" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#a5f3fc" />
+            <stop offset="1" stop-color="#60a5fa" />
+          </linearGradient>
+        </defs>
+        <circle class="overlay-cursor-halo" cx="15" cy="15" r="13" />
+        <path class="overlay-cursor-shape" d="M5 3 28 15.7l-9.5 2.1-4.1 9.1z" />
+        <circle class="overlay-cursor-eye" cx="15.3" cy="16.1" r="1" />
+        <circle class="overlay-cursor-eye" cx="18" cy="17.5" r="1" />
+        <path class="overlay-cursor-smile" d="M15 19.5q1.7 1.5 3.3.3" />
+        <path class="overlay-cursor-sparkle" d="M29 3v5m-2.5-2.5h5" />
       </svg>
-      <span class="overlay-tag">Helpie</span>
+      <span class="overlay-thinking-dots" aria-hidden="true">
+        <i></i><i></i><i></i>
+      </span>
+      <span class="overlay-tag" role="status" aria-live="polite">Helpie</span>
     </div>
     <div class="overlay-cloud" style="left: 68%; top: 28%;">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
@@ -1892,6 +1906,8 @@ function setOverlayState(state, cloudVoiceActive, screenTransfer) {
   }
   const cloudTag = root.querySelector(".overlay-cloud-tag");
   if (cloudTag) cloudTag.textContent = remoteFrame ? "Screen frame → cloud" : "Cloud voice";
+  const markerTag = root.querySelector(".overlay-tag");
+  if (markerTag) markerTag.textContent = state === "thinking" ? "Thinking" : "Helpie";
 
   const hint = document.querySelector(".overlay-hint");
   const labels = {

@@ -1511,6 +1511,14 @@ kbd { padding: 2px 6px; color: #dbe6f5; }
   .screen-region-header { align-items: flex-start; }
   .screen-region-header p { max-width: 42ch; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .overlay-marker,
+  .overlay-thinking-dots i,
+  .overlay-capture-indicator::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 .palette-search { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
 .palette-ico { color: var(--accent); font-size: 13px; }
 .palette-search input {
@@ -1628,10 +1636,68 @@ body.overlay-mode .overlay-root {
   display: flex;
   align-items: center;
   gap: 8px;
-  transform: translate(-50%, -50%);
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+  transform: translate(-5px, -3px);
+  filter: drop-shadow(0 3px 9px rgba(14, 116, 144, 0.38));
   transition: left 45ms linear, top 45ms linear;
   will-change: left, top;
+}
+.overlay-cursor { flex: 0 0 36px; overflow: visible; }
+.overlay-cursor-halo {
+  fill: rgba(103, 232, 249, 0.16);
+  stroke: rgba(186, 230, 253, 0.55);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-cursor-shape {
+  fill: url(#helpie-cursor-gradient);
+  stroke: #f0fdff;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.overlay-cursor-eye { fill: #12324a; }
+.overlay-cursor-smile {
+  fill: none;
+  stroke: #12324a;
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+.overlay-cursor-sparkle {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.overlay-thinking-dots {
+  display: none;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 30px;
+  transform: translate(-5px, -3px);
+}
+.overlay-thinking-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c4b5fd;
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.65);
+  animation: overlay-thinking-dot 900ms ease-in-out infinite;
+}
+.overlay-thinking-dots i:nth-child(2) { animation-delay: 140ms; }
+.overlay-thinking-dots i:nth-child(3) { animation-delay: 280ms; }
+.overlay-tag {
+  background: rgba(8, 21, 36, 0.94);
+  color: #a5f3fc;
+  border: 1px solid rgba(103, 232, 249, 0.78);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 12px rgba(8, 145, 178, 0.2);
+  white-space: nowrap;
 }
 
 .overlay-annotations {
@@ -1673,16 +1739,6 @@ body.overlay-mode .overlay-root {
 @keyframes overlay-annotation-in {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-
-.overlay-tag {
-  background: #0b1020;
-  color: #6ee7ff;
-  border: 1px solid #6ee7ff;
-  border-radius: 999px;
-  padding: 2px 9px;
-  font-size: 12px;
-  letter-spacing: 0.02em;
 }
 
 .overlay-highlight {
@@ -1796,17 +1852,12 @@ body.overlay-mode .overlay-root {
   }
 }
 
-@keyframes overlay-spin {
-  to {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
+@keyframes overlay-thinking-dot {
+  0%, 60%, 100% { opacity: 0.42; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
 }
 
 /* idle: default, subtle cyan */
-.overlay-state-idle .overlay-marker svg path {
-  fill: #6ee7ff;
-  stroke: #0b1020;
-}
 .overlay-state-idle .overlay-hint {
   background: rgba(11, 16, 32, 0.82);
   color: #cfe6ff;
@@ -1817,9 +1868,8 @@ body.overlay-mode .overlay-root {
 .overlay-state-capturing .overlay-marker {
   animation: overlay-pulse 1.2s ease-in-out infinite;
 }
-.overlay-state-capturing .overlay-marker svg path {
+.overlay-state-capturing .overlay-cursor-shape {
   fill: #f59e0b;
-  stroke: #0b1020;
 }
 .overlay-state-capturing .overlay-hint {
   background: rgba(180, 83, 9, 0.92);
@@ -1831,9 +1881,8 @@ body.overlay-mode .overlay-root {
 .overlay-state-listening .overlay-marker {
   animation: overlay-pulse 2s ease-in-out infinite;
 }
-.overlay-state-listening .overlay-marker svg path {
+.overlay-state-listening .overlay-cursor-shape {
   fill: #2563eb;
-  stroke: #0b1020;
 }
 .overlay-state-listening .overlay-hint {
   background: rgba(37, 99, 235, 0.85);
@@ -1841,24 +1890,20 @@ body.overlay-mode .overlay-root {
   border-color: rgba(37, 99, 235, 0.5);
 }
 
-/* thinking: spinning purple */
-.overlay-state-thinking .overlay-marker {
-  animation: overlay-spin 1s linear infinite;
+/* thinking: a steady label with three softly pulsing dots */
+.overlay-state-thinking .overlay-cursor { display: none; }
+.overlay-state-thinking .overlay-thinking-dots { display: flex; }
+.overlay-state-thinking .overlay-marker { animation: none; }
+.overlay-state-thinking .overlay-tag {
+  color: #ddd6fe;
+  border-color: rgba(196, 181, 253, 0.75);
+  box-shadow: 0 2px 12px rgba(124, 58, 237, 0.22);
 }
-.overlay-state-thinking .overlay-marker svg path {
-  fill: #7c3aed;
-  stroke: #0b1020;
-}
-.overlay-state-thinking .overlay-hint {
-  background: rgba(124, 58, 237, 0.85);
-  color: #ffffff;
-  border-color: rgba(124, 58, 237, 0.5);
-}
+.overlay-state-thinking .overlay-hint { display: none; }
 
 /* speaking: green, solid */
-.overlay-state-speaking .overlay-marker svg path {
+.overlay-state-speaking .overlay-cursor-shape {
   fill: #16a34a;
-  stroke: #0b1020;
 }
 .overlay-state-speaking .overlay-hint {
   background: rgba(22, 163, 74, 0.85);
@@ -1870,9 +1915,8 @@ body.overlay-mode .overlay-root {
 .overlay-state-error .overlay-marker {
   animation: overlay-pulse 1.5s ease-in-out infinite;
 }
-.overlay-state-error .overlay-marker svg path {
+.overlay-state-error .overlay-cursor-shape {
   fill: #dc2626;
-  stroke: #0b1020;
 }
 .overlay-state-error .overlay-hint {
   background: rgba(220, 38, 38, 0.85);
@@ -1884,9 +1928,8 @@ body.overlay-mode .overlay-root {
 .overlay-state-paused {
   opacity: 0.55;
 }
-.overlay-state-paused .overlay-marker svg path {
+.overlay-state-paused .overlay-cursor-shape {
   fill: #64748b;
-  stroke: #0b1020;
 }
 .overlay-state-paused .overlay-hint {
   background: rgba(100, 116, 139, 0.8);
@@ -1895,9 +1938,8 @@ body.overlay-mode .overlay-root {
 }
 
 /* drawing: amber */
-.overlay-state-drawing .overlay-marker svg path {
+.overlay-state-drawing .overlay-cursor-shape {
   fill: #f59e0b;
-  stroke: #0b1020;
 }
 .overlay-state-drawing .overlay-hint {
   background: rgba(245, 158, 11, 0.85);

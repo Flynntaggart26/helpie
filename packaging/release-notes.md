@@ -27,6 +27,8 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 - Ctrl+H now opens a compact desktop companion at the lower-right and hides the
   full chat window. A distinct Helpie pointer follows your cursor with a
   short smoothing transition; its current position is sampled locally and is not uploaded.
+  The pointer now has a friendly face, and thinking uses three small dots beside a
+  stationary “Thinking” label. Reduced-motion preferences disable the animations.
 - Spoken assistant replies work without cloud speech permission through the
   installed Windows voice. Microsoft Edge neural speech remains optional; if it
   fails, Helpie falls back to the local Windows voice. Voice input consent is

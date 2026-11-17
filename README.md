@@ -24,9 +24,10 @@ App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + smooth 
   seconds. It sends one frame to the selected model only after you explicitly ask about your
   screen; a remote provider receives that frame for the answer. Closing the companion or turning
   screen access off stops capture and clears the buffer. Full chat retains its separate Windows
-  picker for each screen question. The immediate pointer echo stays local. The companion can show
-  short-lived pins, highlight boxes, and arrows after an explicit request. Persistent visual notes
-  and approved mouse or keyboard actions remain future work.
+  picker for each screen question. The immediate pointer echo stays local and now uses a friendly
+  face cursor; while Helpie thinks, three small dots appear beside a still “Thinking” label. The
+  companion can show short-lived pins, highlight boxes, and arrows after an explicit request.
+  Persistent visual notes and approved mouse or keyboard actions remain future work.
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Wake word | Optional Jarvis / Computer wake word, off by default and requires a Picovoice AccessKey |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |

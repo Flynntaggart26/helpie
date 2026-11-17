@@ -16,6 +16,10 @@ timeout, Stop, or an explicit clear-highlights command. This stays annotation
 only; it does not click, type, or execute screen content. Candidate validation
 is pending before a release tag is created.
 
+The candidate also refreshes the companion cursor with a friendly face and
+replaces the spinning thinking marker with three small animated dots beside a
+stationary “Thinking” label. Reduced-motion preferences disable these animations.
+
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
 
