@@ -55,6 +55,7 @@ DEFAULTS = {
     "cloud_speech_consent": False,
     "cloud_tts_consent": False,
     "screen_context_consent": False,
+    "companion_live_view_consent": False,
     "screen_capture_target": "picker",
     "screen_capture_target_id": "",
     "screen_capture_region": None,

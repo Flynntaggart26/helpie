@@ -23,9 +23,17 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 - Ctrl+H now opens a compact desktop companion at the lower-right and hides the
   full chat window. A distinct Helpie pointer follows your cursor with a
   two-second delay; its position is sampled locally and is not uploaded.
-- The existing one-frame screen question in the full chat remains explicit.
-  The companion does not stream desktop images to an AI provider. Drawing,
-  highlights and approved mouse/keyboard actions are future work.
+- When both screen-reading permissions are enabled, the Ctrl+H companion
+  captures the primary display locally at up to one frame per second. It keeps
+  only the newest reduced frame in memory for three seconds and captures a
+  fresh one on demand if needed. No frame is sent to a model until you explicitly
+  ask about the screen. A remote model receives only that requested frame; a
+  local Ollama model keeps processing on this PC. Closing the companion or
+  disabling either permission stops capture and clears the buffer.
+- A visible overlay indicator labels local screen capture and shows when a
+  single frame is being sent to a remote model. Full chat retains its separate
+  explicit Windows picker for each screen question. Drawing, highlights, notes
+  on the overlay and approved mouse/keyboard actions remain future work.
 - Screen questions now support image-capable OpenRouter and Groq models, as
   well as local Ollama vision models. No Gemini key is required when using
   those providers; cloud providers send the selected frame to their service.
@@ -38,9 +46,9 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 - Screen capture remains off until the user enables it in Settings. Picker
   cancellation sends no frame.
 
-The picker integration compiles in the locked Windows release build. Interactive
-runtime review is still pending for picker selection, cancellation, capture
-border behavior and one-frame provider delivery.
+The picker and live companion capture integrations compile in the locked
+Windows release build. Interactive capture lifecycle and provider delivery
+have not been runtime reviewed in this development environment.
 
 Commit history between the previous tag and `v__VERSION__`:
 

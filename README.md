@@ -19,9 +19,13 @@ App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + delayed
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
 
-The companion's two-second pointer echo is local-only. It does not capture or upload desktop
-frames continuously. The full chat retains the explicit, one-frame screen question flow. Drawing,
-highlights, and user-approved keyboard or mouse actions are planned follow-up work.
+  When both screen access and local companion view are enabled in Settings, the Ctrl+H companion
+  captures the primary display locally at up to one frame per second and retains only the newest reduced frame for three
+  seconds. It sends one frame to the selected model only after you explicitly ask about your
+  screen; a remote provider receives that frame for the answer. Closing the companion or turning
+  screen access off stops capture and clears the buffer. Full chat retains its separate Windows
+  picker for each screen question. The delayed pointer stays local. Drawing, highlights, notes on
+  the overlay, and approved mouse or keyboard actions remain future work.
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
 | Wake word | Optional Jarvis / Computer wake word, off by default and requires a Picovoice AccessKey |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |

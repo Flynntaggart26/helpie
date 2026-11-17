@@ -3,18 +3,24 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.12
+## Current release: v1.16.13 (pending build)
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
 
-v1.16.12 starts the desktop-companion path: Ctrl+H hides the full chat, opens a
-compact companion at the primary display's lower-right corner, and shows a
-distinct pointer echo delayed by two seconds. Pointer history stays in memory
-and is sampled locally. The companion does not upload screen frames; explicit
-screen questions in full chat retain the one-frame picker flow. Drawing,
-highlights, live visual context, and approved desktop actions are not included
-in this foundation step.
+v1.16.13 extends the companion with opt-in local live screen context. When both
+screen-reading permissions are enabled, the primary display is captured locally
+at up to one frame per second while Ctrl+H is open. Only the newest reduced
+frame is held in memory for three seconds; a fresh frame is captured if needed
+when the user explicitly asks about the screen. Only that requested frame is
+sent to the selected model. Closing the companion stops capture and clears the
+buffer. The overlay visibly labels local capture and remote versus local model
+processing. Full chat retains its separate one-frame Windows picker flow.
+Drawing, highlights, notes on the overlay, and approved desktop actions are
+still future work.
+
+v1.16.12 introduced Ctrl+H companion placement, a distinct local pointer echo
+delayed by two seconds, and tray/full-window lifecycle behavior.
 
 v1.16.11 adds image-capable vision requests for OpenRouter, Groq and local
 Ollama models. Cloud vision sends the selected frame to the selected provider;

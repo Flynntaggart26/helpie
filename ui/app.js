@@ -526,6 +526,8 @@ function applySettings() {
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
   $("set-cloud-tts").checked = !!s.cloud_tts_consent;
   $("set-screen-context").checked = !!s.screen_context_consent;
+  $("set-companion-live-view").checked = !!s.companion_live_view_consent;
+  $("set-companion-live-view").disabled = !s.screen_context_consent;
   const screenTarget = s.screen_capture_target || "picker";
   $("set-screen-target").value = screenTarget;
   $("screen-region-block").hidden = screenTarget !== "region";
@@ -612,6 +614,8 @@ async function saveSettings() {
     cloud_speech_consent: $("set-cloud-transcription").checked,
     cloud_tts_consent: $("set-cloud-tts").checked,
     screen_context_consent: $("set-screen-context").checked,
+    companion_live_view_consent: $("set-screen-context").checked
+      && $("set-companion-live-view").checked,
     screen_capture_target: screenTarget,
     screen_capture_target_id: "",
     screen_capture_region: state.screenRegionSelection || (screenTarget === "region"
@@ -1538,6 +1542,11 @@ function bind() {
   });
 
   $("save-settings").addEventListener("click", saveSettings);
+  $("set-screen-context").addEventListener("change", () => {
+    const liveView = $("set-companion-live-view");
+    liveView.disabled = !$("set-screen-context").checked;
+    if (liveView.disabled) liveView.checked = false;
+  });
   $("set-screen-target").addEventListener("change", () => {
     $("screen-region-block").hidden = $("set-screen-target").value !== "region";
   });
@@ -1746,6 +1755,9 @@ function startOverlay() {
       </svg>
       <span class="overlay-cloud-tag">Cloud</span>
     </div>
+    <div class="overlay-capture-indicator" id="overlay-capture-indicator" data-capture-state="off" role="status" aria-live="polite">
+      Screen access off
+    </div>
     <div class="overlay-hint" data-state-label="idle">Idle</div>
   `;
   document.body.appendChild(root);
@@ -1765,16 +1777,19 @@ function startOverlay() {
   pollOverlayState();
 }
 
-function setOverlayState(state, cloudVoiceActive) {
+function setOverlayState(state, cloudVoiceActive, screenTransfer) {
   const root = document.querySelector(".overlay-root");
   if (!root) return;
   root.className = root.className.replace(/overlay-state-\S+/g, "").trim();
   root.classList.add(`overlay-state-${state}`);
-  if (cloudVoiceActive) {
+  const remoteFrame = !!screenTransfer?.active && !!screenTransfer?.remote;
+  if (cloudVoiceActive || remoteFrame) {
     root.classList.add("overlay-state-cloud-active");
   } else {
     root.classList.remove("overlay-state-cloud-active");
   }
+  const cloudTag = root.querySelector(".overlay-cloud-tag");
+  if (cloudTag) cloudTag.textContent = remoteFrame ? "Screen frame → cloud" : "Cloud voice";
 
   const hint = document.querySelector(".overlay-hint");
   const labels = {
@@ -1793,11 +1808,36 @@ function setOverlayState(state, cloudVoiceActive) {
   }
 }
 
+function setCaptureIndicator(session, enabled, screenTransfer) {
+  const indicator = document.getElementById("overlay-capture-indicator");
+  if (!indicator) return;
+  let captureState = "off";
+  let label = "Screen access off";
+  if (screenTransfer?.active) {
+    captureState = screenTransfer.remote ? "sending" : "reading";
+    label = screenTransfer.remote
+      ? "Sending one screen frame to your AI provider"
+      : "Reading one screen frame on this PC";
+  } else if (session?.state === "active") {
+    captureState = "active";
+    label = `Screen capture on · local only${session.target ? ` · ${session.target}` : ""}`;
+  } else if (session?.state === "warming") {
+    captureState = "warming";
+    label = "Starting local screen capture…";
+  } else if (enabled && session?.state === "unavailable") {
+    captureState = "error";
+    label = "Screen capture unavailable";
+  }
+  indicator.dataset.captureState = captureState;
+  indicator.textContent = label;
+}
+
 async function pollOverlayState() {
   if (window.helpieOverlayPolling) return;
   window.helpieOverlayPolling = true;
   let lastState = null;
   let lastCloudActive = null;
+  let lastRemoteFrame = null;
   const params = new URLSearchParams(location.search);
   const monitor = {
     left: Number(params.get("screen_x")),
@@ -1812,11 +1852,16 @@ async function pollOverlayState() {
         const data = await api("/api/overlay/state");
         const state = data.state || "idle";
         const cloudActive = !!data.cloud_voice_active;
-        if (state !== lastState || cloudActive !== lastCloudActive) {
-          setOverlayState(state, cloudActive);
+        const transfer = data.screen_frame_transfer || { active: false, remote: false };
+        const remoteCloudActive = cloudActive || (transfer.active && transfer.remote);
+        const remoteFrame = !!transfer.active && !!transfer.remote;
+        if (state !== lastState || remoteCloudActive !== lastCloudActive || remoteFrame !== lastRemoteFrame) {
+          setOverlayState(state, cloudActive, transfer);
           lastState = state;
-          lastCloudActive = cloudActive;
+          lastCloudActive = remoteCloudActive;
+          lastRemoteFrame = remoteFrame;
         }
+        setCaptureIndicator(data.capture_session, !!data.screen_access_enabled, transfer);
         const point = data.pointer_echo;
         const inMonitor = point && monitor.width > 0 && monitor.height > 0
           && point.x >= monitor.left && point.x < monitor.left + monitor.width

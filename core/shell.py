@@ -11,6 +11,7 @@ Everything here degrades to a no-op when Helpie runs the old way
 from __future__ import annotations
 
 import os
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -108,3 +109,85 @@ def capture_one_frame(timeout: float = 300.0) -> tuple[bool, tuple[bytes, str] |
         # The shell was configured for this run; fail closed instead of taking
         # an unconsented Pillow desktop screenshot after a transport failure.
         return True, None
+
+
+def start_live_capture(timeout: float = 2.5) -> bool:
+    """Start local companion capture; the native shell requires the companion visible."""
+    return request("capture-start", timeout=timeout)
+
+
+def stop_live_capture(timeout: float = 2.5) -> bool:
+    """Stop and clear the native companion frame buffer."""
+    port = control_port()
+    token = os.environ.get("HELPIE_CONTROL_TOKEN", "").strip()
+    if port is None or not token:
+        return False
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/capture-stop",
+        data=b"",
+        headers={"X-Helpie-Control-Token": token},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+
+def live_capture_status(timeout: float = 2.5) -> dict | None:
+    """Read capture metadata without returning any screen pixels."""
+    port = control_port()
+    token = os.environ.get("HELPIE_CONTROL_TOKEN", "").strip()
+    if port is None or not token:
+        return None
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/capture-status",
+        headers={"X-Helpie-Control-Token": token},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return {
+                "companion_active": response.headers.get("X-Helpie-Companion-Active") == "yes",
+                "active": response.headers.get("X-Helpie-Capture-State") == "active",
+                "frame_ready": response.headers.get("X-Helpie-Frame-Ready") == "yes",
+                "captured_at_ms": response.headers.get("X-Helpie-Captured-At", ""),
+                "target": response.headers.get("X-Helpie-Capture-Target", ""),
+            }
+    except Exception:
+        return None
+
+
+def capture_latest_frame(timeout: float = 3.0) -> tuple[bytes, dict] | None:
+    """Get one fresh frame, retrying briefly while a newly opened session warms up."""
+    port = control_port()
+    token = os.environ.get("HELPIE_CONTROL_TOKEN", "").strip()
+    if port is None or not token:
+        return None
+    deadline = time.monotonic() + max(0.1, min(timeout, 5.0))
+    while time.monotonic() < deadline:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/capture-latest",
+            headers={"X-Helpie-Control-Token": token},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=4.0) as response:
+                if response.status != 200 or response.headers.get_content_type() != "image/png":
+                    return None
+                image = response.read(40 * 1024 * 1024 + 1)
+                if len(image) > 40 * 1024 * 1024 or not image.startswith(b"\x89PNG\r\n\x1a\n"):
+                    return None
+                metadata = {
+                    "captured_at_ms": response.headers.get("X-Helpie-Captured-At", ""),
+                    "target": response.headers.get("X-Helpie-Capture-Target", "Primary display"),
+                }
+                return image, metadata
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
+                return None
+            if exc.code != 425:
+                return None
+        except Exception:
+            return None
+        time.sleep(0.1)
+    return None

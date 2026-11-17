@@ -394,21 +394,31 @@
 
                 <div class="split-row">
                   <div class="split-text">
-                    <span class="split-label">Allow Helpie to read what is on your screen</span>
-                    <span class="split-desc">When enabled, each screen question opens the Windows picker so you choose a display or app window. Helpie captures one frame for that request; the Windows capture border and Helpie indicator show while capture is active. Off by default.</span>
+                    <span class="split-label">Allow full chat to read your screen</span>
+                    <span class="split-desc">Off by default. Each screen question opens the Windows picker so you choose a display or app window. Only the selected frame is sent to the chosen model.</span>
                   </div>
                   <div class="split-control">
                     <label class="switch"><input type="checkbox" id="set-screen-context" /><span class="track"></span></label>
                   </div>
                 </div>
 
+                <div class="split-row">
+                  <div class="split-text">
+                    <span class="split-label">Allow local live view in the Ctrl + H companion</span>
+                    <span class="split-desc">Off by default. Requires the screen permission above. While the companion is open, Helpie captures the primary display locally and keeps only its newest reduced frame in memory. A frame goes to your selected model only when you explicitly ask about the screen. Closing the companion or turning this off stops capture and clears the frame.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-companion-live-view" /><span class="track"></span></label>
+                  </div>
+                </div>
+
                 <div class="form-block">
-                  <label class="page-label" for="set-screen-target">Screen capture</label>
+                  <label class="page-label" for="set-screen-target">Full chat screen capture</label>
                   <select id="set-screen-target" class="wide">
                     <option value="picker">Choose with Windows picker each time</option>
                     <option value="region">Crop a saved region from each pick</option>
                   </select>
-                  <p class="page-help">The Windows picker lets you choose a display or app window for each screen question. A saved region is measured proportionally from the preview, so choose the same target when asked again.</p>
+                  <p class="page-help">This picker setting is for screen questions in the full chat. Companion capture stays on the primary display, locally, and sends a single recent frame only after you ask about the screen.</p>
                 </div>
 
                 <div class="form-block" id="screen-region-block" hidden>

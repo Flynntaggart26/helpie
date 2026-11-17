@@ -8,6 +8,7 @@ import random
 import re
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 import actions
 import audit
@@ -64,6 +65,21 @@ CONFIRM_YES = ("yes", "yeah", "yep", "sure", "do it", "confirm", "ok", "okay",
                "evet", "onayla", "onaylıyorum", "tamam", "doğru")
 CONFIRM_NO = ("no", "nope", "cancel", "stop", "never mind", "don't",
               "hayır", "vazgeç", "iptal", "dur", "yok")
+
+SCREEN_REQUEST_RE = re.compile(
+    r"\b(?:what(?:'s| is)? (?:on|in) my screen|what do you see on my screen|"
+    r"read my screen|look at (?:my )?screen|describe (?:my |the )?screen|"
+    r"explain (?:this|the) (?:error|screen)|what am i looking at|"
+    r"read the screen|what is on the screen|what is on my display|"
+    r"what(?:'s| is) on this screen)\b|"
+    r"\b(?:ekranda ne var|ekranımda ne var|ekranimda ne var|"
+    r"ekranımda ne görüyorsun|ekranimda ne goruyorsun|"
+    r"ekranda ne görüyorsun|ekranda ne goruyorsun|"
+    r"ekranıma bak|ekranima bak|ekrana bak|ekranı oku|ekrani oku|"
+    r"ekranı (?:anlat|incele)|ekrani (?:anlat|incele)|"
+    r"bu hatayı (?:açıkla|oku)|bu hatayi (?:acikla|oku))\b",
+    re.I,
+)
 
 
 def _norm(text: str) -> str:
@@ -188,6 +204,12 @@ class Brain:
         self._in_plan = False
         self._screen_capture_allowed = contextvars.ContextVar(
             "helpie_screen_capture_allowed", default=True,
+        )
+        self._screen_capture_source = contextvars.ContextVar(
+            "helpie_screen_capture_source", default="chat",
+        )
+        self._explicit_screen_request = contextvars.ContextVar(
+            "helpie_explicit_screen_request", default=False,
         )
 
     def refresh(self, cfg: dict) -> None:
@@ -324,11 +346,17 @@ class Brain:
         return " ".join(replies) or "I could not run those steps."
 
     # ------------------------------------------------------------------ #
-    def handle(self, text: str, allow_screen_capture: bool = True) -> str:
+    def handle(self, text: str, allow_screen_capture: bool = True,
+               source: str = "chat") -> str:
         token = self._screen_capture_allowed.set(bool(allow_screen_capture))
+        source_token = self._screen_capture_source.set(source)
+        explicit_token = self._explicit_screen_request.set(
+            bool(SCREEN_REQUEST_RE.search(text)))
         try:
             return self._handle(text)
         finally:
+            self._explicit_screen_request.reset(explicit_token)
+            self._screen_capture_source.reset(source_token)
             self._screen_capture_allowed.reset(token)
 
     def _handle(self, text: str) -> str:
@@ -422,11 +450,7 @@ class Brain:
             return memory.remember_reply(item)
 
         # what is on the screen
-        if re.search(r"\b(what'?s? (on|in) my screen|what is on my screen|read my screen|"
-                     r"look at my screen|describe my screen|explain (this|the) (error|screen)|"
-                     r"what am i looking at)\b|"
-                     r"\b(ekranda ne var|ekran[ıi] oku|ekran[ıi] (anlat|incele)|"
-                     r"bu hatay[ıi] (açıkla|oku))\b", t):
+        if SCREEN_REQUEST_RE.search(t):
             return self._describe_screen(raw)
 
         # document summaries
@@ -775,18 +799,55 @@ class Brain:
     # ------------------------------------------------------------------ #
     def _describe_screen(self, prompt: str) -> str:
         if not self._screen_capture_allowed.get():
-            return ("Live screen understanding is not available in the companion yet. "
-                    "Open the full Helpie chat to ask about a screen capture.")
+            return "Screen reading is unavailable for this request. Open Helpie chat to choose a screen capture."
         if not self.cfg.get("screen_context_consent", False):
+            if self._screen_capture_source.get() == "companion":
+                return ("Screen access is off. In Settings → Voice, enable both full-chat screen access "
+                        "and local live view for the Ctrl+H companion.")
             return ("Screen reading is off. Turn it on in Settings "
-                    "(Ctrl+H -> Settings -> Voice -> Allow screen reading).")
+                    "(Settings → Voice → Allow full chat to read your screen).")
+        if (self._screen_capture_source.get() == "companion"
+                and not self.cfg.get("companion_live_view_consent", False)):
+            return ("Local live screen view is off. Enable it in Settings before asking the "
+                    "Ctrl+H companion to read your screen.")
         if not self.llm.available:
             return ("Screen reading needs a configured AI provider in Settings "
                     "(Ctrl+H -> Settings -> AI Providers).")
         self.on_event({"type": "state", "value": "capturing"})
-        capture = actions.capture_screen_context()
+        source = self._screen_capture_source.get()
+        if source == "companion":
+            if not self._explicit_screen_request.get():
+                return 'Ask directly, for example: “What is on my screen?” I only send a frame after that request.'
+            try:
+                import shell
+                capture = shell.capture_latest_frame(timeout=3.0)
+                if capture:
+                    session = shell.live_capture_status(timeout=1.0)
+                    if not session or not session.get("active") or not session.get("companion_active"):
+                        capture = None
+            except Exception:
+                capture = None
+            if capture:
+                image, metadata = capture
+                try:
+                    captured_ms = int(metadata.get("captured_at_ms", ""))
+                    captured_at = dt.datetime.fromtimestamp(
+                        captured_ms / 1000, tz=dt.timezone.utc,
+                    ).astimezone().isoformat(timespec="seconds")
+                except (TypeError, ValueError, OSError, OverflowError):
+                    captured_at = "unknown"
+                metadata = {
+                    "captured_at": captured_at,
+                    "target": metadata.get("target") or "Primary display",
+                    "active_window": "not available",
+                }
+        else:
+            capture = actions.capture_screen_context()
         if not capture:
             self.on_event({"type": "state", "value": "thinking"})
+            if source == "companion":
+                return ("I could not get a fresh desktop frame. Check that screen reading is enabled, "
+                        "the companion is open, and Windows allows screen capture, then try again.")
             return "I could not capture the screen."
         image, metadata = capture
         self.on_event({"type": "state", "value": "thinking"})
@@ -794,7 +855,27 @@ class Brain:
             f"Capture time: {metadata['captured_at']}. Target: {metadata['target']}. "
             f"Window context: {metadata['active_window'] or 'not available'}.\n\n"
         )
-        answer = self.llm.vision(capture_context + (prompt or "What is on my screen right now?"), image)
+        remote = True
+        if self.llm.provider == "ollama":
+            endpoint = str(self.cfg.get("ollama_url", "http://localhost:11434"))
+            remote = urlparse(endpoint).hostname not in {"localhost", "127.0.0.1", "::1"}
+        elif self.llm.provider == "openai":
+            endpoint = str(self.cfg.get("openai_url", ""))
+            remote = urlparse(endpoint).hostname not in {"localhost", "127.0.0.1", "::1"}
+        self.on_event({"type": "screen_frame_transfer", "active": True, "remote": remote})
+        answer = None
+        try:
+            answer = self.llm.vision(
+                capture_context + (prompt or "What is on my screen right now?"), image,
+            )
+        finally:
+            self.on_event({"type": "screen_frame_transfer", "active": False, "remote": False})
+            if source == "companion":
+                audit.log(
+                    "Requested companion screen analysis from "
+                    + ("a remote AI provider" if remote else "a local AI provider"),
+                    metadata["target"], ok=bool(answer), source="screen",
+                )
         if not answer:
             return ("I could not read the screen with this model. Check that the selected model "
                     "supports images and that the provider is reachable.")

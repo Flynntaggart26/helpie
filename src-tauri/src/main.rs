@@ -29,6 +29,9 @@ static START_HIDDEN: AtomicBool = AtomicBool::new(false);
 /// Set once the user explicitly asked for the window (Ctrl+H), so the late
 /// "stay hidden" enforcement stops fighting them.
 static USER_SHOWED: AtomicBool = AtomicBool::new(false);
+/// True only while the Ctrl+H desktop companion is visible. The capture API
+/// refuses to start a live frame session while this flag is false.
+static COMPANION_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 const MAIN_W: f64 = 1180.0;
 const MAIN_H: f64 = 780.0;
@@ -302,6 +305,7 @@ fn hide_tiny(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("tiny") {
         let _ = window.hide();
     }
+    hide_overlay(app);
 }
 
 // --------------------------------------------------------------------------- //
@@ -386,6 +390,11 @@ fn show_overlay(app: &AppHandle, port: u16) {
 }
 
 fn hide_overlay(app: &AppHandle) {
+    COMPANION_ACTIVE.store(false, Ordering::Relaxed);
+    #[cfg(windows)]
+    if let Some(session) = app.try_state::<capture::LiveCaptureSession>() {
+        session.stop();
+    }
     let state = app.state::<OverlayWindows>();
     let handles = state.handles.lock().unwrap();
     for window in handles.iter() {
@@ -395,6 +404,7 @@ fn hide_overlay(app: &AppHandle) {
 }
 
 fn show_companion(app: &AppHandle, port: u16) {
+    COMPANION_ACTIVE.store(true, Ordering::Relaxed);
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.hide();
     }
@@ -546,7 +556,9 @@ fn start_control(app: AppHandle, backend_port: u16, token: String) -> std::io::R
 
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
-            handle_control(&app, backend_port, &token, stream);
+            let app = app.clone();
+            let token = token.clone();
+            std::thread::spawn(move || handle_control(&app, backend_port, &token, stream));
         }
     });
 
@@ -668,6 +680,151 @@ fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream
             Err(_) => {
                 let _ = stream.write_all(
                     b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = stream.write_all(
+            b"HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+        return;
+    }
+    if action == "capture-start" {
+        if method != "GET" || target != "/capture-start" {
+            let _ = stream.write_all(
+                b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            return;
+        }
+        if !COMPANION_ACTIVE.load(Ordering::Relaxed) {
+            let _ = stream.write_all(
+                b"HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            return;
+        }
+        #[cfg(windows)]
+        let result = match app.try_state::<capture::LiveCaptureSession>() {
+            Some(session) => session.start().map_err(|_| ()),
+            None => Err(()),
+        };
+        #[cfg(not(windows))]
+        let result: Result<(), ()> = Err(());
+        if result.is_ok() && !COMPANION_ACTIVE.load(Ordering::Relaxed) {
+            #[cfg(windows)]
+            if let Some(session) = app.try_state::<capture::LiveCaptureSession>() {
+                session.stop();
+            }
+            let _ = stream.write_all(
+                b"HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            return;
+        }
+        let response: &[u8] = if result.is_ok() {
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"
+        } else {
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        };
+        let _ = stream.write_all(response);
+        return;
+    }
+    if action == "capture-stop" {
+        if method != "POST" || target != "/capture-stop" {
+            let _ = stream.write_all(
+                b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            return;
+        }
+        #[cfg(windows)]
+        if let Some(session) = app.try_state::<capture::LiveCaptureSession>() {
+            session.stop();
+        }
+        let _ = stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+        return;
+    }
+    if action == "capture-status" {
+        if method != "GET" || target != "/capture-status" {
+            let _ = stream.write_all(
+                b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            return;
+        }
+        #[cfg(windows)]
+        {
+            let status = app.try_state::<capture::LiveCaptureSession>();
+            let (active, fresh, captured_at, target_name) = status
+                .as_ref()
+                .map(|session| session.status())
+                .unwrap_or((false, false, None, String::new()));
+            let target_name: String = target_name
+                .chars()
+                .filter(|character| {
+                    character.is_ascii_alphanumeric() || *character == ' ' || *character == '-'
+                })
+                .take(100)
+                .collect();
+            let body = "ok";
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nX-Helpie-Companion-Active: {}\r\nX-Helpie-Capture-State: {}\r\nX-Helpie-Frame-Ready: {}\r\nX-Helpie-Captured-At: {}\r\nX-Helpie-Capture-Target: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                if COMPANION_ACTIVE.load(Ordering::Relaxed) { "yes" } else { "no" },
+                if active && COMPANION_ACTIVE.load(Ordering::Relaxed) { "active" } else { "off" },
+                if fresh { "yes" } else { "no" },
+                captured_at.map(|value| value.to_string()).unwrap_or_default(),
+                target_name,
+                body,
+            );
+            let _ = stream.write_all(header.as_bytes());
+        }
+        #[cfg(not(windows))]
+        let _ = stream.write_all(
+            b"HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+        return;
+    }
+    if action == "capture-latest" {
+        if method != "GET" || target != "/capture-latest" {
+            let _ = stream.write_all(
+                b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            return;
+        }
+        #[cfg(windows)]
+        {
+            if !COMPANION_ACTIVE.load(Ordering::Relaxed) {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+                return;
+            }
+            let frame = app
+                .try_state::<capture::LiveCaptureSession>()
+                .and_then(|session| session.latest_or_fresh());
+            if !COMPANION_ACTIVE.load(Ordering::Relaxed) {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+                return;
+            }
+            if let Some(frame) = frame {
+                let target_name: String = frame
+                    .target
+                    .chars()
+                    .filter(|character| {
+                        character.is_ascii_alphanumeric() || *character == ' ' || *character == '-'
+                    })
+                    .take(100)
+                    .collect();
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nX-Helpie-Captured-At: {}\r\nX-Helpie-Capture-Target: {}\r\nConnection: close\r\n\r\n",
+                    frame.png.len(), frame.captured_at_ms, target_name
+                );
+                if stream.write_all(header.as_bytes()).is_ok() {
+                    let _ = stream.write_all(&frame.png);
+                }
+            } else {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 425 Too Early\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 );
             }
         }
@@ -929,14 +1086,17 @@ fn message_box(title: &str, body: &str) {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .manage(Backend {
             child: Mutex::new(None),
             port: Mutex::new(0),
         })
         .manage(OverlayWindows {
             handles: Mutex::new(Vec::new()),
-        })
+        });
+    #[cfg(windows)]
+    let builder = builder.manage(capture::LiveCaptureSession::default());
+    builder
         .setup(|app| {
             let handle = app.handle().clone();
             let args: Vec<String> = std::env::args().collect();
@@ -1010,6 +1170,10 @@ fn main() {
                     if let Some(mut child) = state.child.lock().unwrap().take() {
                         let _ = child.kill();
                     }
+                }
+                #[cfg(windows)]
+                if let Some(session) = app.try_state::<capture::LiveCaptureSession>() {
+                    session.stop();
                 }
             }
         });

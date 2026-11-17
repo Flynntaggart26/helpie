@@ -99,6 +99,12 @@ class App:
         self._closing = False
         self._speaking = False
         self._cloud_voice_active = False
+        self._screen_frame_transfer = {"active": False, "remote": False}
+        self._live_capture_lock = threading.Lock()
+        self._live_capture_last_check = 0.0
+        self._live_capture_last_stop = 0.0
+        self._live_capture_status = {"state": "off", "active": False, "frame_ready": False,
+                                     "target": "", "captured_at_ms": ""}
         self._pointer_samples: deque[tuple[float, int, int]] = deque()
         self._pointer_samples_lock = threading.Lock()
         self._turn = 0
@@ -128,7 +134,6 @@ class App:
             str(self.cfg.get("screen_capture_target_id", "")),
             self.cfg.get("screen_capture_region"),
         )
-        
         # Initialize plugin manager
         self.plugins = plugins.manager
         self.plugins.set_core_api(self)
@@ -160,6 +165,72 @@ class App:
                 return {"x": x, "y": y}
         return None
 
+    def overlay_capture_status(self) -> dict:
+        """Keep a consented local frame session aligned with the visible companion."""
+        if not (self.cfg.get("screen_context_consent", False)
+                and self.cfg.get("companion_live_view_consent", False)):
+            with self._live_capture_lock:
+                was_active = bool(self._live_capture_status.get("active"))
+                now = time.monotonic()
+                if was_active or now - self._live_capture_last_stop >= 1.0:
+                    try:
+                        import shell
+                        shell.stop_live_capture()
+                    except Exception:
+                        pass
+                    self._live_capture_last_stop = now
+                if was_active:
+                    audit.log("Stopped local companion screen capture", source="screen")
+                self._live_capture_status = {
+                    "state": "off", "active": False, "frame_ready": False,
+                    "target": "", "captured_at_ms": "",
+                }
+                return dict(self._live_capture_status)
+
+        now = time.monotonic()
+        if now - self._live_capture_last_check >= 1.0:
+            with self._live_capture_lock:
+                now = time.monotonic()
+                if now - self._live_capture_last_check >= 1.0:
+                    self._live_capture_last_check = now
+                    try:
+                        import shell
+                        current = shell.live_capture_status()
+                        if (current is not None and current.get("companion_active")
+                                and not current.get("active")):
+                            shell.start_live_capture()
+                            current = shell.live_capture_status()
+                        if current is None:
+                            self._live_capture_status = {
+                                "state": "unavailable", "active": False,
+                                "frame_ready": False, "target": "",
+                                "captured_at_ms": "",
+                            }
+                        else:
+                            was_active = bool(self._live_capture_status.get("active"))
+                            active = bool(current.get("active"))
+                            ready = active and bool(current.get("frame_ready"))
+                            self._live_capture_status = {
+                                "state": "active" if active else
+                                         "unavailable" if current.get("companion_active") else "off",
+                                "active": active,
+                                "frame_ready": ready,
+                                "target": str(current.get("target") or "Primary display"),
+                                "captured_at_ms": str(current.get("captured_at_ms") or ""),
+                            }
+                            if active and not was_active:
+                                audit.log("Started local companion screen capture",
+                                          self._live_capture_status["target"], source="screen")
+                            elif was_active and not active:
+                                audit.log("Stopped local companion screen capture", source="screen")
+                    except Exception:
+                        self._live_capture_status = {
+                            "state": "unavailable", "active": False,
+                            "frame_ready": False, "target": "",
+                            "captured_at_ms": "",
+                        }
+        return dict(self._live_capture_status)
+
     # -- events ---------------------------------------------------------- #
     def push(self, event: dict) -> None:
         self.bus.push(event)
@@ -171,6 +242,11 @@ class App:
     def _on_brain_event(self, event: dict) -> None:
         if event.get("type") == "state":
             self.state = str(event.get("value") or "idle")
+        if event.get("type") == "screen_frame_transfer":
+            self._screen_frame_transfer = {
+                "active": bool(event.get("active")),
+                "remote": bool(event.get("remote")),
+            }
         self.bus.push(event)
 
     def _start_wake_word(self) -> None:
@@ -226,7 +302,11 @@ class App:
         self.history.append("user", user_text)
         self.push_state("thinking")
         try:
-            answer = self.brain.handle(user_text, allow_screen_capture=(source == "chat"))
+            answer = self.brain.handle(
+                user_text,
+                allow_screen_capture=source in {"chat", "companion"},
+                source=source,
+            )
         except Exception:
             traceback.print_exc()
             answer = "Something went wrong on my side, but I'm still here."
@@ -369,7 +449,8 @@ class App:
         self.cfg = dict(self.cfg)
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "cloud_speech_consent", "cloud_tts_consent",
-                   "screen_context_consent", "screen_capture_target", "screen_capture_target_id",
+                   "screen_context_consent", "companion_live_view_consent",
+                   "screen_capture_target", "screen_capture_target_id",
                    "screen_capture_region",
                    "wake_word", "wake_word_access_key",
                    "auto_listen", "continuous", "auto_turns",
@@ -382,6 +463,9 @@ class App:
                     continue
                 if key == "provider" and value not in ("gemini", "ollama", "openai"):
                     continue
+                if key in {"screen_context_consent", "companion_live_view_consent"}:
+                    if not isinstance(value, bool):
+                        continue
                 if key == "screen_capture_target" and value not in (
                         "picker", "region"):
                     continue
@@ -403,6 +487,10 @@ class App:
                             or width <= 0 or height <= 0 or x + width > 1 or y + height > 1):
                         continue
                 self.cfg[key] = value
+        # Companion capture is a narrower permission inside full-chat screen
+        # consent. Never persist it enabled after the broader permission is off.
+        if not self.cfg.get("screen_context_consent", False):
+            self.cfg["companion_live_view_consent"] = False
         if isinstance(patch, dict) and "autostart" in patch:
             autostart.set_enabled(bool(patch.get("autostart")))
         try:
@@ -417,6 +505,24 @@ class App:
             str(self.cfg.get("screen_capture_target_id", "")),
             self.cfg.get("screen_capture_region"),
         )
+        live_view_allowed = bool(self.cfg.get("screen_context_consent", False)
+                                 and self.cfg.get("companion_live_view_consent", False))
+        previous_live_view_allowed = bool(previous_cfg.get("screen_context_consent", False)
+                                          and previous_cfg.get("companion_live_view_consent", False))
+        if not live_view_allowed and (previous_live_view_allowed
+                                      or self._live_capture_status.get("active")):
+            with self._live_capture_lock:
+                try:
+                    import shell
+                    shell.stop_live_capture()
+                except Exception:
+                    pass
+                self._live_capture_status = {
+                    "state": "off", "active": False, "frame_ready": False,
+                    "target": "", "captured_at_ms": "",
+                }
+                self._live_capture_last_check = 0.0
+            audit.log("Stopped local companion screen capture", source="screen")
         # Restart wake word if settings changed
         if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch:
             self._stop_wake_word()
@@ -430,6 +536,13 @@ class App:
     # -- lifecycle ------------------------------------------------------- #
     def shutdown(self) -> None:
         self._closing = True
+        if self._live_capture_status.get("active"):
+            try:
+                import shell
+                shell.stop_live_capture()
+            except Exception:
+                pass
+            audit.log("Stopped local companion screen capture", source="screen")
         try:
             self.speaker.close()
         except Exception:
@@ -631,6 +744,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/overlay/state":
                 self._json({"state": app.state,
                             "cloud_voice_active": app._cloud_voice_active,
+                            "screen_frame_transfer": dict(app._screen_frame_transfer),
+                            "capture_session": app.overlay_capture_status(),
+                            "screen_access_enabled": bool(
+                                app.cfg.get("screen_context_consent", False)
+                                and app.cfg.get("companion_live_view_consent", False)
+                            ),
                             "pointer_echo": app.delayed_pointer()})
                 return
             if path == "/api/plugins":
@@ -729,6 +848,12 @@ class Handler(BaseHTTPRequestHandler):
             import shell
 
             ok = shell.request("hide-overlay")
+            if app._live_capture_status.get("active"):
+                audit.log("Stopped local companion screen capture", source="screen")
+                app._live_capture_status = {
+                    "state": "off", "active": False, "frame_ready": False,
+                    "target": "", "captured_at_ms": "",
+                }
             self._json({"ok": ok})
             return
         if path == "/api/settings":
