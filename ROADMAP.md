@@ -3,10 +3,18 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.9
+## Current release: v1.16.10
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
+
+v1.16.10 repairs desktop self-updates by routing explicit English and Turkish
+update commands through the trusted updater and launching the downloaded setup
+through a quoted handoff script. The installed app keeps settings and user data
+in `%APPDATA%\Helpie`. It also ships the consent-based Windows Graphics Capture
+picker, one-frame capture, local region preview, capture status and target/time
+metadata. The native picker builds successfully; interactive runtime validation
+remains open, so this release is not the completion of Phase 2 capture review.
 
 v1.16.9 makes provider selection explicit and real: Settings -> AI Providers has
 an "Active provider" page for Gemini, local Ollama, or a custom
@@ -55,10 +63,9 @@ Goal: a Helpie presence that does not steal focus and can annotate the screen.
 
 ## Next: Phase 2 candidates
 
-- screen-context capture targets: monitor/window/region selection, a visible
-  capture indicator, and screenshot timestamp/window metadata. The consent gate
-  and capture-time enforcement are shipped; native picker and one-frame capture
-  are now in unreleased source work below.
+- screen-context capture targets: Windows Graphics Capture picker, one-frame
+  capture, visible capture indicator and timestamp/target metadata are included
+  in v1.16.10; interactive runtime review is still open.
 - visual answers (highlights, equations, graphs, geometry)
 - policy-governed action broker
 - tasks/plugins/chat consolidation
@@ -68,7 +75,7 @@ Goal: a Helpie presence that does not steal focus and can annotate the screen.
 Already shipped from this list: wake-word infrastructure (v1.16.7, off by
 default, AccessKey-gated) and visible voice consent (v1.16.8).
 
-### Phase 2 work in the current source tree (unreleased)
+### Phase 2 capture integration in v1.16.10 (runtime review open)
 
 - The desktop shell uses Windows Graphics Capture and opens the system picker
   for each user-requested screen question. The selected window or display yields

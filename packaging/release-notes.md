@@ -20,7 +20,18 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
-See the commit history between the previous tag and `v__VERSION__`:
+- The desktop updater now launches the downloaded installer through a robust
+  handoff and explicit English/Turkish update requests route to Helpie's updater.
+- Screen context uses the native Windows Graphics Capture picker for one-frame
+  captures, with local region preview, capture status and target/time metadata.
+- Screen capture remains off until the user enables it in Settings. Picker
+  cancellation sends no frame.
+
+The picker integration compiles in the locked Windows release build. Interactive
+runtime review is still pending for picker selection, cancellation, capture
+border behavior and one-frame provider delivery.
+
+Commit history between the previous tag and `v__VERSION__`:
 
 ```powershell
 git log --oneline v__VERSION__^..v__VERSION__
