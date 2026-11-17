@@ -495,7 +495,7 @@
               <section class="settings-page" data-page="provider-active">
                 <p class="page-lead">
                   Choose which model Helpie talks to. Configure the provider on its own page first.
-                  Gemini and Custom OpenAI send data off this PC; Ollama runs locally.
+                  Gemini, Groq and OpenRouter send data to their provider; Ollama runs locally.
                 </p>
 
                 <div class="form-block">
@@ -503,7 +503,7 @@
                   <select id="set-provider" class="wide">
                     <option value="gemini">Gemini (cloud)</option>
                     <option value="ollama">Ollama (local)</option>
-                    <option value="openai">Custom OpenAI-compatible</option>
+                    <option value="openai">OpenAI-compatible API (Groq, OpenRouter, etc.)</option>
                   </select>
                   <p class="page-help">
                     If the chosen provider is unreachable, Helpie says so instead of switching
@@ -552,26 +552,26 @@
                 <div class="form-block">
                   <label class="page-label" for="set-ollama-model">Default model</label>
                   <input id="set-ollama-model" class="wide" type="text" placeholder="llama3.2" />
-                  <p class="page-help">Used when you say “ollama chat …” without naming a model.</p>
+                  <p class="page-help">For screen reading, choose a vision model such as gemma4. The default llama3.2 model is text-only.</p>
                 </div>
               </section>
 
               <!-- --------------------------- Custom OpenAI --------------------------- -->
               <section class="settings-page" data-page="provider-custom">
                 <p class="page-lead">
-                  Any endpoint that speaks the OpenAI chat-completions format — Groq, Together, OpenRouter,
-                  LM Studio, a private gateway.
+                  OpenRouter and Groq keys work here, as do other OpenAI-compatible services and local
+                  servers. Choose a model that accepts images to use screen reading.
                 </p>
 
                 <div class="form-block">
                   <label class="page-label" for="set-openai-url">Base URL</label>
-                  <input id="set-openai-url" class="wide" type="text" placeholder="https://api.groq.com/openai/v1" />
-                  <p class="page-help">Include the version path, for example https://api.groq.com/openai/v1.</p>
+                  <input id="set-openai-url" class="wide" type="text" placeholder="https://openrouter.ai/api/v1" />
+                  <p class="page-help">OpenRouter: https://openrouter.ai/api/v1 · Groq: https://api.groq.com/openai/v1</p>
                 </div>
 
                 <div class="form-block">
                   <label class="page-label" for="set-openai-key">
-                    API key <span class="badge" id="openai-key-state">not set</span>
+                    Provider API key <span class="badge" id="openai-key-state">not set</span>
                   </label>
                   <input id="set-openai-key" class="wide" type="password" placeholder="sk-…" />
                   <p class="page-help">Leave empty for a local server that needs no auth.</p>
@@ -579,8 +579,8 @@
 
                 <div class="form-block">
                   <label class="page-label" for="set-openai-model">Model</label>
-                  <input id="set-openai-model" class="wide" type="text" placeholder="llama-3.3-70b-versatile" />
-                  <p class="page-help">Model identifier exactly as the provider names it.</p>
+                  <input id="set-openai-model" class="wide" type="text" placeholder="openai/gpt-4o-mini" />
+                  <p class="page-help">Use the exact model ID from the provider. Groq vision model: qwen/qwen3.8-27b.</p>
                 </div>
               </section>
 

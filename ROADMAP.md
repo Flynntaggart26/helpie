@@ -3,10 +3,15 @@
 This file tracks public status only. Detailed engineering decisions, threat
 model and open product questions are maintained privately by the owner.
 
-## Current release: v1.16.10
+## Current release: v1.16.11 (pending build)
 
 Helpie is a Windows desktop assistant: a small always-available window plus a
 full chat/settings window, with a bundled Python backend and a Tauri/Rust shell.
+
+v1.16.11 adds image-capable vision requests for OpenRouter, Groq and local
+Ollama models. Cloud vision sends the selected frame to the selected provider;
+Ollama keeps it on this PC. Gemini remains available. Use a vision-capable model
+such as `gemma4` for Ollama; its default text model cannot read images.
 
 v1.16.10 repairs desktop self-updates by routing explicit English and Turkish
 update commands through the trusted updater and launching the downloaded setup
@@ -66,6 +71,8 @@ Goal: a Helpie presence that does not steal focus and can annotate the screen.
 - screen-context capture targets: Windows Graphics Capture picker, one-frame
   capture, visible capture indicator and timestamp/target metadata are included
   in v1.16.10; interactive runtime review is still open.
+- vision adapters for Gemini, OpenRouter, Groq and local Ollama are being added
+  in v1.16.11; cloud providers require their own key and an image-capable model.
 - visual answers (highlights, equations, graphs, geometry)
 - policy-governed action broker
 - tasks/plugins/chat consolidation
@@ -91,6 +98,15 @@ review is still needed for picker selection, cancellation, the Windows capture
 border, and the one-frame provider flow before calling this Phase 2 slice
 complete. The browser development mode retains the Pillow fallback.
 
+### Image-capable AI providers in v1.16.11
+
+- OpenAI-compatible vision requests send the selected frame as a data URL to
+  the configured endpoint. OpenRouter and Groq use the existing encrypted key
+  setting; choose an image-capable model from the provider.
+- Ollama vision requests keep the frame on the local machine. Configure a
+  vision-capable model such as `gemma4`; the default `llama3.2` is text-only.
+- Gemini remains supported. Helpie does not switch providers automatically.
+
 ## Settled product scope
 
 These are decisions, not open questions:
@@ -98,8 +114,9 @@ These are decisions, not open questions:
 - **Windows 10 and 11, 64-bit.**
 - **Screen context is off by default.** Enabling it is a one-time grant in
   Settings; nothing is captured until the user turns it on.
-- **Both a cloud provider (Gemini) and local models (Ollama).** The user
-  chooses. A local-only setup never sends data off the machine.
+- **Cloud or local models.** Gemini, OpenRouter, and Groq are supported as
+  cloud providers; Ollama can run locally. The user chooses, and a local-only
+  setup never sends data off the machine.
 - **Helpie does not click or type for you.** It highlights and points; the
   overlay is click-through and never intercepts the pointer.
 - **English UI; commands work in English and Turkish.**

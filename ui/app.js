@@ -581,7 +581,12 @@ function providerChip(s) {
     return { on: true, label: "Ollama (local)" };
   }
   if (provider === "openai") {
-    return { on: !!s.openai_url, label: s.openai_url ? "Custom provider" : "commands only" };
+    const base = (s.openai_url || "").toLowerCase();
+    const name = base.includes("openrouter") ? "OpenRouter"
+      : base.includes("groq") ? "Groq" : "Custom provider";
+    const cloudKeyRequired = base.includes("openrouter.ai") || base.includes("api.groq.com");
+    const configured = !!s.openai_url && (!cloudKeyRequired || !!s.has_openai_key);
+    return { on: configured, label: configured ? name : "commands only" };
   }
   return { on: !!s.has_key, label: s.has_key ? "Gemini connected" : "commands only" };
 }

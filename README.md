@@ -14,7 +14,7 @@ Ctrl + H  →  Helpie opens  →  ask by text or voice  →  get an answer or re
 | Voice | Global hotkey; cloud transcription and spoken replies are separate, opt-in settings |
 | Chat | Chat window with sidebar, saved history you can reopen and delete |
 | Apps | Opens and closes Chrome, Spotify, Notepad, VS Code, Word, Explorer, Terminal… without stealing focus |
-| Screen | Reads the current screen (including error messages) with the Gemini vision model |
+| Screen | Reads the current screen (including error messages) with an image-capable selected model |
 | Documents | Summarises PDF, Word, PowerPoint and text files by name |
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
@@ -361,10 +361,11 @@ through the selected provider. An optional proportional region can be selected f
 The app records a capture timestamp and the picker target name when Windows provides one. Canceling
 the picker sends no image.
 
-**AI providers:** Settings → AI Providers lets you select Gemini, local Ollama, or a custom
-OpenAI-compatible endpoint. Helpie uses only the selected provider and does not silently fall back.
-Ollama can keep chat local; Gemini screen reading currently requires Gemini and sends the selected
-screen image to Google's service.
+**AI providers:** Settings → AI Providers lets you select Gemini, local Ollama, or an OpenAI-compatible
+endpoint such as OpenRouter or Groq. Helpie uses only the selected provider and does not silently fall
+back. For OpenRouter, use `https://openrouter.ai/api/v1`; for Groq, use
+`https://api.groq.com/openai/v1`. Set the exact model ID in provider settings. Screen reading works
+with an image-capable model; Ollama sends the selected frame only to your local Ollama server.
 
 Pages are deep-linkable: `?view=settings&page=plugins`.
 
@@ -389,17 +390,18 @@ thread puts the previous window back in front. Turn it off with
 
 ## Screen and documents
 
-Screen reading is off until enabled in **Settings → Voice**. It currently uses Gemini vision, so
-the image selected in Windows is sent to Google when the user asks Helpie to read the screen. The
-Windows picker can select a display or app window and opens for each screen question. An optional
-saved region crops the selected image proportionally. The desktop app uses Windows Graphics Capture;
-the older browser development mode retains its Pillow fallback.
+Screen reading is off until enabled in **Settings → Voice**. The Windows picker can select a display
+or app window and opens for each screen question. An optional saved region crops the selected image
+proportionally. The desktop app uses Windows Graphics Capture; the older browser development mode
+retains its Pillow fallback. The selected frame is sent to the configured image-capable provider;
+with Ollama it stays on this PC.
 Document summaries use the selected AI provider when one is configured.
 
 - **Screen** — `What is on my screen`, `Explain this error`, `Ekranda ne var`. With consent,
   the Windows picker opens and Helpie captures one frame from the chosen target. The app shows a
-  capture indicator, sends a downscaled image to Gemini and answers. Protected content may appear
-  black.
+  capture indicator and sends a downscaled image to the selected image-capable model. Protected
+  content may appear black. Groq and OpenRouter keys use the OpenAI-compatible settings page; Ollama
+  requires a vision model such as `gemma4`.
 - **Documents** — `Summarize report`, `<name> dosyasını özetle`. Helpie finds the file on
   the Desktop, Documents or Downloads, extracts text from PDF/DOCX/PPTX/TXT and summarises
   it. Without an API key it falls back to a short extractive summary.

@@ -1,4 +1,4 @@
-"""LLM brains: Gemini (free tier) or any OpenAI-compatible endpoint."""
+"""Chat and vision adapters for Gemini, Ollama, and OpenAI-compatible APIs."""
 from __future__ import annotations
 
 from typing import Optional
@@ -86,6 +86,8 @@ class Brain:
         if self.provider == "ollama":
             return bool(self.ollama_url and self.ollama_model)
         if self.provider == "openai":
+            if any(host in self.openai_url.lower() for host in ("openrouter.ai", "api.groq.com")):
+                return bool(self.openai_url and self.openai_key)
             return bool(self.openai_url)
         return bool(self.api_key)
 
@@ -127,8 +129,14 @@ class Brain:
             return ("Ollama is not configured. Add the server URL and model in "
                     "Settings -> AI Providers -> Ollama.")
         if self.provider == "openai":
-            return ("The custom provider needs a base URL in "
-                    "Settings -> AI Providers -> Custom OpenAI.")
+            if not self.openai_url:
+                return ("The custom provider needs a base URL in "
+                        "Settings -> AI Providers -> Custom OpenAI.")
+            if not self.openai_key and any(
+                    host in self.openai_url.lower() for host in ("openrouter.ai", "api.groq.com")):
+                return ("Add the API key for your selected provider in "
+                        "Settings -> AI Providers -> Custom OpenAI.")
+            return "The custom provider is not ready. Check its URL and model settings."
         return ("Chat needs a Gemini API key. Add one in "
                 "Settings -> AI Providers -> Gemini.")
 
@@ -185,19 +193,47 @@ class Brain:
         return None
 
     def vision(self, prompt: str, image_bytes: bytes, mime: str = "image/png") -> Optional[str]:
-        """Ask Gemini about a screenshot. Does not touch the chat history."""
-        if not self.api_key or not image_bytes or self.provider != "gemini":
+        """Ask the selected image-capable model about a screenshot."""
+        if not image_bytes or not self.available:
             return None
         import base64
 
+        image_data = base64.b64encode(image_bytes).decode("ascii")
+        text = prompt or "What is on my screen right now?"
+        if self.provider == "ollama":
+            messages = [
+                {"role": "system", "content": VISION_PROMPT},
+                {"role": "user", "content": text, "images": [image_data]},
+            ]
+            return self._ollama_post(messages, temperature=0.4)
+
+        if self.provider == "openai":
+            base = (self.openai_url or "").rstrip("/")
+            if not base:
+                return None
+            messages = [
+                {"role": "system", "content": VISION_PROMPT},
+                {"role": "user", "content": [
+                    {"type": "text", "text": text},
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:{mime};base64,{image_data}",
+                    }},
+                ]},
+            ]
+            return self._openai_post(
+                base, messages, self._openai_model(base), temperature=0.4, max_tokens=700,
+            )
+
+        if self.provider != "gemini" or not self.api_key:
+            return None
         payload = {
             "system_instruction": {"parts": [{"text": VISION_PROMPT}]},
             "contents": [{
                 "role": "user",
                 "parts": [
-                    {"text": prompt or "What is on my screen right now?"},
+                    {"text": text},
                     {"inline_data": {"mime_type": mime,
-                                     "data": base64.b64encode(image_bytes).decode("ascii")}},
+                                     "data": image_data}},
                 ],
             }],
             "generationConfig": {"temperature": 0.4, "maxOutputTokens": 700},
@@ -228,8 +264,13 @@ class Brain:
         return self._openai_post(base, messages, self._openai_model(base), temperature=0.3)
 
     def _openai_model(self, base: str) -> str:
-        return self.openai_model or (
-            "llama-3.3-70b-versatile" if "groq" in base else "gpt-4o-mini")
+        if self.openai_model:
+            return self.openai_model
+        if "groq" in base.lower():
+            return "qwen/qwen3.8-27b"
+        if "openrouter" in base.lower():
+            return "openai/gpt-4o-mini"
+        return "gpt-4o-mini"
 
     def _openai_like(self) -> Optional[str]:
         base = (self.openai_url or "").rstrip("/")
@@ -244,7 +285,7 @@ class Brain:
         return reply
 
     def _openai_post(self, base: str, messages: list[dict], model: str,
-                     temperature: float = 0.75) -> Optional[str]:
+                     temperature: float = 0.75, max_tokens: int = 500) -> Optional[str]:
         headers = {"Content-Type": "application/json"}
         if self.openai_key:
             headers["Authorization"] = f"Bearer {self.openai_key}"
@@ -253,7 +294,7 @@ class Brain:
                 f"{base}/chat/completions",
                 headers=headers,
                 json={"model": model, "messages": messages,
-                      "temperature": temperature, "max_tokens": 500},
+                      "temperature": temperature, "max_tokens": max_tokens},
                 timeout=45,
             )
         except requests.RequestException:
@@ -261,9 +302,17 @@ class Brain:
         if response.status_code != 200:
             return None
         try:
-            return response.json()["choices"][0]["message"]["content"].strip() or None
-        except (KeyError, IndexError):
+            content = response.json()["choices"][0]["message"]["content"]
+            if isinstance(content, str):
+                return content.strip() or None
+            if isinstance(content, list):
+                text = "".join(
+                    str(part.get("text", "")) for part in content if isinstance(part, dict)
+                ).strip()
+                return text or None
+        except (KeyError, IndexError, TypeError, ValueError):
             return None
+        return None
 
     def _ollama(self) -> Optional[str]:
         messages = [{"role": "system", "content": self._system()}]

@@ -20,6 +20,11 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
+- Screen questions now support image-capable OpenRouter and Groq models, as
+  well as local Ollama vision models. No Gemini key is required when using
+  those providers; cloud providers send the selected frame to their service.
+- The Ollama settings explain that screen reading requires a vision model such
+  as `gemma4`; its default text-only model cannot read images.
 - The desktop updater now launches the downloaded installer through a robust
   handoff and explicit English/Turkish update requests route to Helpie's updater.
 - Screen context uses the native Windows Graphics Capture picker for one-frame

@@ -769,9 +769,6 @@ class Brain:
         if not self.llm.available:
             return ("Screen reading needs a configured AI provider in Settings "
                     "(Ctrl+H -> Settings -> AI Providers).")
-        if getattr(self.llm, "provider", "gemini") != "gemini":
-            return ("Screen reading currently works with the Gemini provider only. "
-                    "Switch it in Settings -> AI Providers.")
         self.on_event({"type": "state", "value": "capturing"})
         capture = actions.capture_screen_context()
         if not capture:
@@ -785,7 +782,8 @@ class Brain:
         )
         answer = self.llm.vision(capture_context + (prompt or "What is on my screen right now?"), image)
         if not answer:
-            return "I could not read your screen right now."
+            return ("I could not read the screen with this model. Check that the selected model "
+                    "supports images and that the provider is reachable.")
         return answer
 
     @staticmethod
