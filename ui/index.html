@@ -395,11 +395,25 @@
                 <div class="split-row">
                   <div class="split-text">
                     <span class="split-label">Allow Helpie to read what is on your screen</span>
-                    <span class="split-desc">When enabled, Helpie can capture and describe your screen to answer questions. Off by default; typed commands remain available.</span>
+                    <span class="split-desc">When enabled, each screen question opens the Windows picker so you choose a display or app window. Helpie captures one frame for that request; the Windows capture border and Helpie indicator show while capture is active. Off by default.</span>
                   </div>
                   <div class="split-control">
                     <label class="switch"><input type="checkbox" id="set-screen-context" /><span class="track"></span></label>
                   </div>
+                </div>
+
+                <div class="form-block">
+                  <label class="page-label" for="set-screen-target">Screen capture</label>
+                  <select id="set-screen-target" class="wide">
+                    <option value="picker">Choose with Windows picker each time</option>
+                    <option value="region">Crop a saved region from each pick</option>
+                  </select>
+                  <p class="page-help">The Windows picker lets you choose a display or app window for each screen question. A saved region is measured proportionally from the preview, so choose the same target when asked again.</p>
+                </div>
+
+                <div class="form-block" id="screen-region-block" hidden>
+                  <button type="button" class="ghost" id="screen-region-choose">Choose target and region</button>
+                  <p class="page-help" id="screen-region-status">No region selected. Enable screen reading and save before choosing.</p>
                 </div>
 
                 <div class="form-block">
@@ -704,6 +718,25 @@
         <span><kbd>Esc</kbd> close</span>
       </div>
     </div>
+  </div>
+
+  <div class="screen-region-modal" id="screen-region-modal" hidden>
+    <section class="screen-region-panel" role="dialog" aria-modal="true" aria-labelledby="screen-region-title">
+      <header class="screen-region-header">
+        <div>
+          <h2 id="screen-region-title">Select a screen region</h2>
+          <p>Drag across the preview. The preview stays on this PC and is not sent to an AI provider.</p>
+        </div>
+        <button class="ghost" id="screen-region-cancel" type="button">Cancel</button>
+      </header>
+      <div class="screen-region-canvas-wrap">
+        <canvas id="screen-region-canvas" aria-label="Screen preview; drag to select a region"></canvas>
+      </div>
+      <footer class="screen-region-footer">
+        <span id="screen-region-selection">Drag to select an area.</span>
+        <button class="btn-light" id="screen-region-apply" type="button" disabled>Use this region</button>
+      </footer>
+    </section>
   </div>
 
   <div class="toast" id="toast" hidden></div>

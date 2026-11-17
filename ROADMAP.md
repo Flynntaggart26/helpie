@@ -57,7 +57,8 @@ Goal: a Helpie presence that does not steal focus and can annotate the screen.
 
 - screen-context capture targets: monitor/window/region selection, a visible
   capture indicator, and screenshot timestamp/window metadata. The consent gate
-  and capture-time enforcement are shipped; capture is still whole-desktop.
+  and capture-time enforcement are shipped; native picker and one-frame capture
+  are now in unreleased source work below.
 - visual answers (highlights, equations, graphs, geometry)
 - policy-governed action broker
 - tasks/plugins/chat consolidation
@@ -66,6 +67,22 @@ Goal: a Helpie presence that does not steal focus and can annotate the screen.
 
 Already shipped from this list: wake-word infrastructure (v1.16.7, off by
 default, AccessKey-gated) and visible voice consent (v1.16.8).
+
+### Phase 2 work in the current source tree (unreleased)
+
+- The desktop shell uses Windows Graphics Capture and opens the system picker
+  for each user-requested screen question. The selected window or display yields
+  one in-memory PNG frame; cancel or capture failure returns no image. The frame
+  is transferred over the authenticated shell control channel and is not saved.
+- The optional region preview also uses the system picker and stays local to the
+  desktop UI. A saved normalized crop is applied to the next selected frame.
+- The app shows a capture state and includes a timestamp plus the picker target
+  name when Windows provides one.
+
+The native integration compiles in a locked Windows release build. Runtime
+review is still needed for picker selection, cancellation, the Windows capture
+border, and the one-frame provider flow before calling this Phase 2 slice
+complete. The browser development mode retains the Pillow fallback.
 
 ## Settled product scope
 

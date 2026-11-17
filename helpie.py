@@ -216,7 +216,7 @@ def main() -> None:
         app.history.append("assistant", greeting)
         app.speaker.say(greeting)
         app.speaker.wait_idle(25)
-        if app.cfg.get("auto_listen", True):
+        if app.cfg.get("auto_listen", True) and not app._no_voice:
             app.listen_async("auto")
 
         if app.cfg.get("check_updates", True):

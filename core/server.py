@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import itertools
+import base64
 import hmac
 import json
 import mimetypes
@@ -31,6 +32,7 @@ from voice import Listener, Speaker, WakeWordListener, list_microphones
 ROOT = config.APP_DIR
 UI_DIR = ROOT / "ui"
 MAX_REQUEST_BODY = 1_048_576
+
 
 VOICES = [
     {"id": "en-US-AriaNeural", "label": "Aria — English (US, female)"},
@@ -80,6 +82,12 @@ class EventBus:
 class App:
     def __init__(self) -> None:
         self.cfg = config.load()
+        if self.cfg.get("screen_capture_target") not in {"picker", "region"}:
+            # Older monitor/window choices are replaced with the native
+            # per-request picker, which requires a fresh user selection.
+            self.cfg["screen_capture_target"] = "picker"
+            self.cfg["screen_capture_target_id"] = ""
+        self._no_voice = os.environ.get("HELPIE_NO_VOICE") == "1"
         self.api_token = os.urandom(32).hex()
         self.bus = EventBus()
         self.state = "idle"
@@ -102,7 +110,7 @@ class App:
         self.listener = Listener()
         self.wake_word = WakeWordListener(on_wake=self._on_wake_word)
         self.brain = Brain(self.cfg, on_speak=self._speak, on_quit=self.shutdown,
-                           on_event=self.bus.push)
+                           on_event=self._on_brain_event)
         self.brain._app = self  # Give brain access to app for plugin commands
         self.history = history.History()
         self.reminders = reminders.store
@@ -110,16 +118,16 @@ class App:
         self.reminders.start()
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
         actions.set_screen_context_consent(bool(self.cfg.get("screen_context_consent", False)))
+        actions.set_screen_capture_target(
+            str(self.cfg.get("screen_capture_target", "picker")),
+            str(self.cfg.get("screen_capture_target_id", "")),
+            self.cfg.get("screen_capture_region"),
+        )
         
         # Initialize plugin manager
         self.plugins = plugins.manager
         self.plugins.set_core_api(self)
         self.plugins.load_all()
-
-        # HELPIE_NO_VOICE=1 keeps the mic off during development and CI smoke tests.
-        if os.environ.get("HELPIE_NO_VOICE") == "1":
-            self.cfg["auto_listen"] = False
-            self.cfg["continuous"] = False
 
         self._start_wake_word()
 
@@ -131,13 +139,19 @@ class App:
         self.state = state
         self.bus.push({"type": "state", "value": state, "detail": detail})
 
+    def _on_brain_event(self, event: dict) -> None:
+        if event.get("type") == "state":
+            self.state = str(event.get("value") or "idle")
+        self.bus.push(event)
+
     def _start_wake_word(self) -> None:
-        if self.cfg.get("wake_word", False):
-            access_key = self.cfg.get("wake_word_access_key", "")
-            mic_index = self.cfg.get("mic_index")
-            ok = self.wake_word.start(access_key=access_key, mic_index=mic_index)
-            if not ok:
-                print("[WakeWord] Could not start (pvporcupine not installed or no access key)")
+        if self._no_voice or not self.cfg.get("wake_word", False):
+            return
+        access_key = self.cfg.get("wake_word_access_key", "")
+        mic_index = self.cfg.get("mic_index")
+        ok = self.wake_word.start(access_key=access_key, mic_index=mic_index)
+        if not ok:
+            print("[WakeWord] Could not start (pvporcupine not installed or no access key)")
 
     def _on_wake_word(self) -> None:
         """Called when wake word is detected."""
@@ -202,6 +216,10 @@ class App:
         self.speaker.say(line)
 
     def listen(self, reason: str = "manual") -> None:
+        if self._no_voice:
+            self.push_state("idle")
+            self.bus.push({"type": "error", "text": "Voice input is disabled in this run."})
+            return
         if not self.cfg.get("cloud_speech_consent", False):
             self.push_state("idle")
             self.bus.push({
@@ -271,7 +289,7 @@ class App:
                 self.speaker.wait_idle(60)
                 self._listening = True
 
-                if not (self.cfg.get("continuous") and reason == "auto"):
+                if not (self.cfg.get("continuous") and reason == "auto" and not self._no_voice):
                     break
                 self._turn += 1
                 if self._turn >= int(self.cfg.get("auto_turns", 3)):
@@ -322,7 +340,8 @@ class App:
         self.cfg = dict(self.cfg)
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
                    "mic_index", "language", "cloud_speech_consent", "cloud_tts_consent",
-                   "screen_context_consent",
+                   "screen_context_consent", "screen_capture_target", "screen_capture_target_id",
+                   "screen_capture_region",
                    "wake_word", "wake_word_access_key",
                    "auto_listen", "continuous", "auto_turns",
                    "city", "check_updates", "background_apps",
@@ -334,6 +353,26 @@ class App:
                     continue
                 if key == "provider" and value not in ("gemini", "ollama", "openai"):
                     continue
+                if key == "screen_capture_target" and value not in (
+                        "picker", "region"):
+                    continue
+                if key == "screen_capture_target_id" and (
+                        not isinstance(value, str) or len(value) > 128):
+                    continue
+                if key == "screen_capture_region":
+                    if not isinstance(value, dict):
+                        continue
+                    raw_values = [value.get(field) for field in ("x", "y", "width", "height")]
+                    if any(isinstance(number, bool) or not isinstance(number, (int, float))
+                           for number in raw_values):
+                        continue
+                    try:
+                        x, y, width, height = (float(number) for number in raw_values)
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if (not all(0 <= number <= 1 for number in (x, y, width, height))
+                            or width <= 0 or height <= 0 or x + width > 1 or y + height > 1):
+                        continue
                 self.cfg[key] = value
         if isinstance(patch, dict) and "autostart" in patch:
             autostart.set_enabled(bool(patch.get("autostart")))
@@ -344,6 +383,11 @@ class App:
             raise
         actions.set_background_mode(bool(self.cfg.get("background_apps", True)))
         actions.set_screen_context_consent(bool(self.cfg.get("screen_context_consent", False)))
+        actions.set_screen_capture_target(
+            str(self.cfg.get("screen_capture_target", "picker")),
+            str(self.cfg.get("screen_capture_target_id", "")),
+            self.cfg.get("screen_capture_region"),
+        )
         # Restart wake word if settings changed
         if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch:
             self._stop_wake_word()
@@ -623,6 +667,30 @@ class Handler(BaseHTTPRequestHandler):
             app.speaker.stop()
             app.push_state("idle")
             self._json({"ok": True})
+            return
+        if path == "/api/screen/preview":
+            if not app.cfg.get("screen_context_consent", False):
+                self._json({"error": "screen access is off"}, 403)
+                return
+            monitor_id = body.get("monitor_id", "")
+            if not isinstance(monitor_id, str) or len(monitor_id) > 128:
+                self._json({"error": "invalid capture target"}, 400)
+                return
+            previous_state = app.state
+            app.push_state("capturing")
+            try:
+                preview = actions.capture_screen_preview(monitor_id)
+            finally:
+                app.push_state(previous_state if previous_state != "capturing" else "idle")
+            if not preview:
+                self._json({"error": "capture was canceled or unavailable"}, 409)
+                return
+            try:
+                audit.log("Previewed a Windows capture selection", monitor_id or "system picker",
+                          source="screen")
+            except Exception:
+                pass
+            self._json({"image": base64.b64encode(preview).decode("ascii")})
             return
         if path == "/api/overlay/hide":
             import shell

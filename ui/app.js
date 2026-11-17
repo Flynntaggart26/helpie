@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   settings: {},
+  screenRegionSelection: null,
   mics: [],
   voices: [],
   languages: [],
@@ -46,6 +47,7 @@ const STATUS = {
   idle: "ready",
   listening: "listening",
   hearing: "hearing you",
+  capturing: "capturing screen",
   thinking: "thinking",
   speaking: "speaking",
 };
@@ -524,6 +526,13 @@ function applySettings() {
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
   $("set-cloud-tts").checked = !!s.cloud_tts_consent;
   $("set-screen-context").checked = !!s.screen_context_consent;
+  const screenTarget = s.screen_capture_target || "picker";
+  $("set-screen-target").value = screenTarget;
+  $("screen-region-block").hidden = screenTarget !== "region";
+  const selectedRegion = state.screenRegionSelection || s.screen_capture_region;
+  $("screen-region-status").textContent = selectedRegion
+    ? `Region selected (${Math.round(selectedRegion.width * 100)}% × ${Math.round(selectedRegion.height * 100)}% of the chosen display).`
+    : "No region selected. Save screen access and choose a display first.";
   $("set-wake-word").checked = !!s.wake_word;
   const hasWakeWordKey = !!s.has_wake_word_key;
   $("porcupine-key-state").textContent = hasWakeWordKey ? "connected" : "not set";
@@ -579,6 +588,7 @@ function providerChip(s) {
 
 async function saveSettings() {
   const mic = $("set-mic").value;
+  const screenTarget = $("set-screen-target").value;
   const patch = {
     // General
     user_name: $("set-name").value.trim(),
@@ -597,6 +607,10 @@ async function saveSettings() {
     cloud_speech_consent: $("set-cloud-transcription").checked,
     cloud_tts_consent: $("set-cloud-tts").checked,
     screen_context_consent: $("set-screen-context").checked,
+    screen_capture_target: screenTarget,
+    screen_capture_target_id: "",
+    screen_capture_region: state.screenRegionSelection || (screenTarget === "region"
+      ? (state.settings || {}).screen_capture_region || null : null),
     wake_word: $("set-wake-word").checked,
     wake_word_access_key: $("set-porcupine-key").value.trim() || undefined,
     // AI providers
@@ -611,6 +625,7 @@ async function saveSettings() {
   try {
     const data = await api("/api/settings", { method: "POST", body: JSON.stringify(patch) });
     state.settings = data.settings;
+    state.screenRegionSelection = null;
     $("set-key").value = "";
     $("set-porcupine-key").value = "";
     $("set-openai-key").value = "";
@@ -626,6 +641,73 @@ async function saveSettings() {
   } catch (error) {
     toast("Could not save settings.");
   }
+}
+
+let screenRegionImage = null;
+let screenRegionAnchor = null;
+let screenRegionRect = null;
+
+async function openScreenRegionPicker() {
+  if (!$("set-screen-context").checked || !state.settings.screen_context_consent) {
+    toast("Save screen access in Settings first.");
+    return;
+  }
+  try {
+    const preview = await api("/api/screen/preview", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const canvas = $("screen-region-canvas");
+    screenRegionImage = new Image();
+    screenRegionImage.onload = () => {
+      canvas.width = screenRegionImage.naturalWidth;
+      canvas.height = screenRegionImage.naturalHeight;
+      screenRegionRect = null;
+      screenRegionAnchor = null;
+      $("screen-region-apply").disabled = true;
+      $("screen-region-selection").textContent = "Drag to select an area.";
+      drawScreenRegionPreview();
+      $("screen-region-modal").hidden = false;
+      $("screen-region-cancel").focus();
+    };
+    screenRegionImage.src = `data:image/jpeg;base64,${preview.image}`;
+  } catch (error) {
+    toast("Could not show a preview of that selection.");
+  }
+}
+
+function drawScreenRegionPreview() {
+  const canvas = $("screen-region-canvas");
+  if (!screenRegionImage || !canvas.width || !canvas.height) return;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(screenRegionImage, 0, 0, canvas.width, canvas.height);
+  if (screenRegionRect) {
+    context.fillStyle = "rgba(37, 99, 235, 0.24)";
+    context.fillRect(screenRegionRect.x, screenRegionRect.y, screenRegionRect.width, screenRegionRect.height);
+    context.strokeStyle = "#60a5fa";
+    context.lineWidth = Math.max(2, canvas.width / 700);
+    context.strokeRect(screenRegionRect.x, screenRegionRect.y, screenRegionRect.width, screenRegionRect.height);
+  }
+}
+
+function closeScreenRegionPicker() {
+  $("screen-region-modal").hidden = true;
+  const canvas = $("screen-region-canvas");
+  canvas.width = 0;
+  canvas.height = 0;
+  screenRegionImage = null;
+  screenRegionAnchor = null;
+  screenRegionRect = null;
+}
+
+function screenRegionPoint(event) {
+  const canvas = $("screen-region-canvas");
+  const bounds = canvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(canvas.width, (event.clientX - bounds.left) * canvas.width / bounds.width)),
+    y: Math.max(0, Math.min(canvas.height, (event.clientY - bounds.top) * canvas.height / bounds.height)),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -799,7 +881,7 @@ async function checkUpdates(manual = false) {
     const data = await api("/api/update/check");
     if (data.available) {
       state.update = data;
-      $("update-banner-text").textContent = `Helpie ${data.version} is available (you have ${data.current}).`;
+      $("update-banner-text").textContent = `Helpie ${data.latest} is available (you have ${data.current}).`;
       $("update-banner").hidden = false;
     } else if (manual) {
       toast("You are on the latest version.");
@@ -814,6 +896,7 @@ async function installUpdate() {
   try {
     const result = await api("/api/update/apply", { method: "POST", body: JSON.stringify({ url: state.update.url }) });
     if (result.ok) toast("Update installed. Restarting…");
+    else toast(result.message || "Update failed.");
   } catch (error) {
     toast("Update failed.");
   }
@@ -1450,6 +1533,59 @@ function bind() {
   });
 
   $("save-settings").addEventListener("click", saveSettings);
+  $("set-screen-target").addEventListener("change", () => {
+    $("screen-region-block").hidden = $("set-screen-target").value !== "region";
+  });
+  $("screen-region-choose").addEventListener("click", openScreenRegionPicker);
+  $("screen-region-cancel").addEventListener("click", closeScreenRegionPicker);
+  $("screen-region-canvas").addEventListener("pointerdown", (event) => {
+    const canvas = $("screen-region-canvas");
+    screenRegionAnchor = screenRegionPoint(event);
+    screenRegionRect = { x: screenRegionAnchor.x, y: screenRegionAnchor.y, width: 0, height: 0 };
+    canvas.setPointerCapture(event.pointerId);
+    drawScreenRegionPreview();
+  });
+  $("screen-region-canvas").addEventListener("pointermove", (event) => {
+    if (!screenRegionAnchor) return;
+    const point = screenRegionPoint(event);
+    screenRegionRect = {
+      x: Math.min(screenRegionAnchor.x, point.x),
+      y: Math.min(screenRegionAnchor.y, point.y),
+      width: Math.abs(point.x - screenRegionAnchor.x),
+      height: Math.abs(point.y - screenRegionAnchor.y),
+    };
+    drawScreenRegionPreview();
+  });
+  $("screen-region-canvas").addEventListener("pointerup", () => {
+    if (!screenRegionRect) return;
+    screenRegionAnchor = null;
+    const canvas = $("screen-region-canvas");
+    const usable = screenRegionRect.width >= 12 && screenRegionRect.height >= 12;
+    $("screen-region-apply").disabled = !usable;
+    $("screen-region-selection").textContent = usable
+      ? `${Math.round(screenRegionRect.width / canvas.width * 100)}% × ${Math.round(screenRegionRect.height / canvas.height * 100)}% selected.`
+      : "Select a larger area.";
+  });
+  $("screen-region-canvas").addEventListener("pointercancel", () => {
+    screenRegionAnchor = null;
+    screenRegionRect = null;
+    $("screen-region-apply").disabled = true;
+    drawScreenRegionPreview();
+  });
+  $("screen-region-apply").addEventListener("click", () => {
+    if (!screenRegionRect) return;
+    const canvas = $("screen-region-canvas");
+    const x = screenRegionRect.x / canvas.width;
+    const y = screenRegionRect.y / canvas.height;
+    state.screenRegionSelection = {
+      x,
+      y,
+      width: Math.min(1 - x, screenRegionRect.width / canvas.width),
+      height: Math.min(1 - y, screenRegionRect.height / canvas.height),
+    };
+    closeScreenRegionPicker();
+    applySettings();
+  });
   $("test-mic").addEventListener("click", testMic);
   $("test-voice").addEventListener("click", async () => {
     await api("/api/test_voice", { method: "POST", body: JSON.stringify({ text: "Hi, I'm Helpie. This is how I sound." }) });
@@ -1541,6 +1677,10 @@ function bind() {
   });
 
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("screen-region-modal").hidden) {
+      closeScreenRegionPicker();
+      return;
+    }
     if (event.ctrlKey && event.code === "Space") {
       event.preventDefault();
       if ($("palette").hidden) paletteOpen();
@@ -1632,6 +1772,7 @@ function setOverlayState(state, cloudVoiceActive) {
   const hint = document.querySelector(".overlay-hint");
   const labels = {
     idle: "Idle",
+    capturing: "Capturing screen…",
     listening: "Listening\u2026",
     hearing: "Hearing\u2026",
     thinking: "Thinking\u2026",

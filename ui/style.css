@@ -1455,6 +1455,62 @@ kbd { padding: 2px 6px; color: #dbe6f5; }
   overflow: hidden;
   animation: slide-down 150ms var(--transition);
 }
+.screen-region-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 7, 11, 0.78);
+}
+.screen-region-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 18px;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+.screen-region-header,
+.screen-region-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.screen-region-header h2 { margin: 0 0 4px; font-size: 18px; }
+.screen-region-header p,
+.screen-region-footer span { margin: 0; color: var(--muted); font-size: 13px; }
+.screen-region-canvas-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+  border-radius: 10px;
+  background: #080b10;
+}
+#screen-region-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 220px);
+  object-fit: contain;
+  cursor: crosshair;
+  touch-action: none;
+}
+@media (max-width: 640px) {
+  .screen-region-modal { padding: 10px; }
+  .screen-region-panel { width: 100%; max-height: calc(100vh - 20px); padding: 12px; }
+  .screen-region-header { align-items: flex-start; }
+  .screen-region-header p { max-width: 42ch; }
+}
 .palette-search { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
 .palette-ico { color: var(--accent); font-size: 13px; }
 .palette-search input {
@@ -1651,6 +1707,20 @@ body.overlay-mode .overlay-root {
   background: rgba(11, 16, 32, 0.82);
   color: #cfe6ff;
   border-color: rgba(110, 231, 255, 0.35);
+}
+
+/* Capturing: visible amber indicator while screen pixels are read locally. */
+.overlay-state-capturing .overlay-marker {
+  animation: overlay-pulse 1.2s ease-in-out infinite;
+}
+.overlay-state-capturing .overlay-marker svg path {
+  fill: #f59e0b;
+  stroke: #0b1020;
+}
+.overlay-state-capturing .overlay-hint {
+  background: rgba(180, 83, 9, 0.92);
+  color: #ffffff;
+  border-color: rgba(245, 158, 11, 0.8);
 }
 
 /* listening: pulsing blue */

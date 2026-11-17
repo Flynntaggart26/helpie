@@ -18,6 +18,7 @@ import audit
 import clipboard
 import config
 import reminders
+import shell
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -129,6 +130,9 @@ VK_MEDIA_NEXT, VK_MEDIA_PREV, VK_MEDIA_PLAY = 0xB0, 0xB1, 0xB3
 # --------------------------------------------------------------------------- #
 BACKGROUND_APPS = True
 _SCREEN_CONTEXT_CONSENT = False
+_SCREEN_CAPTURE_TARGET = "picker"
+_SCREEN_CAPTURE_TARGET_ID = ""
+_SCREEN_CAPTURE_REGION: Optional[tuple[float, float, float, float]] = None
 SW_SHOWMINNOACTIVE = 7
 SW_MINIMIZE = 6
 BROWSER_PROCESSES = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe",
@@ -137,6 +141,27 @@ BROWSER_PROCESSES = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe",
 _user32 = ctypes.windll.user32
 _kernel32 = ctypes.windll.kernel32
 _shell32 = ctypes.windll.shell32
+_user32.MonitorFromWindow.restype = wintypes.HANDLE
+_user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+_user32.GetForegroundWindow.restype = wintypes.HWND
+_user32.GetForegroundWindow.argtypes = []
+_user32.IsWindowVisible.restype = wintypes.BOOL
+_user32.IsWindowVisible.argtypes = [wintypes.HWND]
+_user32.IsIconic.restype = wintypes.BOOL
+_user32.IsIconic.argtypes = [wintypes.HWND]
+_user32.GetWindowRect.restype = wintypes.BOOL
+_user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+_user32.GetWindowTextW.restype = ctypes.c_int
+_user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+_user32.GetMonitorInfoW.restype = wintypes.BOOL
+_user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+_user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+_user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+_user32.EnumWindows.restype = wintypes.BOOL
+_user32.EnumWindows.argtypes = [ctypes.c_void_p, wintypes.LPARAM]
+_user32.EnumDisplayMonitors.restype = wintypes.BOOL
+_user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT),
+                                         ctypes.c_void_p, wintypes.LPARAM]
 
 _kernel32.OpenProcess.restype = wintypes.HANDLE
 _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -166,6 +191,81 @@ def set_screen_context_consent(enabled: bool) -> None:
     """
     global _SCREEN_CONTEXT_CONSENT
     _SCREEN_CONTEXT_CONSENT = bool(enabled)
+
+
+def set_screen_capture_target(target: str, target_id: str = "",
+                              region: Optional[dict] = None) -> None:
+    """Choose a fresh Windows picker selection or a proportional region crop."""
+    global _SCREEN_CAPTURE_TARGET, _SCREEN_CAPTURE_TARGET_ID, _SCREEN_CAPTURE_REGION
+    if target in {"picker", "region"}:
+        _SCREEN_CAPTURE_TARGET = target
+        _SCREEN_CAPTURE_TARGET_ID = target_id[:128]
+        if isinstance(region, dict):
+            try:
+                values = tuple(float(region[key]) for key in ("x", "y", "width", "height"))
+                x, y, width, height = values
+                if (all(0 <= value <= 1 for value in values) and width > 0 and height > 0
+                        and x + width <= 1 and y + height <= 1):
+                    _SCREEN_CAPTURE_REGION = values
+            except (KeyError, TypeError, ValueError):
+                _SCREEN_CAPTURE_REGION = None
+        elif target != "region":
+            _SCREEN_CAPTURE_REGION = None
+    else:
+        # Preserve an unknown legacy value as fail-closed instead of widening
+        # an outdated window target to an all-display capture.
+        _SCREEN_CAPTURE_TARGET = "invalid"
+        _SCREEN_CAPTURE_TARGET_ID = ""
+
+
+class _MONITORINFOEX(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD),
+                ("szDevice", wintypes.WCHAR * 32)]
+
+
+def list_screen_targets() -> dict:
+    """Return the currently available displays for explicit screen targeting."""
+    monitors: list[dict] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HANDLE, wintypes.HDC,
+                        ctypes.POINTER(wintypes.RECT), wintypes.LPARAM)
+    def _monitor_callback(monitor, _dc, _rect, _data):
+        info = _MONITORINFOEX()
+        info.cbSize = ctypes.sizeof(info)
+        if _user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            rect = info.rcMonitor
+            device = info.szDevice.strip()
+            monitors.append({
+                "id": device,
+                "label": f"{device} · {rect.right - rect.left} × {rect.bottom - rect.top}",
+                "bounds": [rect.left, rect.top, rect.right, rect.bottom],
+            })
+        return True
+
+    try:
+        _user32.EnumDisplayMonitors(None, None, _monitor_callback, 0)
+    except Exception:
+        monitors = []
+
+    return {"monitors": monitors[:32]}
+
+
+def _monitor_bounds(monitor_id: str) -> Optional[tuple[int, int, int, int]]:
+    selected = next((item for item in list_screen_targets()["monitors"]
+                     if item["id"] == monitor_id), None)
+    return tuple(selected["bounds"]) if selected else None
+
+
+def _window_monitor_id(hwnd: int) -> str:
+    monitor = _user32.MonitorFromWindow(wintypes.HWND(hwnd), 2)
+    if not monitor:
+        return ""
+    info = _MONITORINFOEX()
+    info.cbSize = ctypes.sizeof(info)
+    if not _user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return ""
+    return info.szDevice.strip()
 
 
 def _foreground_hwnd() -> int:
@@ -566,8 +666,8 @@ def screenshot() -> str:
     return f"Screenshot saved as {path.name}."
 
 
-def capture_screen(max_width: int = 1600) -> Optional[bytes]:
-    """Grab the current screen as a downscaled PNG (for the vision model).
+def capture_screen_context(max_width: int = 1600) -> Optional[tuple[bytes, dict]]:
+    """Capture the selected screen target as a downscaled PNG with metadata.
 
     Refuses to capture when screen context consent is off, so no plugin or
     internal path can read the user's screen without consent.
@@ -576,18 +676,126 @@ def capture_screen(max_width: int = 1600) -> Optional[bytes]:
         return None
     try:
         import io
+        from PIL import Image, ImageGrab
 
-        from PIL import ImageGrab
+        native_capture = shell.capture_one_frame()
+        title = ""
+        if native_capture is not None:
+            _available, native_result = native_capture
+            if not native_result:
+                return None
+            native_png, title = native_result
+            with Image.open(io.BytesIO(native_png)) as captured:
+                image = captured.convert("RGB")
+            if _SCREEN_CAPTURE_TARGET == "region":
+                if _SCREEN_CAPTURE_REGION is None:
+                    return None
+                x, y, width, height = _SCREEN_CAPTURE_REGION
+                left = int(image.width * x)
+                top = int(image.height * y)
+                right = max(left + 1, int(image.width * (x + width)))
+                bottom = max(top + 1, int(image.height * (y + height)))
+                image = image.crop((left, top, right, bottom))
+                target_label = "selected region from Windows picker"
+            else:
+                target_label = "Windows picker selection"
+        else:
+            # Browser/dev mode keeps the legacy explicit display selection.
+            # The Tauri desktop shell never falls back to this screen scrape.
+            target = _SCREEN_CAPTURE_TARGET
+            if target == "picker":
+                target = "all_displays"
+            target_id = _SCREEN_CAPTURE_TARGET_ID
+            if target not in {"all_displays", "monitor", "region"}:
+                return None
+            if target == "region" and _SCREEN_CAPTURE_REGION is None:
+                return None
+            hwnd = int(_user32.GetForegroundWindow() or 0)
+            bounds = None
+            if hwnd:
+                title_buffer = ctypes.create_unicode_buffer(512)
+                _user32.GetWindowTextW(hwnd, title_buffer, len(title_buffer))
+                title = title_buffer.value.strip()
+                foreground_pid = _window_pid(hwnd)
+                if (_process_name(foreground_pid) in {"helpie.exe", "helpie-core.exe"}
+                        or title.casefold() == "helpie"):
+                    title = ""
 
-        image = ImageGrab.grab(all_screens=True)
+            if target in {"monitor", "region"}:
+                bounds = _monitor_bounds(target_id)
+
+            if target == "all_displays":
+                image = ImageGrab.grab(all_screens=True)
+                target_label = "all displays"
+            else:
+                # Never widen a selected target if it cannot be resolved.
+                if bounds is None:
+                    return None
+                image = ImageGrab.grab(bbox=bounds, all_screens=True)
+                if target == "region":
+                    x, y, width, height = _SCREEN_CAPTURE_REGION
+                    left = int(image.width * x)
+                    top = int(image.height * y)
+                    right = max(left + 1, int(image.width * (x + width)))
+                    bottom = max(top + 1, int(image.height * (y + height)))
+                    image = image.crop((left, top, right, bottom))
+                    target_label = "selected region"
+                else:
+                    target_label = "selected display"
         if image.width > max_width:
             height = max(1, int(image.height * max_width / image.width))
             image = image.resize((max_width, height))
         buffer = io.BytesIO()
         image.convert("RGB").save(buffer, format="PNG", optimize=True)
+        metadata = {
+            "captured_at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+            "target": target_label,
+            "active_window": title[:200],
+        }
+        return buffer.getvalue(), metadata
+    except Exception:
+        return None
+
+
+def capture_screen_preview(monitor_id: str = "", max_width: int = 1280) -> Optional[bytes]:
+    """Capture a local preview for the user to mark an optional region."""
+    if not _SCREEN_CONTEXT_CONSENT:
+        return None
+    try:
+        import io
+
+        from PIL import Image, ImageGrab
+
+        native_capture = shell.capture_one_frame()
+        if native_capture is not None:
+            _available, native_result = native_capture
+            if not native_result:
+                return None
+            native_png, _target_name = native_result
+            with Image.open(io.BytesIO(native_png)) as captured:
+                image = captured.convert("RGB")
+        else:
+            if monitor_id:
+                bounds = _monitor_bounds(monitor_id)
+                if bounds is None:
+                    return None
+                image = ImageGrab.grab(bbox=bounds, all_screens=True)
+            else:
+                image = ImageGrab.grab(all_screens=True)
+        if image.width > max_width:
+            height = max(1, int(image.height * max_width / image.width))
+            image = image.resize((max_width, height))
+        buffer = io.BytesIO()
+        image.convert("RGB").save(buffer, format="JPEG", quality=65, optimize=True)
         return buffer.getvalue()
     except Exception:
         return None
+
+
+def capture_screen(max_width: int = 1600) -> Optional[bytes]:
+    """Compatibility wrapper for plugins that only need screenshot bytes."""
+    result = capture_screen_context(max_width=max_width)
+    return result[0] if result else None
 
 
 def briefing(city: str = "") -> str:

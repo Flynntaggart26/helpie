@@ -17,6 +17,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -24,7 +25,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-import os
+import audit
 
 # Override with the HELPIE_REPO environment variable (e.g. "owner/helpie") when
 # running a fork. Defaults to the upstream repository.
@@ -111,8 +112,14 @@ def check(timeout: float = 8.0) -> dict:
     return result
 
 
-def apply(url: str = "") -> dict:
-    release = check()
+def apply(url: str = "", release: dict | None = None) -> dict:
+    result = _apply(url, release)
+    audit.log("Applied Helpie update", ok=bool(result.get("ok")))
+    return result
+
+
+def _apply(url: str, release: dict | None = None) -> dict:
+    release = release or check()
     if packaged():
         installer = release.get("installer", "")
         if not release.get("available") or not _is_release_asset(installer, ".exe"):
@@ -174,28 +181,56 @@ def _apply_installer(url: str) -> dict:
     if not _is_release_asset(url, ".exe"):
         return {"ok": False, "message": "The installer URL is not a trusted GitHub release asset."}
 
-    target = Path(tempfile.gettempdir()) / "Helpie-update-setup.exe"
+    temp_dir = Path(tempfile.gettempdir())
+    suffix = uuid.uuid4().hex[:12]
+    target = temp_dir / f"Helpie-update-{suffix}-setup.exe"
+    partial = target.with_suffix(".download")
     try:
         response = requests.get(url, timeout=300, stream=True)
         response.raise_for_status()
-        with target.open("wb") as handle:
+        with partial.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=1 << 18):
                 if chunk:
                     handle.write(chunk)
+        with partial.open("rb") as handle:
+            is_windows_executable = handle.read(2) == b"MZ"
+        if partial.stat().st_size < 2 or not is_windows_executable:
+            raise ValueError("GitHub did not return a Windows installer executable")
+        partial.replace(target)
     except Exception as exc:
-        return {"ok": False, "message": f"Download failed: {exc}"}
+        partial.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
+        return {"ok": False, "message": f"Installer download failed: {exc}"}
 
-    command = (
-        "timeout /t 4 >nul & "
-        "taskkill /IM Helpie.exe /F >nul 2>&1 & "
-        "taskkill /IM helpie-core.exe /F >nul 2>&1 & "
-        f'start "" "{target}" /S'
-    )
-    subprocess.Popen(
-        ["cmd", "/c", command],
-        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
-        close_fds=True,
-    )
+    # Use a real batch file instead of composing `cmd /c ... & start ...`.
+    # cmd.exe reparses compound command strings and can split quoted paths.
+    handoff = temp_dir / f"Helpie-update-{suffix}.cmd"
+    try:
+        handoff.write_text(
+            "@echo off\r\n"
+            "timeout /t 4 /nobreak >nul\r\n"
+            "taskkill /IM Helpie.exe /F >nul 2>&1\r\n"
+            "taskkill /IM helpie-core.exe /F >nul 2>&1\r\n"
+            f'"%~dp0{target.name}" /S\r\n'
+            "set install_result=%errorlevel%\r\n"
+            f'del /f /q "%~dp0{target.name}" >nul 2>&1\r\n'
+            'del /f /q "%~f0" >nul 2>&1\r\n'
+            "exit /b %install_result%\r\n",
+            encoding="ascii",
+        )
+        command_interpreter = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
+        creation_flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                          | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        subprocess.Popen(
+            [command_interpreter, "/d", "/c", str(handoff)],
+            cwd=str(temp_dir),
+            creationflags=creation_flags,
+            close_fds=True,
+        )
+    except Exception as exc:
+        handoff.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
+        return {"ok": False, "message": f"Could not start the installer handoff: {exc.__class__.__name__}"}
     return {"ok": True, "message": "Installing the new version. Helpie will restart."}
 
 

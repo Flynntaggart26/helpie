@@ -1,17 +1,17 @@
 # Helpie
 
-A small voice assistant that lives on your Windows desktop. Press **Ctrl + H**, speak, and
-Helpie listens, understands and answers out loud — while also controlling the machine for you.
+A screen-aware assistant for Windows. Press **Ctrl + H** to open Helpie, ask by text or
+voice, and get help with the current screen, documents, and everyday desktop tasks.
 
 ```
-Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
+Ctrl + H  →  Helpie opens  →  ask by text or voice  →  get an answer or request an action
 ```
 
 ## Features
 
 | Area | What it does |
 | --- | --- |
-| Voice | Global hotkey, speech recognition, natural neural voice replies |
+| Voice | Global hotkey; cloud transcription and spoken replies are separate, opt-in settings |
 | Chat | Chat window with sidebar, saved history you can reopen and delete |
 | Apps | Opens and closes Chrome, Spotify, Notepad, VS Code, Word, Explorer, Terminal… without stealing focus |
 | Screen | Reads the current screen (including error messages) with the Gemini vision model |
@@ -19,7 +19,7 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Memory | Remembers lasting facts about you and uses them in conversation |
 | Briefing | "Good morning" gives time, weather, battery, reminders and recent notes |
 | Chains | Several commands in one sentence: "open Chrome and search for cats", "lock the screen, then take a screenshot" |
-| Wake word | "Hey Helpie" / "Jarvis" starts listening hands-free (Porcupine, free tier) |
+| Wake word | Optional Jarvis / Computer wake word, off by default and requires a Picovoice AccessKey |
 | Organize | Sort Desktop/Downloads/Documents by type or date, remove duplicates, clean empty folders |
 | Plugins | Extensible system with example plugins: Clipboard History, System Monitor, Weather Extended |
 | Windows | Switches to a window by name, lists open windows, shows the desktop |
@@ -38,8 +38,8 @@ Ctrl + H  →  microphone opens  →  you speak  →  Helpie answers and acts
 | Auto-update | Checks GitHub Releases, installs new versions in place |
 | Settings UI | Full-window settings with icon rail, search, breadcrumbs and plugin configuration |
 
-The UI is a small chat window with a sidebar (Chat, Notes, Reminders, Routines, Commands, Settings),
-so it behaves like a normal assistant app rather than a floating widget.
+The app includes a small launcher, a full chat and settings window, and a transparent annotation
+overlay. The overlay is click-through and does not take focus.
 
 ## Routines
 
@@ -208,21 +208,22 @@ Helpie answers in English but understands Turkish commands as well.
 - `Organize all preview` — dry-run across Desktop, Downloads, Documents
 - `Remove duplicates in downloads` — delete duplicate files (keeps one copy)
 - `Clean empty folders` — remove empty subfolders
-- `Hey Helpie` / `Jarvis` — wake word to start listening hands-free (needs Porcupine AccessKey)
+- `Jarvis` / `Computer` — optional wake word (needs Porcupine AccessKey; off by default)
 - `save routine morning with steps open chrome and search for cats`
 - `run morning` / `run routine morning with params app=edge`
 - `list routines` / `delete routine morning`
 
 A longer list is in the **Commands** tab.
 
-## Wake word (hands-free)
+## Wake word (optional)
 
-Say **“Hey Helpie”** or **“Jarvis”** and Helpie starts listening — no hotkey needed.
+When enabled and configured, the built-in **Jarvis** or **Computer** keyword can open Helpie
+without the hotkey. There is no bundled “Hey Helpie” keyword model.
 
 - Uses **Picovoice Porcupine** (runs locally, no cloud).
 - Built-in keywords on free tier: **"Jarvis"**, **"Computer"**.
-- Get a free AccessKey at <https://console.picovoice.ai/> and paste it in **Settings → Porcupine AccessKey**.
-- Toggle with **Settings → Wake word: "Hey Helpie" / "Jarvis"**.
+- Get a free AccessKey at <https://console.picovoice.ai/> and paste it in **Settings → Wake Word → Porcupine AccessKey**.
+- Enable or disable it in **Settings → Wake Word**. It is off by default.
 - Works alongside Ctrl+H; both trigger the same listening flow.
 - Low CPU: runs in a background thread, only processes audio for keyword detection.
 
@@ -352,6 +353,19 @@ Settings opens as its own full-window surface (the chat sidebar hides while it i
   each plugin's `settings_schema` (for example Spotify client id / secret / device / refresh token)
 - **Save settings** in the footer applies everything
 
+**Privacy controls:** Settings → Voice separately controls Google voice transcription, Microsoft
+online speech synthesis, and screen-context access. Each is off by default. When screen access is
+enabled, each screen question opens the Windows capture picker so the user selects a display or app
+window. Windows shows its capture border; Helpie captures one frame for that request and sends it
+through the selected provider. An optional proportional region can be selected from a local preview.
+The app records a capture timestamp and the picker target name when Windows provides one. Canceling
+the picker sends no image.
+
+**AI providers:** Settings → AI Providers lets you select Gemini, local Ollama, or a custom
+OpenAI-compatible endpoint. Helpie uses only the selected provider and does not silently fall back.
+Ollama can keep chat local; Gemini screen reading currently requires Gemini and sends the selected
+screen image to Google's service.
+
 Pages are deep-linkable: `?view=settings&page=plugins`.
 
 **Activity** (`Settings → Activity`) shows every action Helpie performed on this PC — apps opened,
@@ -375,11 +389,17 @@ thread puts the previous window back in front. Turn it off with
 
 ## Screen and documents
 
-Screen reading and document summaries use Gemini vision, so they need a free API key.
+Screen reading is off until enabled in **Settings → Voice**. It currently uses Gemini vision, so
+the image selected in Windows is sent to Google when the user asks Helpie to read the screen. The
+Windows picker can select a display or app window and opens for each screen question. An optional
+saved region crops the selected image proportionally. The desktop app uses Windows Graphics Capture;
+the older browser development mode retains its Pillow fallback.
+Document summaries use the selected AI provider when one is configured.
 
-- **Screen** — `What is on my screen`, `Explain this error`, `Ekranda ne var`. Helpie takes
-  a downscaled screenshot, sends it to Gemini and answers out loud. DRM video players may
-  appear black, and the window must not be minimised.
+- **Screen** — `What is on my screen`, `Explain this error`, `Ekranda ne var`. With consent,
+  the Windows picker opens and Helpie captures one frame from the chosen target. The app shows a
+  capture indicator, sends a downscaled image to Gemini and answers. Protected content may appear
+  black.
 - **Documents** — `Summarize report`, `<name> dosyasını özetle`. Helpie finds the file on
   the Desktop, Documents or Downloads, extracts text from PDF/DOCX/PPTX/TXT and summarises
   it. Without an API key it falls back to a short extractive summary.
@@ -442,7 +462,9 @@ runs on every `v*` tag, zips the repository and publishes it as a GitHub Release
 At startup Helpie asks GitHub for the latest release:
 
 - newer tag → the sidebar shows “Helpie x.y.z is available”, with an **Install** button
-- **Install** downloads the zip, copies the files over the app folder (keeping `data/`) and restarts
+- In the installed desktop app, **Install** downloads the trusted release setup executable, waits for Helpie to close, then launches the installer silently. Settings and user data stay in `%APPDATA%\Helpie`.
+- In a source checkout, **Install** applies the source archive and restarts the Python app.
+- You can also say “install the new Helpie update”; that command uses the trusted updater instead of being treated as a file or app launch request.
 
 Manual check: **Check for updates** in the sidebar.
 

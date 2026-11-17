@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 try:  # imported from the app root in helpie.py, from core/ in server.py
@@ -65,3 +66,45 @@ def request(action: str, timeout: float = 2.5) -> bool:
             return 200 <= int(response.status) < 300
     except Exception:
         return False
+
+
+def capture_one_frame(timeout: float = 300.0) -> tuple[bool, tuple[bytes, str] | None] | None:
+    """Request one native WGC frame from the Tauri shell.
+
+    ``None`` means no authenticated shell is configured, so the caller may use
+    the legacy development capture path. ``(True, None)`` means the shell
+    handled the request but capture was canceled or unavailable; callers must
+    not fall back to a broader desktop grab in that case.
+    """
+    port = control_port()
+    token = os.environ.get("HELPIE_CONTROL_TOKEN", "").strip()
+    if port is None or not token:
+        if os.environ.get("HELPIE_NO_BROWSER") == "1":
+            return True, None
+        return None
+
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/capture",
+        data=b"",
+        headers={"X-Helpie-Control-Token": token},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if response.status == 204:
+                return True, None
+            if response.status != 200 or response.headers.get_content_type() != "image/png":
+                return True, None
+            image = response.read(128 * 1024 * 1024 + 1)
+            if len(image) > 128 * 1024 * 1024 or not image.startswith(b"\x89PNG\r\n\x1a\n"):
+                return True, None
+            target = response.headers.get("X-Helpie-Capture-Target", "")[:200]
+            return True, (image, target)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 204:
+            return True, None
+        return True, None
+    except Exception:
+        # The shell was configured for this run; fail closed instead of taking
+        # an unconsented Pillow desktop screenshot after a transport failure.
+        return True, None

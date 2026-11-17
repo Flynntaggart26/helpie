@@ -14,6 +14,7 @@ import documents
 import memory
 import routines
 import shutil
+import updater
 from llm import Brain as LlmBrain
 
 GREETINGS = [
@@ -334,6 +335,27 @@ class Brain:
                 return "Okay, cancelled."
             self.pending = pending
             return "I need a yes or a no to continue."
+
+        # Keep an explicit Helpie update request inside the trusted updater.
+        # Otherwise it can fall through to the general assistant and be
+        # misinterpreted as a filesystem or app-launch command.
+        if re.search(
+            r"\b(?:install|apply)\s+(?:(?:the|a)\s+)?(?:(?:new|latest)\s+)?"
+            r"(?:helpie\s+)?update\b|\bupdate\s+helpie\b|"
+            r"\bhelpie(?:'s)?\s+update\b|"
+            r"\b(?:helpie(?:'yi|yi)?\s+güncelle|(?:yeni\s+)?güncellemeyi\s+(?:yükle|kur))\b",
+            t,
+        ):
+            release = updater.check()
+            if not release.get("available"):
+                if release.get("error"):
+                    audit.log("Checked Helpie update", ok=False)
+                    return f"I could not check for updates. {release['error']}"
+                audit.log("Checked Helpie update", ok=True)
+                version = release.get("current") or updater.current_version()
+                return f"Helpie {version} is already up to date."
+            result = updater.apply(str(release.get("url", "")), release=release)
+            return str(result.get("message", "The update could not be started."))
 
         if not self._in_plan:
             # Don't split routine commands into plans
@@ -750,10 +772,18 @@ class Brain:
         if getattr(self.llm, "provider", "gemini") != "gemini":
             return ("Screen reading currently works with the Gemini provider only. "
                     "Switch it in Settings -> AI Providers.")
-        image = actions.capture_screen()
-        if not image:
+        self.on_event({"type": "state", "value": "capturing"})
+        capture = actions.capture_screen_context()
+        if not capture:
+            self.on_event({"type": "state", "value": "thinking"})
             return "I could not capture the screen."
-        answer = self.llm.vision(prompt, image)
+        image, metadata = capture
+        self.on_event({"type": "state", "value": "thinking"})
+        capture_context = (
+            f"Capture time: {metadata['captured_at']}. Target: {metadata['target']}. "
+            f"Window context: {metadata['active_window'] or 'not available'}.\n\n"
+        )
+        answer = self.llm.vision(capture_context + (prompt or "What is on my screen right now?"), image)
         if not answer:
             return "I could not read your screen right now."
         return answer

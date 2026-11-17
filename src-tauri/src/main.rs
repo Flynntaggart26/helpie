@@ -21,6 +21,9 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+#[cfg(windows)]
+mod capture;
+
 /// Set by `--hidden` (autostart): start the backend without popping the window.
 static START_HIDDEN: AtomicBool = AtomicBool::new(false);
 /// Set once the user explicitly asked for the window (Ctrl+H), so the late
@@ -571,7 +574,7 @@ fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream
     let method = request_line.next().unwrap_or("");
     let target = request_line.next().unwrap_or("");
     let version = request_line.next().unwrap_or("");
-    if method != "GET"
+    if !matches!(method, "GET" | "POST")
         || !matches!(version, "HTTP/1.0" | "HTTP/1.1")
         || request_line.next().is_some()
     {
@@ -610,12 +613,59 @@ fn handle_control(app: &AppHandle, port: u16, token: &str, mut stream: TcpStream
         .next()
         .unwrap_or("")
         .to_string();
+    if action == "capture" {
+        if method != "POST" || target != "/capture" {
+            let _ = stream.write_all(
+                b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            return;
+        }
+        #[cfg(windows)]
+        match capture::capture_one_frame() {
+            Ok(Some((image, target_name))) => {
+                let safe_target: String = target_name
+                    .chars()
+                    .filter(|character| character.is_ascii_graphic() || *character == ' ')
+                    .take(200)
+                    .collect();
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nX-Helpie-Capture-Target: {}\r\nConnection: close\r\n\r\n",
+                    image.len(), safe_target
+                );
+                if stream.write_all(header.as_bytes()).is_ok() {
+                    let _ = stream.write_all(&image);
+                }
+            }
+            Ok(None) => {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+            Err(_) => {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = stream.write_all(
+            b"HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+        return;
+    }
     if !matches!(
         action.as_str(),
         "full" | "focus" | "tiny" | "hide-tiny" | "overlay" | "hide-overlay" | "quit"
     ) {
         let _ = stream
             .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        return;
+    }
+
+    if method != "GET" {
+        let _ = stream.write_all(
+            b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
         return;
     }
 
@@ -729,7 +779,9 @@ fn boot(app: AppHandle) {
 
     // Reuse an already running backend instead of starting a second one.
     if let Some(existing) = read_port_file() {
-        log(&format!("boot: probing existing backend on port {existing}"));
+        log(&format!(
+            "boot: probing existing backend on port {existing}"
+        ));
         if http_ok(existing) {
             log("boot: reusing running backend");
             if let Some(state) = app.try_state::<Backend>() {
@@ -753,11 +805,17 @@ fn boot(app: AppHandle) {
 
     let port = free_port();
     let Some(control_token) = new_control_token() else {
-        show_error(&app, "Helpie could not start", "Secure window control could not be initialized.");
+        show_error(
+            &app,
+            "Helpie could not start",
+            "Secure window control could not be initialized.",
+        );
         return;
     };
     let control = start_control(app.clone(), port, control_token.clone()).unwrap_or(0);
-    log(&format!("boot: backend port {port}, control port {control}"));
+    log(&format!(
+        "boot: backend port {port}, control port {control}"
+    ));
 
     let _ = std::fs::create_dir_all(data_dir());
     if control > 0 {
@@ -870,34 +928,31 @@ fn main() {
                 hidden
             ));
 
-            let window = match WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("Helpie")
-            .inner_size(MAIN_W, MAIN_H)
-            .min_inner_size(760.0, 520.0)
-            .center()
-            .visible(!hidden)
-            .build()
-            {
-                Ok(window) => window,
-                Err(err) => {
-                    log(&format!("fatal: could not create main window: {err}"));
-                    message_box(
-                        "Helpie could not start",
-                        &format!(
-                            "Helpie could not open its window.\n\n{err}\n\n\
+            let window =
+                match WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                    .title("Helpie")
+                    .inner_size(MAIN_W, MAIN_H)
+                    .min_inner_size(760.0, 520.0)
+                    .center()
+                    .visible(!hidden)
+                    .build()
+                {
+                    Ok(window) => window,
+                    Err(err) => {
+                        log(&format!("fatal: could not create main window: {err}"));
+                        message_box(
+                            "Helpie could not start",
+                            &format!(
+                                "Helpie could not open its window.\n\n{err}\n\n\
                              This usually means Microsoft Edge WebView2 is missing or \
                              damaged. Install it from\n\
                              https://go.microsoft.com/fwlink/p/?LinkId=2124703\n\
                              then start Helpie again."
-                        ),
-                    );
-                    std::process::exit(1);
-                }
-            };
+                            ),
+                        );
+                        std::process::exit(1);
+                    }
+                };
 
             if hidden {
                 let _ = window.hide();

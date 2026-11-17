@@ -4,7 +4,7 @@ version = "1.16.9"
 description = "Helpie - voice assistant for Windows"
 authors = ["Flynntaggart26"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.85"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -12,6 +12,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 getrandom = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+png = "0.18.1"
+windows-capture = "2.0.1"
 
 [profile.release]
 codegen-units = 1
