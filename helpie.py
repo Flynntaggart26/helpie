@@ -198,13 +198,13 @@ def main() -> None:
         if push_to_talk_held.is_set():
             return
         push_to_talk_held.set()
+        app.start_push_to_talk()
         if shell.available():
             if not shell.request("companion"):
                 if not focus_window():
                     open_window(url)
         else:
             open_tiny_window(url)
-        app.start_push_to_talk()
 
     def hotkey_released(_event=None) -> None:
         if push_to_talk_held.is_set():

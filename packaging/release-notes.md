@@ -20,6 +20,11 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
+- Hold Ctrl+H to speak and release to send. The companion displays a top-center
+  listening panel with a color animation and a waveform that responds to voice level.
+- The Helpie pointer follows the mouse with a down-right offset and shows a click
+  ripple. While speaking it becomes a pulsing orb; while thinking it displays
+  three animated dots. Reduced-motion settings are respected.
 - Visual annotations now use a versioned, bounded schema. Helpie clears them
   instead of rendering data from a schema version it does not support. You can
   ask it to add up to three numbered callouts along with pins, boxes and arrows.
@@ -38,11 +43,8 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
   local sketch, save/reopen/edit it, undo the last changes, and export JSON.
   The latest answer stays in memory for up to 10 minutes for import. Stored notes
   contain validated vector shapes and strokes; no screen image is saved.
-- Ctrl+H now opens a compact desktop companion at the lower-right and hides the
-  full chat window. A distinct Helpie pointer follows your cursor with a
-  short smoothing transition; its current position is sampled locally and is not uploaded.
-  The pointer now has a friendly face, and thinking uses three small dots beside a
-  stationary “Thinking” label. Reduced-motion preferences disable the animations.
+- The companion hides the full chat window. Pointer position and voice level are
+  sampled locally for the overlay and are not uploaded for those effects.
 - Spoken assistant replies work without cloud speech permission through the
   installed Windows voice. Microsoft Edge neural speech remains optional; if it
   fails, Helpie falls back to the local Windows voice. Voice input consent is

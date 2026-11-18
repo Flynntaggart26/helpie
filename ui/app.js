@@ -16,7 +16,6 @@ const state = {
   routines: [],
   memory: [],
   micTesting: false,
-  pushToTalkHeld: false,
   settingsPage: "general",
   theme: "dark",
   pluginFilter: "all",
@@ -820,25 +819,6 @@ async function startListening(reason = "chat") {
   }
 }
 
-async function startPushToTalk() {
-  state.pushToTalkHeld = true;
-  try {
-    await api("/api/listen/start", { method: "POST", body: "{}" });
-  } catch (error) {
-    state.pushToTalkHeld = false;
-    toast("Could not start the microphone.");
-  }
-}
-
-async function stopPushToTalk() {
-  if (!state.pushToTalkHeld) return;
-  state.pushToTalkHeld = false;
-  try {
-    await api("/api/listen/stop", { method: "POST", body: "{}" });
-  } catch (error) {
-    // The global hotkey hook also stops capture when the main window loses focus.
-  }
-}
 
 function showChat(chat) {
   state.currentChat = chat.id;
@@ -2177,7 +2157,6 @@ function bind() {
     }
     if (event.ctrlKey && event.key.toLowerCase() === "h") {
       event.preventDefault();
-      if (!event.repeat) startPushToTalk();
       return;
     }
     if (event.ctrlKey && event.key.toLowerCase() === "k") {
@@ -2195,9 +2174,6 @@ function bind() {
       }
       setView("chat");
     }
-  });
-  document.addEventListener("keyup", (event) => {
-    if (event.code === "KeyH" || event.key === "Control") stopPushToTalk();
   });
 }
 
