@@ -65,6 +65,53 @@ class ApprovalIntegrationTests(unittest.TestCase):
         self.assertIsNone(self.agent._model_proposal)
         self.action.assert_not_called()
 
+    def test_stop_during_screen_picker_prevents_provider_transfer(self) -> None:
+        self.agent.cfg["screen_context_consent"] = True
+        self.agent.llm.vision = Mock()
+        started, release, cancelled = threading.Event(), threading.Event(), threading.Event()
+        def capture():
+            started.set()
+            release.wait(3)
+            return b"fake image", {"captured_at": "now", "target": "test", "active_window": ""}
+        replies = []
+        with patch.object(brain.actions, "capture_screen_context", side_effect=capture):
+            worker = threading.Thread(target=lambda: replies.append(
+                self.agent.handle("what is on my screen", cancel_event=cancelled)))
+            worker.start()
+            try:
+                self.assertTrue(started.wait(2))
+                cancelled.set()
+            finally:
+                release.set()
+                worker.join(3)
+        self.assertFalse(worker.is_alive())
+        self.assertIn("cancelled", replies[0].lower())
+        self.agent.llm.vision.assert_not_called()
+
+    def test_stop_during_provider_request_discards_screen_response(self) -> None:
+        self.agent.cfg["screen_context_consent"] = True
+        self.agent.llm.provider = "gemini"
+        started, release, cancelled = threading.Event(), threading.Event(), threading.Event()
+        def vision(*_args, **_kwargs):
+            started.set()
+            release.wait(3)
+            return "old answer"
+        self.agent.llm.vision = Mock(side_effect=vision)
+        replies = []
+        captured = (b"fake image", {"captured_at": "now", "target": "test", "active_window": ""})
+        with patch.object(brain.actions, "capture_screen_context", return_value=captured):
+            worker = threading.Thread(target=lambda: replies.append(
+                self.agent.handle("what is on my screen", cancel_event=cancelled)))
+            worker.start()
+            try:
+                self.assertTrue(started.wait(2))
+                cancelled.set()
+            finally:
+                release.set()
+                worker.join(3)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(replies, ["Screen request cancelled."])
+
     def test_direct_action_uses_target_validation(self) -> None:
         self.assertIn("could not", self.agent._dispatch_direct_desktop("open_app", {"app": "a\u202eb"}).lower())
         self.action.assert_not_called()

@@ -599,6 +599,10 @@ button, input, select, textarea { font-family: inherit; }
   touch-action: none;
 }
 .visual-note-status { min-height: 20px; padding-top: 6px; }
+.visual-note-description { color: var(--muted); font-size: 12px; padding-top: 6px; }
+.visual-note-point-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--line-soft); border-radius: 10px; margin: 10px 0; padding: 10px; }
+.visual-note-point-editor input[type="number"] { width: 76px; }
+.visual-note-point-editor input[type="text"] { width: 140px; }
 .visual-note-list { display: flex; flex-direction: column; gap: 8px; }
 .visual-note-item {
   display: flex; align-items: center; gap: 12px; padding: 10px 12px;
@@ -1983,6 +1987,24 @@ body.overlay-mode .overlay-root {
   text-overflow: ellipsis;
   white-space: nowrap;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.32);
+}
+.overlay-description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (prefers-contrast: more) {
+  .overlay-tag, .overlay-capture-indicator, .voice-banner {
+    color: #fff;
+    background: #000;
+    border: 2px solid #fff;
+    box-shadow: none;
+  }
+  .overlay-cursor-shape { stroke: #fff; stroke-width: 3; }
+  .overlay-annotation-active { filter: none; opacity: 1; }
 }
 .overlay-capture-indicator::before {
   content: "";

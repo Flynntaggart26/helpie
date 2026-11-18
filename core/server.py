@@ -97,6 +97,8 @@ class App:
         self._listen_lock = threading.Lock()
         self._voice_turn_guard = threading.Lock()
         self._voice_cancel: Optional[threading.Event] = None
+        self._turns_lock = threading.Lock()
+        self._active_turns: set[threading.Event] = set()
         self._push_to_talk_stop = threading.Event()
         self._push_to_talk_stop.set()
         self._push_to_talk_guard = threading.Lock()
@@ -374,6 +376,18 @@ class App:
     # -- conversation ---------------------------------------------------- #
     def reply(self, user_text: str, source: str = "chat",
               cancel_event: Optional[threading.Event] = None) -> str:
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        with self._turns_lock:
+            if cancel_event.is_set():
+                return ""
+            self._active_turns.add(cancel_event)
+        try:
+            return self._reply_turn(user_text, source, cancel_event)
+        finally:
+            with self._turns_lock:
+                self._active_turns.discard(cancel_event)
+
+    def _reply_turn(self, user_text: str, source: str, cancel_event: threading.Event) -> str:
         if cancel_event and cancel_event.is_set():
             return ""
         self._visual_turn.links = []
@@ -385,6 +399,7 @@ class App:
                 user_text,
                 allow_screen_capture=source in {"chat", "companion"},
                 source=source,
+                cancel_event=cancel_event,
             )
         except Exception:
             traceback.print_exc()
@@ -573,6 +588,11 @@ class App:
         self.stop_push_to_talk()
         self.speaker.stop()
 
+    def cancel_turns(self) -> None:
+        with self._turns_lock:
+            for cancel in self._active_turns:
+                cancel.set()
+
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
         safe = {k: v for k, v in self.cfg.items()
@@ -667,6 +687,9 @@ class App:
                                  and self.cfg.get("companion_live_view_consent", False))
         previous_live_view_allowed = bool(previous_cfg.get("screen_context_consent", False)
                                           and previous_cfg.get("companion_live_view_consent", False))
+        if ((previous_cfg.get("screen_context_consent") and not self.cfg.get("screen_context_consent"))
+                or (previous_live_view_allowed and not live_view_allowed)):
+            self.cancel_turns()
         if not live_view_allowed and (previous_live_view_allowed
                                       or self._live_capture_status.get("active")):
             with self._live_capture_lock:
@@ -1006,10 +1029,20 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
         if path == "/api/stop":
+            app.cancel_turns()
             app.cancel_voice()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
             app.clear_visual_annotations()
+            try:
+                import shell
+                shell.request("hide-overlay")
+                shell.stop_live_capture()
+            except Exception:
+                pass
+            with app._live_capture_lock:
+                app._live_capture_status = {"state": "off", "active": False, "frame_ready": False,
+                                            "target": "", "captured_at_ms": ""}
             app.push_state("idle")
             self._json({"ok": True})
             return
@@ -1026,12 +1059,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "invalid capture target"}, 400)
                 return
             previous_state = app.state
+            preview_cancel = threading.Event()
+            with app._turns_lock:
+                app._active_turns.add(preview_cancel)
             app.push_state("capturing")
             try:
                 preview = actions.capture_screen_preview(monitor_id)
             finally:
-                app.push_state(previous_state if previous_state != "capturing" else "idle")
-            if not preview:
+                with app._turns_lock:
+                    app._active_turns.discard(preview_cancel)
+                if not preview_cancel.is_set():
+                    app.push_state(previous_state if previous_state != "capturing" else "idle")
+            if preview_cancel.is_set() or not app.cfg.get("screen_context_consent", False) or not preview:
                 self._json({"error": "capture was canceled or unavailable"}, 409)
                 return
             try:
@@ -1044,6 +1083,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/overlay/hide":
             import shell
 
+            app.cancel_turns()
+            app.cancel_voice()
+            app.brain.cancel_model_proposal()
+            app.brain.pending = None
             app.clear_visual_annotations()
             ok = shell.request("hide-overlay")
             if app._live_capture_status.get("active"):

@@ -320,6 +320,17 @@ const VISUAL_NOTE_COLORS = new Set(["#55d6ff", "#f59e0b", "#f472b6", "#f8fafc"])
 function drawVisualNoteCanvas() {
   const canvas = $("visual-note-canvas");
   if (!canvas) return;
+  refreshVisualPointOptions();
+  const description = $("visual-note-description");
+  if (description) {
+    const parts = state.visualNoteItems.map((item, index) => {
+      const title = item.label || item.text || item.expression || "";
+      return `${index + 1}. ${item.kind || "visual item"}${title ? `: ${title}` : ""}`;
+    });
+    description.textContent = parts.length
+      ? `Visual answer: ${parts.join("; ")}. Drawing strokes: ${state.visualNoteStrokes.length}.`
+      : `Drawing strokes: ${state.visualNoteStrokes.length}.`;
+  }
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   const context = canvas.getContext("2d");
@@ -349,6 +360,48 @@ function drawVisualNoteCanvas() {
     }
     context.stroke();
   }
+}
+
+function refreshVisualPointOptions() {
+  const select = $("visual-point-select");
+  if (!select) return;
+  const choices = [];
+  state.visualNoteItems.forEach((item, itemIndex) => {
+    if (item.kind !== "geometry" || !Array.isArray(item.objects)) return;
+    item.objects.forEach((object, objectIndex) => {
+      if (object.kind === "point") choices.push({ key: `${itemIndex}:${objectIndex}`,
+        label: `Geometry ${itemIndex + 1}, point ${objectIndex + 1}${object.label ? `: ${object.label}` : ""}` });
+    });
+  });
+  const previous = select.value;
+  select.replaceChildren();
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = choices.length ? "Choose a point" : "No geometry points";
+  select.appendChild(empty);
+  choices.forEach((choice) => {
+    const option = document.createElement("option");
+    option.value = choice.key;
+    option.textContent = choice.label;
+    select.appendChild(option);
+  });
+  if (choices.some((choice) => choice.key === previous)) select.value = previous;
+}
+
+function selectedVisualPoint() {
+  const value = $("visual-point-select").value;
+  if (!/^\d+:\d+$/.test(value)) return null;
+  const [itemIndex, objectIndex] = value.split(":").map(Number);
+  const item = state.visualNoteItems[itemIndex];
+  const point = item?.kind === "geometry" ? item.objects?.[objectIndex] : null;
+  return point?.kind === "point" ? point : null;
+}
+
+function loadVisualPointEditor() {
+  const point = selectedVisualPoint();
+  $("visual-point-x").value = point ? String(Math.round(point.x * 10000) / 100) : "";
+  $("visual-point-y").value = point ? String(Math.round(point.y * 10000) / 100) : "";
+  $("visual-point-label").value = point?.label || "";
 }
 
 function drawVisualNoteItems(context, width, height) {
@@ -633,6 +686,30 @@ async function exportVisualNote() {
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   $("visual-note-status").textContent = "Exported this note as a local JSON file.";
+}
+
+async function exportVisualNotePng() {
+  const canvas = $("visual-note-canvas");
+  drawVisualNoteCanvas();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) {
+    $("visual-note-status").textContent = "Could not create the PNG image.";
+    return;
+  }
+  try {
+    await api("/api/visual-notes/exported", { method: "POST", body: "{}" });
+  } catch (error) {
+    $("visual-note-status").textContent = "Could not prepare the note export.";
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  const title = $("visual-note-title").value.trim() || "visual-note";
+  anchor.download = `${title.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 60) || "visual-note"}.png`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  $("visual-note-status").textContent = "Exported this note as a PNG image.";
 }
 
 function beginVisualNoteStroke(event) {
@@ -1990,6 +2067,25 @@ function bind() {
   $("visual-note-save").addEventListener("click", saveVisualNote);
   $("visual-note-import-answer").addEventListener("click", importLatestVisualAnswer);
   $("visual-note-export").addEventListener("click", exportVisualNote);
+  $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
+  $("visual-point-select").addEventListener("change", loadVisualPointEditor);
+  $("visual-point-apply").addEventListener("click", () => {
+    const point = selectedVisualPoint();
+    const xField = $("visual-point-x"), yField = $("visual-point-y");
+    const x = Number(xField.value), y = Number(yField.value);
+    if (!point || !xField.value.trim() || !yField.value.trim()
+        || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
+      $("visual-note-status").textContent = "Choose a point and enter coordinates from 0 to 100.";
+      return;
+    }
+    pushVisualNoteUndo();
+    point.x = x / 100;
+    point.y = y / 100;
+    point.label = $("visual-point-label").value.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 32);
+    state.visualNoteDirty = true;
+    $("visual-note-status").textContent = "Point updated. Save the note to keep the change.";
+    drawVisualNoteCanvas();
+  });
   $("visual-note-title").addEventListener("input", () => { state.visualNoteDirty = true; });
   $("visual-note-undo").addEventListener("click", () => {
     const previous = state.visualNoteUndoStack.pop();
@@ -2193,6 +2289,8 @@ function clearOverlayAnnotations() {
   if (overlayAnnotationTimer) clearTimeout(overlayAnnotationTimer);
   overlayAnnotationTimer = null;
   document.querySelector(".overlay-annotations")?.remove();
+  const announcement = document.querySelector(".overlay-description");
+  if (announcement) announcement.textContent = "";
 }
 
 function updateOverlayAnnotations(payload, monitor) {
@@ -2209,6 +2307,12 @@ function updateOverlayAnnotations(payload, monitor) {
   const items = Array.isArray(payload?.items) ? payload.items.slice(0, 3) : [];
   const root = document.querySelector(".overlay-root");
   if (!root || !items.length) return;
+  const announcement = root.querySelector(".overlay-description");
+  if (announcement) {
+    announcement.textContent = `Visual answer: ${items.map((item, index) =>
+      `${index + 1}. ${item.kind || "item"}${item.label || item.text || item.expression
+        ? `: ${item.label || item.text || item.expression}` : ""}`).join("; ")}`;
+  }
 
   const valid = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -2513,6 +2617,7 @@ function startOverlay() {
     <div class="overlay-capture-indicator" id="overlay-capture-indicator" data-capture-state="off" role="status" aria-live="polite">
       Screen access off
     </div>
+    <div class="overlay-description" role="status" aria-live="polite"></div>
     <div class="voice-banner" aria-hidden="true">
       <span class="voice-banner-logo">H</span>
       <span class="voice-banner-copy"><strong>Helpie</strong><span>Listening to you</span></span>

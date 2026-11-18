@@ -629,6 +629,7 @@ class Brain:
         self._explicit_screen_request = contextvars.ContextVar(
             "helpie_explicit_screen_request", default=False,
         )
+        self._turn_cancel = contextvars.ContextVar("helpie_turn_cancel", default=None)
 
     def refresh(self, cfg: dict) -> None:
         self.cfg = cfg
@@ -780,14 +781,16 @@ class Brain:
 
     # ------------------------------------------------------------------ #
     def handle(self, text: str, allow_screen_capture: bool = True,
-               source: str = "chat") -> str:
+               source: str = "chat", cancel_event: Optional[threading.Event] = None) -> str:
         token = self._screen_capture_allowed.set(bool(allow_screen_capture))
+        cancel_token = self._turn_cancel.set(cancel_event if cancel_event is not None else self._turn_cancel.get())
         source_token = self._screen_capture_source.set(source)
         explicit_token = self._explicit_screen_request.set(
             bool(SCREEN_REQUEST_RE.search(text)))
         try:
             return self._handle(text)
         finally:
+            self._turn_cancel.reset(cancel_token)
             self._explicit_screen_request.reset(explicit_token)
             self._screen_capture_source.reset(source_token)
             self._screen_capture_allowed.reset(token)
@@ -1299,6 +1302,9 @@ class Brain:
 
     # ------------------------------------------------------------------ #
     def _describe_screen(self, prompt: str) -> str:
+        cancel_event = self._turn_cancel.get()
+        if cancel_event and cancel_event.is_set():
+            return "Screen request cancelled."
         if not self._screen_capture_allowed.get():
             return "Screen reading is unavailable for this request. Open Helpie chat to choose a screen capture."
         if not self.cfg.get("screen_context_consent", False):
@@ -1344,6 +1350,10 @@ class Brain:
                 }
         else:
             capture = actions.capture_screen_context()
+        if (cancel_event and cancel_event.is_set()) or not self.cfg.get("screen_context_consent", False):
+            return "Screen request cancelled."
+        if source == "companion" and not self.cfg.get("companion_live_view_consent", False):
+            return "Screen request cancelled."
         if not capture:
             self.on_event({"type": "state", "value": "thinking"})
             if source == "companion":
@@ -1379,6 +1389,8 @@ class Brain:
                     + ("a remote AI provider" if remote else "a local AI provider"),
                     metadata["target"], ok=bool(answer), source="screen",
                 )
+        if cancel_event and cancel_event.is_set():
+            return "Screen request cancelled."
         if not answer:
             return ("I could not read the screen with this model. Check that the selected model "
                     "supports images and that the provider is reachable.")

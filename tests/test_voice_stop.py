@@ -159,6 +159,15 @@ class VoiceStopTests(unittest.TestCase):
         app.reply.assert_not_called()
         app.speaker.stop.assert_called_once()
 
+    def test_stop_marks_all_active_turns_cancelled(self) -> None:
+        app = server.App.__new__(server.App)
+        app._turns_lock = threading.Lock()
+        first, second = threading.Event(), threading.Event()
+        app._active_turns = {first, second}
+        app.cancel_turns()
+        self.assertTrue(first.is_set())
+        self.assertTrue(second.is_set())
+
 
 if __name__ == "__main__":
     unittest.main()
