@@ -2243,8 +2243,9 @@ function updateOverlayAnnotations(payload, monitor) {
     svg.appendChild(label);
   };
 
-  for (const item of items) {
+  for (const [itemIndex, item] of items.entries()) {
     if (!item || typeof item !== "object") continue;
+    const firstNode = svg.childNodes.length;
     if (item.kind === "pin" && valid(item.x) && valid(item.y)) {
       const x = item.x * monitor.width;
       const y = item.y * monitor.height;
@@ -2457,6 +2458,12 @@ function updateOverlayAnnotations(payload, monitor) {
       svg.appendChild(line);
       addLabel(item.label, (item.x1 + item.x2) * monitor.width / 2,
         (item.y1 + item.y2) * monitor.height / 2 - 12);
+    }
+    if (itemIndex === payload.active_index && svg.childNodes.length > firstNode) {
+      const group = document.createElementNS(svg.namespaceURI, "g");
+      group.setAttribute("class", "overlay-annotation-active");
+      while (svg.childNodes.length > firstNode) group.appendChild(svg.childNodes[firstNode]);
+      svg.appendChild(group);
     }
   }
   if (!svg.querySelector("circle, ellipse, rect, line, text, polygon, polyline")) return;

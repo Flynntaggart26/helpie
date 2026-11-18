@@ -55,7 +55,9 @@ requested item with reasonable confidence, append exactly one line after your
 spoken answer in this format:
 [[HELPIE_VISUAL]]{"version":1,"items":[{"kind":"callout","x":0.5,"y":0.5,"number":1,"label":"target"}]}
 Coordinates are normalized from the image's top-left (0..1). Return at most three
-items. Allowed kinds and fields:
+items. Each item may include an optional "explanation": a short exact substring
+of the spoken answer referring to that item, at most 160 characters. Never invent
+an explanation that is not present in the answer. Allowed kinds and fields:
 - pin: x, y, optional label
 - callout: x, y, number (1..3), optional label; number callouts in reading order
 - rect: x, y, width, height, optional label

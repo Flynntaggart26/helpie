@@ -426,9 +426,17 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
             "geometry": {"kind", "x", "y", "width", "height", "objects",
                          "constraints"},
         }.get(kind)
-        if not fields or set(item) - fields:
+        if not fields or set(item) - (fields | {"explanation"}):
             continue
         parsed = {"kind": kind}
+        explanation = item.get("explanation", "")
+        if not isinstance(explanation, str) or len(explanation) > 160:
+            continue
+        explanation = explanation.strip()
+        if explanation and (any(ord(c) < 32 for c in explanation) or explanation not in spoken):
+            continue
+        if explanation:
+            parsed["explanation"] = explanation
         if kind == "equation":
             text_value = item.get("text")
             if not isinstance(text_value, str):

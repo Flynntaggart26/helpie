@@ -12,6 +12,18 @@ from brain import SCREEN_REQUEST_RE, VISUAL_REQUEST_RE, _parse_visual_response  
 
 
 class VisualAnnotationTests(unittest.TestCase):
+    def test_explanation_must_match_the_spoken_answer(self) -> None:
+        payload = {"version": 1, "items": [
+            {"kind": "pin", "x": 0.2, "y": 0.3, "explanation": "The first point is here."},
+            {"kind": "pin", "x": 0.4, "y": 0.5, "explanation": "Invented phrase"},
+        ]}
+        answer, items = _parse_visual_response(
+            "The first point is here. [[HELPIE_VISUAL]]" + json.dumps(payload)
+        )
+        self.assertEqual(answer, "The first point is here.")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["explanation"], "The first point is here.")
+
     def test_accepts_only_bounded_pin_callout_and_arrow(self) -> None:
         payload = {
             "version": 1,

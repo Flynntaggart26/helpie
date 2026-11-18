@@ -424,7 +424,7 @@ class Speaker:
         self.on_start = on_start
         self.on_end = on_end
         self.on_error = on_error
-        self._queue: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._queue: "queue.Queue[Optional[tuple[str, Optional[Callable[[str], None]]]]]" = queue.Queue()
         self._stop = threading.Event()
         self._busy = False
         self._worker = threading.Thread(target=self._run, daemon=True)
@@ -444,12 +444,16 @@ class Speaker:
             if not self.cloud_consent:
                 self.stop()
 
-    def say(self, text: str) -> None:
+    def say(self, text: str, on_piece: Optional[Callable[[str], None]] = None) -> None:
         text = (text or "").strip()
         if not text:
             return
-        for piece in self._split(text):
-            self._queue.put(piece)
+        pieces = self._split(text, limit=220)
+        if on_piece:
+            pieces = [chunk for part in re.split(r"(?<=[.!?…])\s+", text[:800])
+                      for chunk in self._split(part, limit=220)]
+        for piece in pieces:
+            self._queue.put((piece, on_piece))
 
     def stop(self) -> None:
         while not self._queue.empty():
@@ -556,9 +560,10 @@ class Speaker:
             pass
 
         while not self._stop.is_set():
-            text = self._queue.get()
-            if text is None:
+            entry = self._queue.get()
+            if entry is None:
                 break
+            text, on_piece = entry
             self._busy = True
             try:
                 if self.on_start:
@@ -568,6 +573,8 @@ class Speaker:
                     path = self._synth(text)
                     if path:
                         try:
+                            if on_piece:
+                                on_piece(text)
                             spoken = self._play_file(path)
                         finally:
                             try:
@@ -575,6 +582,8 @@ class Speaker:
                             except OSError:
                                 pass
                 if not spoken:
+                    if on_piece:
+                        on_piece(text)
                     spoken = self._speak_local(text)
                 if not spoken and self.on_error:
                     self.on_error(

@@ -1799,6 +1799,9 @@ body.overlay-mode .overlay-root {
   stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
+.overlay-annotation-active {
+  filter: drop-shadow(0 0 10px #facc15) drop-shadow(0 0 4px #fff);
+}
 .overlay-annotation-rect {
   fill: rgba(255, 202, 82, 0.14);
   stroke: #ffca52;

@@ -113,6 +113,7 @@ class App:
         self._live_capture_status = {"state": "off", "active": False, "frame_ready": False,
                                      "target": "", "captured_at_ms": ""}
         self._visual_annotations_lock = threading.Lock()
+        self._visual_turn = threading.local()
         self._visual_annotations = {
             "schema_version": VISUAL_SCHEMA_VERSION,
             "revision": 0, "items": [], "expires_at": 0.0,
@@ -289,6 +290,7 @@ class App:
                 "revision": int(current.get("revision", 0)),
                 "items": list(current.get("items", [])),
                 "duration_ms": int(current.get("duration_ms", 0)),
+                "active_index": current.get("active_index"),
             }
 
     # -- events ---------------------------------------------------------- #
@@ -310,7 +312,10 @@ class App:
         if event.get("type") == "visual_annotations":
             items = event.get("items")
             if isinstance(items, list):
-                self.set_visual_annotations(items, event.get("duration_ms", 12000))
+                clean = [{k: v for k, v in item.items() if k != "explanation"} for item in items]
+                self._visual_turn.links = [(item.get("explanation", ""), index)
+                                           for index, item in enumerate(items) if item.get("explanation")]
+                self.set_visual_annotations(clean, event.get("duration_ms", 12000))
         self.bus.push(event)
 
     def _start_wake_word(self) -> None:
@@ -366,6 +371,7 @@ class App:
 
     # -- conversation ---------------------------------------------------- #
     def reply(self, user_text: str, source: str = "chat") -> str:
+        self._visual_turn.links = []
         self.bus.push({"type": "message", "role": "user", "text": user_text})
         self.history.append("user", user_text)
         self.push_state("thinking")
@@ -381,7 +387,19 @@ class App:
         self.bus.push({"type": "message", "role": "assistant", "text": answer})
         self.history.append("assistant", answer)
         self.bus.push({"type": "history", "chats": self.history.list_chats()})
-        self.speaker.say(answer)
+        links = list(self._visual_turn.links)
+        with self._visual_annotations_lock:
+            visual_items = self._visual_annotations.get("items")
+        def highlight_piece(piece: str) -> None:
+            matches = [index for phrase, index in links if phrase in piece]
+            with self._visual_annotations_lock:
+                current = self._visual_annotations
+                if current.get("items") is visual_items and current.get("expires_at", 0) > time.monotonic():
+                    active = matches[0] if matches else None
+                    if current.get("active_index") != active:
+                        current["active_index"] = active
+                        current["revision"] += 1
+        self.speaker.say(answer, on_piece=highlight_piece if links else None)
         return answer
 
     def _on_reminder(self, item: dict) -> None:
