@@ -232,8 +232,11 @@ class Listener:
         silence: float = 0.9,
         on_level: Optional[Callable[[float], None]] = None,
         on_speech: Optional[Callable[[], None]] = None,
+        stop_event: Optional[threading.Event] = None,
     ) -> Optional[bytes]:
-        """Konuşmayı kaydeder. Sessizlikte None döner. 16k/16bit mono WAV döndürür."""
+        """Record speech; a stop event lets push-to-talk end capture on key release."""
+        if stop_event and stop_event.is_set():
+            return None
         rate = RATE
         pa = None
         stream = None
@@ -251,9 +254,13 @@ class Listener:
 
         frames: list[bytes] = []
         try:
+            if stop_event and stop_event.is_set():
+                return None
             # ortam gürültüsünü ölç
             ambient: list[float] = []
             for _ in range(12):
+                if stop_event and stop_event.is_set():
+                    return None
                 ambient.append(self._rms(stream.read(CHUNK, exception_on_overflow=False)))
             noise = sorted(ambient)[len(ambient) // 2] if ambient else 100.0
             threshold = max(noise * 2.6, 260.0)
@@ -263,7 +270,7 @@ class Listener:
             last_voice = 0.0
             speech_hits = 0
 
-            while True:
+            while not (stop_event and stop_event.is_set()):
                 try:
                     data = stream.read(CHUNK, exception_on_overflow=False)
                 except Exception:
@@ -289,7 +296,7 @@ class Listener:
                     frames.append(data)
                     if voiced:
                         last_voice = now
-                    if now - last_voice > silence:
+                    if stop_event is None and now - last_voice > silence:
                         break
                     if now - start_time > timeout + phrase_limit:
                         break

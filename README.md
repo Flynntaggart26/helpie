@@ -1,10 +1,10 @@
 # Helpie
 
 A screen-aware assistant for Windows. Open the full Helpie window for chat and settings,
-or press **Ctrl + H** to bring up the compact desktop companion and speak.
+or hold **Ctrl + H** to bring up the compact desktop companion and speak; release the keys to send.
 
 ```
-App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + smooth Helpie pointer
+App icon  →  full chat/settings  |  hold Ctrl + H  →  companion + offset Helpie pointer
 ```
 
 ## Features
@@ -24,9 +24,10 @@ App icon  →  full chat/settings  |  Ctrl + H  →  compact companion + smooth 
   seconds. It sends one frame to the selected model only after you explicitly ask about your
   screen; a remote provider receives that frame for the answer. Closing the companion or turning
   screen access off stops capture and clears the buffer. Full chat retains its separate Windows
-  picker for each screen question. The immediate pointer echo stays local and now uses a friendly
-  face cursor; while Helpie thinks, three small dots appear beside a still “Thinking” label. The
-  companion can show short-lived pins, highlight boxes, and arrows after an explicit request.
+  picker for each screen question. The local Helpie pointer follows the mouse path 2.5 cm down-right
+  without moving the real pointer, with a clear tip, soft glow, and click ripple. While Helpie thinks,
+  three dots fold together and rotate beneath a still “Thinking” label; while speaking, a blue orb
+  pulses. The companion can show short-lived pins, highlight boxes, and arrows after an explicit request.
   The Notes page also has a local sketch pad where you can draw, import recent vector answers,
   save/reopen/edit notes, undo changes, and export JSON; it does not store screen images.
   Approved mouse or keyboard actions remain future work.
@@ -236,7 +237,7 @@ without the hotkey. There is no bundled “Hey Helpie” keyword model.
 - Built-in keywords on free tier: **"Jarvis"**, **"Computer"**.
 - Get a free AccessKey at <https://console.picovoice.ai/> and paste it in **Settings → Wake Word → Porcupine AccessKey**.
 - Enable or disable it in **Settings → Wake Word**. It is off by default.
-- Works alongside Ctrl+H; both trigger the same listening flow.
+- Wake word is an alternative to push-to-talk. Hold Ctrl+H while speaking and release to send; wake-word turns still end after a short speech pause.
 - Low CPU: runs in a background thread, only processes audio for keyword detection.
 
 ## File organizer

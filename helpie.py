@@ -192,19 +192,32 @@ def main() -> None:
     print(f"Helpie running at {url}  (version {updater.current_version()})")
 
     # Global hotkey: summon the desktop companion without opening full chat.
+    push_to_talk_held = threading.Event()
+
     def hotkey() -> None:
+        if push_to_talk_held.is_set():
+            return
+        push_to_talk_held.set()
         if shell.available():
             if not shell.request("companion"):
                 if not focus_window():
                     open_window(url)
         else:
             open_tiny_window(url)
-        app.listen_async("companion")
+        app.start_push_to_talk()
+
+    def hotkey_released(_event=None) -> None:
+        if push_to_talk_held.is_set():
+            push_to_talk_held.clear()
+            app.stop_push_to_talk()
 
     try:
         import keyboard
 
-        keyboard.add_hotkey(app.cfg.get("hotkey", "ctrl+h"), hotkey)
+        hotkey_combo = app.cfg.get("hotkey", "ctrl+h")
+        keyboard.add_hotkey(hotkey_combo, hotkey, trigger_on_release=False)
+        keyboard.on_release_key("h", hotkey_released)
+        keyboard.on_release_key("ctrl", hotkey_released)
     except Exception:
         print("Global hotkey could not be registered.")
 

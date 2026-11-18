@@ -16,6 +16,7 @@ const state = {
   routines: [],
   memory: [],
   micTesting: false,
+  pushToTalkHeld: false,
   settingsPage: "general",
   theme: "dark",
   pluginFilter: "all",
@@ -158,7 +159,7 @@ function setView(view) {
   });
   if (view !== "tiny") stopTinyDashboard();
   const titles = {
-    chat: ["Chat", "Press Ctrl + H to speak"],
+    chat: ["Chat", "Hold Ctrl + H to speak, release to send"],
     notes: ["Notes", "Everything you asked Helpie to remember"],
     reminders: ["Reminders", "Timers that survive a restart"],
     routines: ["Routines", "Saved sequences of commands"],
@@ -816,6 +817,26 @@ async function startListening(reason = "chat") {
     await api("/api/listen", { method: "POST", body: JSON.stringify({ reason }) });
   } catch (error) {
     toast("Could not start the microphone.");
+  }
+}
+
+async function startPushToTalk() {
+  state.pushToTalkHeld = true;
+  try {
+    await api("/api/listen/start", { method: "POST", body: "{}" });
+  } catch (error) {
+    state.pushToTalkHeld = false;
+    toast("Could not start the microphone.");
+  }
+}
+
+async function stopPushToTalk() {
+  if (!state.pushToTalkHeld) return;
+  state.pushToTalkHeld = false;
+  try {
+    await api("/api/listen/stop", { method: "POST", body: "{}" });
+  } catch (error) {
+    // The global hotkey hook also stops capture when the main window loses focus.
   }
 }
 
@@ -2156,7 +2177,7 @@ function bind() {
     }
     if (event.ctrlKey && event.key.toLowerCase() === "h") {
       event.preventDefault();
-      startListening("companion");
+      if (!event.repeat) startPushToTalk();
       return;
     }
     if (event.ctrlKey && event.key.toLowerCase() === "k") {
@@ -2174,6 +2195,9 @@ function bind() {
       }
       setView("chat");
     }
+  });
+  document.addEventListener("keyup", (event) => {
+    if (event.code === "KeyH" || event.key === "Control") stopPushToTalk();
   });
 }
 
@@ -2476,24 +2500,25 @@ function startOverlay() {
   const root = document.createElement("div");
   root.className = "overlay-root overlay-state-idle";
   root.innerHTML = `
-    <div class="overlay-marker" style="left: 32%; top: 28%; visibility: hidden;">
-      <svg class="overlay-cursor" viewBox="0 0 36 36" width="36" height="36" aria-hidden="true">
+    <div class="overlay-marker" style="left: 0; top: 0; visibility: hidden;">
+      <svg class="overlay-cursor" viewBox="0 0 56 56" width="56" height="56" aria-hidden="true">
         <defs>
           <linearGradient id="helpie-cursor-gradient" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stop-color="#a5f3fc" />
             <stop offset="1" stop-color="#60a5fa" />
           </linearGradient>
         </defs>
-        <circle class="overlay-cursor-halo" cx="15" cy="15" r="13" />
-        <path class="overlay-cursor-shape" d="M5 3 28 15.7l-9.5 2.1-4.1 9.1z" />
-        <circle class="overlay-cursor-eye" cx="15.3" cy="16.1" r="1" />
-        <circle class="overlay-cursor-eye" cx="18" cy="17.5" r="1" />
-        <path class="overlay-cursor-smile" d="M15 19.5q1.7 1.5 3.3.3" />
-        <path class="overlay-cursor-sparkle" d="M29 3v5m-2.5-2.5h5" />
+        <path class="overlay-cursor-glow" d="M5 5 51 28 35 34 25 49Q22 53 18 49L5 10Q4 7 5 5Z" />
+        <path class="overlay-cursor-outline" d="M5 5 51 28 35 34 25 49Q22 53 18 49L5 10Q4 7 5 5Z" />
+        <path class="overlay-cursor-shape" d="M5 5 51 28 35 34 25 49Q22 53 18 49L5 10Q4 7 5 5Z" />
+        <text class="overlay-cursor-monogram" x="15" y="35">H</text>
+        <circle class="overlay-cursor-hotspot" cx="49" cy="28" r="2.4" />
       </svg>
       <span class="overlay-thinking-dots" aria-hidden="true">
         <i></i><i></i><i></i>
       </span>
+      <span class="overlay-speaking-orb" aria-hidden="true"><i></i></span>
+      <span class="overlay-click-ripple" aria-hidden="true"></span>
       <span class="overlay-tag" role="status" aria-live="polite">Helpie</span>
     </div>
     <div class="overlay-cloud" style="left: 68%; top: 28%;">
@@ -2538,7 +2563,10 @@ function setOverlayState(state, cloudVoiceActive, screenTransfer) {
   const cloudTag = root.querySelector(".overlay-cloud-tag");
   if (cloudTag) cloudTag.textContent = remoteFrame ? "Screen frame → cloud" : "Cloud voice";
   const markerTag = root.querySelector(".overlay-tag");
-  if (markerTag) markerTag.textContent = state === "thinking" ? "Thinking" : "Helpie";
+  if (markerTag) {
+    markerTag.textContent = state === "thinking" ? "Thinking"
+      : state === "speaking" ? "Speaking" : "Helpie";
+  }
 
   const hint = document.querySelector(".overlay-hint");
   const labels = {
@@ -2587,6 +2615,7 @@ async function pollOverlayState() {
   let lastState = null;
   let lastCloudActive = null;
   let lastRemoteFrame = null;
+  let lastClickId = null;
   const params = new URLSearchParams(location.search);
   const monitor = {
     left: Number(params.get("screen_x")),
@@ -2596,6 +2625,7 @@ async function pollOverlayState() {
     primary: params.get("screen_primary") === "1",
   };
   const marker = document.querySelector(".overlay-marker");
+  const overlayRoot = document.querySelector(".overlay-root");
   try {
     while (document.querySelector(".overlay-root") && window.helpieOverlayActive) {
       try {
@@ -2620,14 +2650,38 @@ async function pollOverlayState() {
         if (marker) {
           marker.style.visibility = inMonitor ? "visible" : "hidden";
           if (inMonitor) {
-            marker.style.left = `${((point.x - monitor.left) / monitor.width) * 100}%`;
-            marker.style.top = `${((point.y - monitor.top) / monitor.height) * 100}%`;
+            const width = overlayRoot?.clientWidth || window.innerWidth;
+            const height = overlayRoot?.clientHeight || window.innerHeight;
+            const clickOffset = (2.5 * 96) / 2.54;
+            const isCenteredState = state === "thinking" || state === "speaking";
+            const anchorX = isCenteredState ? 28 : 51;
+            const anchorY = 28;
+            const targetX = ((point.x - monitor.left) / monitor.width) * width + clickOffset;
+            const targetY = ((point.y - monitor.top) / monitor.height) * height + clickOffset;
+            const maxLeft = Math.max(0, width - marker.offsetWidth);
+            const maxTop = Math.max(0, height - marker.offsetHeight);
+            marker.style.left = `${Math.min(maxLeft, Math.max(0, targetX - anchorX))}px`;
+            marker.style.top = `${Math.min(maxTop, Math.max(0, targetY - anchorY))}px`;
+
+            const clickId = Number(point.click_id);
+            if (lastClickId === null) {
+              lastClickId = Number.isFinite(clickId) ? clickId : 0;
+            } else if (Number.isFinite(clickId) && clickId > lastClickId) {
+              lastClickId = clickId;
+              if (state !== "thinking" && state !== "speaking") {
+                marker.classList.remove("is-clicking");
+                void marker.offsetWidth;
+                marker.classList.add("is-clicking");
+                clearTimeout(marker._clickTimer);
+                marker._clickTimer = setTimeout(() => marker.classList.remove("is-clicking"), 520);
+              }
+            }
           }
         }
       } catch (e) {
         // Backend may not be ready yet; retry on the next tick.
       }
-      await new Promise((r) => setTimeout(r, 40));
+      await new Promise((r) => setTimeout(r, 20));
     }
   } finally {
     window.helpieOverlayPolling = false;

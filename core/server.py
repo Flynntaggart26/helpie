@@ -95,6 +95,12 @@ class App:
         self.bus = EventBus()
         self.state = "idle"
         self._listen_lock = threading.Lock()
+        self._push_to_talk_stop = threading.Event()
+        self._push_to_talk_stop.set()
+        self._push_to_talk_guard = threading.Lock()
+        self._pointer_state_lock = threading.Lock()
+        self._pointer_left_down = False
+        self._pointer_click_id = 0
         self._listening = False
         self._closing = False
         self._speaking = False
@@ -154,10 +160,19 @@ class App:
             point = wintypes.POINT()
             if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
                 return None
+            button_state = int(ctypes.windll.user32.GetAsyncKeyState(0x01))
         except (AttributeError, OSError):
             return None
 
-        return {"x": int(point.x), "y": int(point.y)}
+        left_down = bool(button_state & 0x8000)
+        pressed_since_sample = bool(button_state & 0x0001)
+        with self._pointer_state_lock:
+            if (left_down and not self._pointer_left_down) or pressed_since_sample:
+                self._pointer_click_id += 1
+            self._pointer_left_down = left_down
+            click_id = self._pointer_click_id
+
+        return {"x": int(point.x), "y": int(point.y), "click_id": click_id}
 
     def overlay_capture_status(self) -> dict:
         """Keep a consented local frame session aligned with the visible companion."""
@@ -377,11 +392,16 @@ class App:
         self.speaker.say(line)
 
     def listen(self, reason: str = "manual") -> None:
+        push_to_talk = reason == "push_to_talk"
         if self._no_voice:
+            if push_to_talk:
+                self._push_to_talk_stop.set()
             self.push_state("idle")
             self.bus.push({"type": "error", "text": "Voice input is disabled in this run."})
             return
         if not self.cfg.get("cloud_speech_consent", False):
+            if push_to_talk:
+                self._push_to_talk_stop.set()
             self.push_state("idle")
             self.bus.push({
                 "type": "error",
@@ -389,6 +409,8 @@ class App:
             })
             return
         if not self._listen_lock.acquire(blocking=False):
+            if push_to_talk:
+                self._push_to_talk_stop.set()
             return
         try:
             self._listening = True
@@ -409,6 +431,8 @@ class App:
 
                 wav = self.listener.listen(
                     mic_index=self.cfg.get("mic_index"),
+                    phrase_limit=60.0 if push_to_talk else 14.0,
+                    stop_event=self._push_to_talk_stop if push_to_talk else None,
                     on_level=on_level,
                     on_speech=lambda: self.push_state("hearing"),
                 )
@@ -450,6 +474,8 @@ class App:
                 self.speaker.wait_idle(60)
                 self._listening = True
 
+                if push_to_talk:
+                    break
                 if not (self.cfg.get("continuous") and reason == "auto" and not self._no_voice):
                     break
                 self._turn += 1
@@ -460,12 +486,30 @@ class App:
             self.push_state("idle")
         finally:
             self._listening = False
+            if push_to_talk:
+                self._push_to_talk_stop.set()
             self._listen_lock.release()
 
     def listen_async(self, reason: str = "manual") -> None:
         if self._listen_lock.locked():
             return
         threading.Thread(target=self.listen, args=(reason,), daemon=True).start()
+
+    def start_push_to_talk(self) -> None:
+        """Start one microphone turn that ends when Ctrl+H is released."""
+        with self._push_to_talk_guard:
+            if not self._push_to_talk_stop.is_set() or self._listen_lock.locked():
+                return
+            self._push_to_talk_stop.clear()
+            audit.log("Started push-to-talk voice input", source="voice")
+            threading.Thread(target=self.listen, args=("push_to_talk",), daemon=True,
+                             name="helpie-push-to-talk").start()
+
+    def stop_push_to_talk(self) -> None:
+        """Stop push-to-talk capture; any captured phrase is then transcribed."""
+        if not self._push_to_talk_stop.is_set():
+            audit.log("Stopped push-to-talk voice input", source="voice")
+        self._push_to_talk_stop.set()
 
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
@@ -889,7 +933,16 @@ class Handler(BaseHTTPRequestHandler):
             app.listen_async("companion" if reason == "companion" else "chat")
             self._json({"ok": True})
             return
+        if path == "/api/listen/start":
+            app.start_push_to_talk()
+            self._json({"ok": True})
+            return
+        if path == "/api/listen/stop":
+            app.stop_push_to_talk()
+            self._json({"ok": True})
+            return
         if path == "/api/stop":
+            app.stop_push_to_talk()
             app.speaker.stop()
             app.clear_visual_annotations()
             app.push_state("idle")

@@ -1544,7 +1544,9 @@ kbd { padding: 2px 6px; color: #dbe6f5; }
 }
 @media (prefers-reduced-motion: reduce) {
   .overlay-marker,
-  .overlay-thinking-dots i,
+  .overlay-thinking-dots,
+  .overlay-speaking-orb i,
+  .overlay-click-ripple,
   .overlay-capture-indicator::before {
     animation: none !important;
     transition: none !important;
@@ -1667,58 +1669,109 @@ body.overlay-mode .overlay-root {
   display: flex;
   align-items: center;
   gap: 8px;
-  transform: translate(-5px, -3px);
-  filter: drop-shadow(0 3px 9px rgba(14, 116, 144, 0.38));
-  transition: left 45ms linear, top 45ms linear;
+  filter: drop-shadow(0 2px 8px rgba(14, 116, 144, 0.34));
+  transition: left 20ms linear, top 20ms linear;
   will-change: left, top;
 }
-.overlay-cursor { flex: 0 0 36px; overflow: visible; }
-.overlay-cursor-halo {
-  fill: rgba(103, 232, 249, 0.16);
-  stroke: rgba(186, 230, 253, 0.55);
-  stroke-width: 1;
+.overlay-cursor {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  overflow: visible;
+}
+.overlay-cursor-glow {
+  fill: #38bdf8;
+  opacity: 0.78;
+  filter: blur(5px);
+}
+.overlay-cursor-outline {
+  fill: #087ee7;
+  stroke: #07111f;
+  stroke-width: 5;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
 .overlay-cursor-shape {
   fill: url(#helpie-cursor-gradient);
   stroke: #f0fdff;
-  stroke-width: 1.4;
+  stroke-width: 1.6;
   stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px rgba(14, 165, 233, 0.9));
   vector-effect: non-scaling-stroke;
 }
-.overlay-cursor-eye { fill: #12324a; }
-.overlay-cursor-smile {
-  fill: none;
-  stroke: #12324a;
-  stroke-width: 1;
-  stroke-linecap: round;
+.overlay-cursor-monogram {
+  fill: #f8fdff;
+  font: 800 11px/1 "Segoe UI", sans-serif;
+  paint-order: stroke;
+  stroke: #125ea9;
+  stroke-width: 1px;
+  pointer-events: none;
 }
-.overlay-cursor-sparkle {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 1.6;
-  stroke-linecap: round;
+.overlay-cursor-hotspot {
+  fill: #fff;
+  stroke: #07111f;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
 .overlay-thinking-dots {
   display: none;
-  flex: 0 0 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 30px;
-  transform: translate(-5px, -3px);
+  position: relative;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  transform-origin: 24px 24px;
 }
 .overlay-thinking-dots i {
-  width: 5px;
-  height: 5px;
+  position: absolute;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #c4b5fd;
-  box-shadow: 0 0 8px rgba(167, 139, 250, 0.65);
-  animation: overlay-thinking-dot 900ms ease-in-out infinite;
+  box-shadow: 0 0 9px rgba(167, 139, 250, 0.85);
 }
-.overlay-thinking-dots i:nth-child(2) { animation-delay: 140ms; }
-.overlay-thinking-dots i:nth-child(3) { animation-delay: 280ms; }
+.overlay-thinking-dots i:nth-child(1) { left: 21px; top: 6px; }
+.overlay-thinking-dots i:nth-child(2) { left: 9px; top: 30px; }
+.overlay-thinking-dots i:nth-child(3) { left: 33px; top: 30px; }
+.overlay-speaking-orb {
+  display: none;
+  position: relative;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+}
+.overlay-speaking-orb i {
+  position: absolute;
+  inset: 9px;
+  border: 3px solid #06111f;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #38bdf8, #087ee7);
+  box-shadow: 0 0 0 2px rgba(224, 249, 255, 0.9), 0 0 14px rgba(14, 165, 233, 0.85);
+  animation: overlay-heartbeat 1.35s ease-in-out infinite;
+}
+.overlay-click-ripple {
+  display: none;
+  position: absolute;
+  z-index: 0;
+  left: 51px;
+  top: 28px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.88), 0 0 18px rgba(56, 189, 248, 0.95);
+  transform: translate(-50%, -50%) scale(0.25);
+}
+.overlay-marker.is-clicking .overlay-click-ripple {
+  display: block;
+  animation: overlay-click-ripple 480ms ease-out both;
+}
 .overlay-tag {
+  position: relative;
+  z-index: 1;
   background: rgba(8, 21, 36, 0.94);
   color: #a5f3fc;
   border: 1px solid rgba(103, 232, 249, 0.78);
@@ -1941,9 +1994,23 @@ body.overlay-mode .overlay-root {
   }
 }
 
-@keyframes overlay-thinking-dot {
-  0%, 60%, 100% { opacity: 0.42; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-3px); }
+@keyframes overlay-thinking-fold {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  40% { transform: rotate(165deg) scale(0.12); }
+  54% { transform: rotate(215deg) scale(0.12); }
+}
+
+@keyframes overlay-heartbeat {
+  0%, 100% { transform: scale(1); }
+  12% { transform: scale(1.14); }
+  25% { transform: scale(0.98); }
+  36% { transform: scale(1.09); }
+  48% { transform: scale(1); }
+}
+
+@keyframes overlay-click-ripple {
+  from { opacity: 0.95; transform: translate(-50%, -50%) scale(0.25); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(2.7); }
 }
 
 /* idle: default, subtle cyan */
@@ -1981,7 +2048,11 @@ body.overlay-mode .overlay-root {
 
 /* thinking: a steady label with three softly pulsing dots */
 .overlay-state-thinking .overlay-cursor { display: none; }
-.overlay-state-thinking .overlay-thinking-dots { display: flex; }
+.overlay-state-thinking .overlay-thinking-dots {
+  display: block;
+  animation: overlay-thinking-fold 1.55s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.overlay-state-thinking .overlay-speaking-orb { display: none; }
 .overlay-state-thinking .overlay-marker { animation: none; }
 .overlay-state-thinking .overlay-tag {
   color: #ddd6fe;
@@ -1990,14 +2061,14 @@ body.overlay-mode .overlay-root {
 }
 .overlay-state-thinking .overlay-hint { display: none; }
 
-/* speaking: green, solid */
-.overlay-state-speaking .overlay-cursor-shape {
-  fill: #16a34a;
-}
+/* speaking: a soft blue orb with a two-beat pulse */
+.overlay-state-speaking .overlay-cursor { display: none; }
+.overlay-state-speaking .overlay-thinking-dots { display: none; }
+.overlay-state-speaking .overlay-speaking-orb { display: block; }
 .overlay-state-speaking .overlay-hint {
-  background: rgba(22, 163, 74, 0.85);
+  background: rgba(8, 126, 231, 0.88);
   color: #ffffff;
-  border-color: rgba(22, 163, 74, 0.5);
+  border-color: rgba(56, 189, 248, 0.75);
 }
 
 /* error: pulsing red */
