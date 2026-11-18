@@ -20,6 +20,19 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
+- Voice recordings are decoded as WAV at the microphone's actual sample rate.
+  Stop cancels the current voice turn and queued speech; Ctrl+H release still
+  submits the recorded phrase.
+- Stop requests that local companion capture end and discards results from
+  cancelled screen requests. A request already sent to a provider cannot be recalled.
+- Visual notes can be exported as PNG and geometry point coordinates and labels
+  can be edited with keyboard controls. Text descriptions and high-contrast
+  styles improve access; desktop and screen-reader review remains outstanding.
+- Model-proposed app and window actions require approval. Emptying the Recycle
+  Bin requires explicit confirmation. Duplicate-file and empty-folder deletion
+  is temporarily unavailable until per-item review and safe confirmation exist;
+  previews do not delete files.
+- The pointer is smaller and darker. A spoken “close” or “kapat” closes Helpie.
 - Hold Ctrl+H to speak and release to send. The companion displays a top-center
   listening panel with a color animation and a waveform that responds to voice level.
 - The Helpie pointer follows the mouse with a down-right offset and shows a click
