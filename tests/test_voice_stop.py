@@ -168,6 +168,27 @@ class VoiceStopTests(unittest.TestCase):
         self.assertTrue(first.is_set())
         self.assertTrue(second.is_set())
 
+    def test_stop_endpoint_requests_capture_shutdown(self) -> None:
+        app = Mock()
+        app._live_capture_lock = threading.Lock()
+        handler = server.Handler.__new__(server.Handler)
+        handler.app = app
+        handler.path = "/api/stop"
+        handler._trusted_local_request = Mock(return_value=True)
+        handler._authorized_api = Mock(return_value=True)
+        handler._body = Mock(return_value={})
+        handler._json = Mock()
+        shell = types.ModuleType("shell")
+        shell.request = Mock(return_value=True)
+        shell.stop_live_capture = Mock()
+        with patch.dict(sys.modules, {"shell": shell}):
+            handler.do_POST()
+        app.cancel_turns.assert_called_once()
+        app.cancel_voice.assert_called_once()
+        shell.request.assert_called_once_with("hide-overlay")
+        shell.stop_live_capture.assert_called_once()
+        handler._json.assert_called_once_with({"ok": True})
+
 
 if __name__ == "__main__":
     unittest.main()
