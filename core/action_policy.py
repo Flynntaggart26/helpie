@@ -31,6 +31,11 @@ def review_model_action(name: str, args: object) -> ProposedAction | None:
     return ProposedAction(name=name, args={spec[0]: value}, preview=f"{spec[1]}: {value}")
 
 
+def review_direct_action(name: str, args: object) -> ProposedAction | None:
+    """Validate a direct single action using the same target boundaries."""
+    return review_model_action(name, args)
+
+
 def confirmation(text: str) -> str | None:
     normalized = text.strip().lower().strip(" .!?…")
     if normalized in {"yes", "yeah", "yep", "sure", "do it", "confirm", "ok", "okay",

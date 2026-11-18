@@ -1108,10 +1108,10 @@ class Brain:
             return actions.window_titles()
         match = re.search(r"^(?:switch to|focus|activate|bring up|go to the)\s+(?:the\s+)?(.+?)(?:\s+window)?$", t)
         if match:
-            return actions.switch_window(match.group(1))
+            return self._dispatch_direct_desktop("switch_window", {"name": match.group(1)})
         match = re.search(r"^(.+?)(?:'?[ae])?\s+(?:penceresine|penceresini)?\s*(?:geç|getir)$", t)
         if match:
-            return actions.switch_window(match.group(1))
+            return self._dispatch_direct_desktop("switch_window", {"name": match.group(1)})
 
         # reminders (repeating or absolute time)
         schedule_match = _parse_repeat(t)
@@ -1209,12 +1209,12 @@ class Brain:
 
         app_key = actions.resolve_app(alt)
         if app_key and any(verb in t for verb in CLOSE_VERBS):
-            return actions.close_app(app_key)
+            return self._dispatch_direct_desktop("close_app", {"app": app_key})
         if app_key and any(verb in t for verb in OPEN_VERBS):
-            return actions.open_app(app_key)
+            return self._dispatch_direct_desktop("open_app", {"app": app_key})
         match = re.search(r"^(?:open|launch|start|run|aç|başlat|çalıştır)\s+(.+)$", alt)
         if match and not re.search(r"(file|dosya|folder|klasör|volume|ses|brightness|parlaklık)", match.group(1)):
-            return actions.open_app(match.group(1))
+            return self._dispatch_direct_desktop("open_app", {"app": match.group(1)})
 
         # search
         match = re.search(r"^(?:youtube|yt)\s+(.{2,})$", t)
@@ -1398,6 +1398,13 @@ class Brain:
         if not entry:
             return ("", "", "")
         return entry
+
+    def _dispatch_direct_desktop(self, name: str, args: dict) -> str:
+        proposal = action_policy.review_direct_action(name, args)
+        if proposal is None:
+            audit.log("Blocked invalid desktop action", ok=False, source="action")
+            return "I could not use that application or window name."
+        return self._dispatch(proposal.name, proposal.args)
 
     def _dispatch(self, name: str, args: dict, confirmed: bool = False) -> str:
         if name == "power":
