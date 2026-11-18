@@ -807,6 +807,11 @@ class Brain:
                 if len(steps) > 1:
                     return self._run_plan(steps)
 
+        if re.fullmatch(r"(?:close|close helpie|helpie close|kapat|helpie(?:'yi|yi)? kapat)[!.? ]*", t):
+            audit.log("Closed Helpie")
+            self.on_quit()
+            return "Closing Helpie."
+
         if re.search(r"\b(quit|exit|goodbye|good bye|see you|shut yourself down|"
                      r"kendini kapat|görüşürüz|helpie kapan)\b", t):
             self.on_quit()

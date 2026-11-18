@@ -256,6 +256,21 @@ class Listener:
         try:
             if stop_event and stop_event.is_set():
                 return None
+            if stop_event is not None:
+                # Push-to-talk already provides an explicit start and end. Keep
+                # the opening syllables and pauses instead of calibrating on speech.
+                deadline = time.monotonic() + phrase_limit
+                while not stop_event.is_set() and time.monotonic() < deadline:
+                    try:
+                        data = stream.read(CHUNK, exception_on_overflow=False)
+                    except Exception:
+                        break
+                    frames.append(data)
+                    if on_level:
+                        on_level(min(1.0, self._rms(data) / 6000.0))
+                if not frames:
+                    return None
+                return sr.AudioData(b"".join(frames), rate, WIDTH).get_wav_data()
             # ortam gürültüsünü ölç
             ambient: list[float] = []
             for _ in range(12):
@@ -304,14 +319,7 @@ class Listener:
             if not frames:
                 return None
             raw = b"".join(frames)
-            if rate != RATE:
-                try:
-                    import audioop
-
-                    raw, _ = audioop.ratecv(raw, WIDTH, 1, rate, RATE, None)
-                except Exception:
-                    pass
-            return sr.AudioData(raw, RATE, WIDTH).get_wav_data()
+            return sr.AudioData(raw, rate, WIDTH).get_wav_data()
         finally:
             try:
                 if stream is not None:

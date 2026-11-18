@@ -2480,8 +2480,8 @@ function startOverlay() {
       <svg class="overlay-cursor" viewBox="0 0 56 56" width="56" height="56" aria-hidden="true">
         <defs>
           <linearGradient id="helpie-cursor-gradient" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#a5f3fc" />
-            <stop offset="1" stop-color="#60a5fa" />
+            <stop offset="0" stop-color="#2169db" />
+            <stop offset="1" stop-color="#10429f" />
           </linearGradient>
         </defs>
         <path class="overlay-cursor-glow" d="M5 5 51 28 35 34 25 49Q22 53 18 49L5 10Q4 7 5 5Z" />
@@ -2638,8 +2638,8 @@ async function pollOverlayState() {
             const height = overlayRoot?.clientHeight || window.innerHeight;
             const clickOffset = (2.5 * 96) / 2.54;
             const isCenteredState = state === "thinking" || state === "speaking";
-            const anchorX = isCenteredState ? 28 : 51;
-            const anchorY = 28;
+            const anchorX = isCenteredState ? 28 : 32.8;
+            const anchorY = isCenteredState ? 28 : 18;
             const targetX = ((point.x - monitor.left) / monitor.width) * width + clickOffset;
             const targetY = ((point.y - monitor.top) / monitor.height) * height + clickOffset;
             const maxLeft = Math.max(0, width - marker.offsetWidth);

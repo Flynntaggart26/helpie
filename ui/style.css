@@ -1676,9 +1676,9 @@ body.overlay-mode .overlay-root {
 .overlay-cursor {
   position: relative;
   z-index: 1;
-  flex: 0 0 56px;
-  width: 56px;
-  height: 56px;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
   overflow: visible;
 }
 .overlay-cursor-glow {
@@ -1754,8 +1754,8 @@ body.overlay-mode .overlay-root {
   display: none;
   position: absolute;
   z-index: 0;
-  left: 51px;
-  top: 28px;
+  left: 32.8px;
+  top: 18px;
   width: 12px;
   height: 12px;
   border: 2px solid #fff;
