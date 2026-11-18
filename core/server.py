@@ -95,6 +95,8 @@ class App:
         self.bus = EventBus()
         self.state = "idle"
         self._listen_lock = threading.Lock()
+        self._voice_turn_guard = threading.Lock()
+        self._voice_cancel: Optional[threading.Event] = None
         self._push_to_talk_stop = threading.Event()
         self._push_to_talk_stop.set()
         self._push_to_talk_guard = threading.Lock()
@@ -370,7 +372,10 @@ class App:
         self.speaker.say(text)
 
     # -- conversation ---------------------------------------------------- #
-    def reply(self, user_text: str, source: str = "chat") -> str:
+    def reply(self, user_text: str, source: str = "chat",
+              cancel_event: Optional[threading.Event] = None) -> str:
+        if cancel_event and cancel_event.is_set():
+            return ""
         self._visual_turn.links = []
         self.bus.push({"type": "message", "role": "user", "text": user_text})
         self.history.append("user", user_text)
@@ -384,6 +389,8 @@ class App:
         except Exception:
             traceback.print_exc()
             answer = "Something went wrong on my side, but I'm still here."
+        if cancel_event and cancel_event.is_set():
+            return ""
         self.bus.push({"type": "message", "role": "assistant", "text": answer})
         self.history.append("assistant", answer)
         self.bus.push({"type": "history", "chats": self.history.list_chats()})
@@ -399,7 +406,12 @@ class App:
                     if current.get("active_index") != active:
                         current["active_index"] = active
                         current["revision"] += 1
-        self.speaker.say(answer, on_piece=highlight_piece if links else None)
+        if cancel_event:
+            with self._voice_turn_guard:
+                if not cancel_event.is_set():
+                    self.speaker.say(answer, on_piece=highlight_piece if links else None)
+        else:
+            self.speaker.say(answer, on_piece=highlight_piece if links else None)
         return answer
 
     def _on_reminder(self, item: dict) -> None:
@@ -410,8 +422,10 @@ class App:
         self.bus.push({"type": "reminders", "reminders": self.reminders.list()})
         self.speaker.say(line)
 
-    def listen(self, reason: str = "manual") -> None:
+    def listen(self, reason: str = "manual", cancel_event: Optional[threading.Event] = None) -> None:
         push_to_talk = reason == "push_to_talk"
+        if cancel_event and cancel_event.is_set():
+            return
         if self._no_voice:
             if push_to_talk:
                 self._push_to_talk_stop.set()
@@ -453,10 +467,11 @@ class App:
                     mic_index=self.cfg.get("mic_index"),
                     phrase_limit=60.0 if push_to_talk else 14.0,
                     stop_event=self._push_to_talk_stop if push_to_talk else None,
+                    cancel_event=cancel_event,
                     on_level=on_level,
                     on_speech=lambda: self.push_state("hearing"),
                 )
-                if self._closing:
+                if self._closing or (cancel_event and cancel_event.is_set()):
                     break
 
                 if not wav:
@@ -472,11 +487,16 @@ class App:
                 try:
                     text = self.listener.transcribe(wav, self.cfg.get("language", "en-US"))
                 except Exception as exc:
+                    if cancel_event and cancel_event.is_set():
+                        break
                     self.push_state("idle")
                     self._cloud_voice_active = False
                     self.bus.push({"type": "cloud_voice", "active": False})
                     self.bus.push({"type": "error",
                                    "text": f"Speech recognition failed ({type(exc).__name__}). Check your connection."})
+                    break
+
+                if cancel_event and cancel_event.is_set():
                     break
 
                 if not text:
@@ -490,7 +510,8 @@ class App:
                 self.bus.push({"type": "cloud_voice", "active": False})
                 self.bus.push({"type": "heard", "text": text})
                 self._listening = False
-                self.reply(text, source="chat" if reason == "chat" else "companion")
+                self.reply(text, source="chat" if reason == "chat" else "companion",
+                           cancel_event=cancel_event)
                 self.speaker.wait_idle(60)
                 self._listening = True
 
@@ -507,14 +528,27 @@ class App:
         finally:
             self._voice_level = 0.0
             self._listening = False
+            self._cloud_voice_active = False
+            self.bus.push({"type": "cloud_voice", "active": False})
             if push_to_talk:
                 self._push_to_talk_stop.set()
             self._listen_lock.release()
 
-    def listen_async(self, reason: str = "manual") -> None:
-        if self._listen_lock.locked():
-            return
-        threading.Thread(target=self.listen, args=(reason,), daemon=True).start()
+    def listen_async(self, reason: str = "manual") -> bool:
+        with self._voice_turn_guard:
+            if self._voice_cancel is not None or self._listen_lock.locked():
+                return False
+            cancel = threading.Event()
+            self._voice_cancel = cancel
+        def run_turn() -> None:
+            try:
+                self.listen(reason, cancel)
+            finally:
+                with self._voice_turn_guard:
+                    if self._voice_cancel is cancel:
+                        self._voice_cancel = None
+        threading.Thread(target=run_turn, daemon=True, name="helpie-listen").start()
+        return True
 
     def start_push_to_talk(self) -> None:
         """Start one microphone turn that ends when Ctrl+H is released."""
@@ -523,14 +557,21 @@ class App:
                 return
             self._push_to_talk_stop.clear()
             audit.log("Started push-to-talk voice input", source="voice")
-            threading.Thread(target=self.listen, args=("push_to_talk",), daemon=True,
-                             name="helpie-push-to-talk").start()
+            if not self.listen_async("push_to_talk"):
+                self._push_to_talk_stop.set()
 
     def stop_push_to_talk(self) -> None:
         """Stop push-to-talk capture; any captured phrase is then transcribed."""
         if not self._push_to_talk_stop.is_set():
             audit.log("Stopped push-to-talk voice input", source="voice")
         self._push_to_talk_stop.set()
+
+    def cancel_voice(self) -> None:
+        with self._voice_turn_guard:
+            if self._voice_cancel is not None:
+                self._voice_cancel.set()
+        self.stop_push_to_talk()
+        self.speaker.stop()
 
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
@@ -653,6 +694,7 @@ class App:
     # -- lifecycle ------------------------------------------------------- #
     def shutdown(self) -> None:
         self._closing = True
+        self.cancel_voice()
         if self._live_capture_status.get("active"):
             try:
                 import shell
@@ -964,10 +1006,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
         if path == "/api/stop":
-            app.stop_push_to_talk()
+            app.cancel_voice()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
-            app.speaker.stop()
             app.clear_visual_annotations()
             app.push_state("idle")
             self._json({"ok": True})

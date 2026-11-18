@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import math
 import os
 import queue
@@ -233,9 +234,10 @@ class Listener:
         on_level: Optional[Callable[[float], None]] = None,
         on_speech: Optional[Callable[[], None]] = None,
         stop_event: Optional[threading.Event] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> Optional[bytes]:
         """Record speech; a stop event lets push-to-talk end capture on key release."""
-        if stop_event and stop_event.is_set():
+        if (stop_event and stop_event.is_set()) or (cancel_event and cancel_event.is_set()):
             return None
         rate = RATE
         pa = None
@@ -254,13 +256,14 @@ class Listener:
 
         frames: list[bytes] = []
         try:
-            if stop_event and stop_event.is_set():
+            if (stop_event and stop_event.is_set()) or (cancel_event and cancel_event.is_set()):
                 return None
             if stop_event is not None:
                 # Push-to-talk already provides an explicit start and end. Keep
                 # the opening syllables and pauses instead of calibrating on speech.
                 deadline = time.monotonic() + phrase_limit
-                while not stop_event.is_set() and time.monotonic() < deadline:
+                while (not stop_event.is_set() and not (cancel_event and cancel_event.is_set())
+                       and time.monotonic() < deadline):
                     try:
                         data = stream.read(CHUNK, exception_on_overflow=False)
                     except Exception:
@@ -268,13 +271,13 @@ class Listener:
                     frames.append(data)
                     if on_level:
                         on_level(min(1.0, self._rms(data) / 6000.0))
-                if not frames:
+                if not frames or (cancel_event and cancel_event.is_set()):
                     return None
                 return sr.AudioData(b"".join(frames), rate, WIDTH).get_wav_data()
             # ortam gürültüsünü ölç
             ambient: list[float] = []
             for _ in range(12):
-                if stop_event and stop_event.is_set():
+                if (stop_event and stop_event.is_set()) or (cancel_event and cancel_event.is_set()):
                     return None
                 ambient.append(self._rms(stream.read(CHUNK, exception_on_overflow=False)))
             noise = sorted(ambient)[len(ambient) // 2] if ambient else 100.0
@@ -285,7 +288,7 @@ class Listener:
             last_voice = 0.0
             speech_hits = 0
 
-            while not (stop_event and stop_event.is_set()):
+            while not ((stop_event and stop_event.is_set()) or (cancel_event and cancel_event.is_set())):
                 try:
                     data = stream.read(CHUNK, exception_on_overflow=False)
                 except Exception:
@@ -316,7 +319,7 @@ class Listener:
                     if now - start_time > timeout + phrase_limit:
                         break
 
-            if not frames:
+            if not frames or (cancel_event and cancel_event.is_set()):
                 return None
             raw = b"".join(frames)
             return sr.AudioData(raw, rate, WIDTH).get_wav_data()
@@ -398,7 +401,8 @@ class Listener:
     def transcribe(self, wav: bytes, language: str = "tr-TR") -> str:
         if not SPEECH_RECOGNITION_AVAILABLE:
             raise RuntimeError("SpeechRecognition is not available on this machine")
-        audio = sr.AudioData(wav, RATE, WIDTH)
+        with sr.AudioFile(io.BytesIO(wav)) as source:
+            audio = self.recognizer.record(source)
         text = self.recognizer.recognize_google(audio, language=language)
         return re.sub(r"\s+", " ", (text or "").strip())
 
@@ -424,8 +428,10 @@ class Speaker:
         self.on_start = on_start
         self.on_end = on_end
         self.on_error = on_error
-        self._queue: "queue.Queue[Optional[tuple[str, Optional[Callable[[str], None]]]]]" = queue.Queue()
+        self._queue: "queue.Queue[Optional[tuple[str, Optional[Callable[[str], None]], threading.Event]]]" = queue.Queue()
         self._stop = threading.Event()
+        self._speech_lock = threading.Lock()
+        self._speech_cancel = threading.Event()
         self._busy = False
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
@@ -452,15 +458,23 @@ class Speaker:
         if on_piece:
             pieces = [chunk for part in re.split(r"(?<=[.!?…])\s+", text[:800])
                       for chunk in self._split(part, limit=220)]
-        for piece in pieces:
-            self._queue.put((piece, on_piece))
+        with self._speech_lock:
+            if self._stop.is_set():
+                return
+            cancel = self._speech_cancel
+            for piece in pieces:
+                self._queue.put((piece, on_piece, cancel))
 
     def stop(self) -> None:
-        while not self._queue.empty():
-            try:
-                self._queue.get_nowait()
-            except queue.Empty:
-                break
+        with self._speech_lock:
+            self._speech_cancel.set()
+            self._speech_cancel = threading.Event()
+            while True:
+                try:
+                    self._queue.get_nowait()
+                    self._queue.task_done()
+                except queue.Empty:
+                    break
         try:
             import pygame
 
@@ -470,9 +484,13 @@ class Speaker:
             pass
 
     def wait_idle(self, timeout: float = 30.0) -> None:
-        end = time.time() + timeout
-        while self._busy and time.time() < end:
-            time.sleep(0.05)
+        end = time.monotonic() + timeout
+        with self._queue.all_tasks_done:
+            while self._queue.unfinished_tasks:
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._queue.all_tasks_done.wait(remaining)
 
     # ---------------------------------------------------------------- #
     @staticmethod
@@ -508,7 +526,7 @@ class Speaker:
         except Exception:
             return None
 
-    def _speak_local(self, text: str) -> bool:
+    def _speak_local(self, text: str, cancel: threading.Event) -> bool:
         """Speak through the installed Windows voice without sending text online."""
         if os.name != "nt":
             return False
@@ -525,24 +543,32 @@ class Speaker:
                 except (TypeError, ValueError):
                     rate = 0.0
                 voice.Rate = max(-10, min(10, round(rate / 10)))
-                voice.Speak(text)
+                if cancel.is_set():
+                    return False
+                voice.Speak(text, 1)  # SVSFlagsAsync: keep COM on this worker thread.
+                while not voice.WaitUntilDone(50):
+                    if cancel.is_set() or self._stop.is_set():
+                        voice.Speak("", 3)  # SVSFPurgeBeforeSpeak | SVSFlagsAsync.
+                        return False
                 return True
             finally:
                 comtypes.CoUninitialize()
         except Exception:
             return False
 
-    def _play_file(self, path: str) -> bool:
+    def _play_file(self, path: str, cancel: threading.Event) -> bool:
         try:
             import pygame
 
             if not pygame.mixer.get_init():
                 pygame.mixer.init(frequency=44100)
+            if cancel.is_set():
+                return False
             pygame.mixer.music.load(path)
             pygame.mixer.music.set_volume(max(0.0, min(1.0, self.volume)))
             pygame.mixer.music.play()
             while pygame.mixer.music.get_busy():
-                if self._stop.is_set():
+                if self._stop.is_set() or cancel.is_set():
                     pygame.mixer.music.stop()
                     return False
                 time.sleep(0.05)
@@ -562,8 +588,12 @@ class Speaker:
         while not self._stop.is_set():
             entry = self._queue.get()
             if entry is None:
+                self._queue.task_done()
                 break
-            text, on_piece = entry
+            text, on_piece, cancel = entry
+            if cancel.is_set():
+                self._queue.task_done()
+                continue
             self._busy = True
             try:
                 if self.on_start:
@@ -573,24 +603,25 @@ class Speaker:
                     path = self._synth(text)
                     if path:
                         try:
-                            if on_piece:
+                            if on_piece and not cancel.is_set():
                                 on_piece(text)
-                            spoken = self._play_file(path)
+                            spoken = self._play_file(path, cancel)
                         finally:
                             try:
                                 os.remove(path)
                             except OSError:
                                 pass
-                if not spoken:
+                if not spoken and not cancel.is_set() and not self._stop.is_set():
                     if on_piece:
                         on_piece(text)
-                    spoken = self._speak_local(text)
-                if not spoken and self.on_error:
+                    spoken = self._speak_local(text, cancel)
+                if not spoken and not cancel.is_set() and not self._stop.is_set() and self.on_error:
                     self.on_error(
                         "I could not play a spoken reply. Check Windows audio output and the Voice settings."
                     )
             finally:
                 self._busy = False
+                self._queue.task_done()
                 if self._queue.empty() and self.on_end:
                     self.on_end()
 
