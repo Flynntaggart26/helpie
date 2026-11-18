@@ -1077,7 +1077,8 @@ def _category_for(suffix: str) -> str:
 
 def _safe_move(src: Path, dst_dir: Path, dry_run: bool = False) -> tuple[bool, str]:
     """Move src into dst_dir, avoiding collisions. Returns (moved, destination_name)."""
-    dst_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        dst_dir.mkdir(parents=True, exist_ok=True)
     dst = dst_dir / src.name
     if not dst.exists():
         if not dry_run:
@@ -1117,7 +1118,7 @@ def organize_folder(folder: Path, by: str = "type", dry_run: bool = False) -> di
     details: list[str] = []
 
     for item in folder.iterdir():
-        if not item.is_file():
+        if item.is_symlink() or not item.is_file():
             continue
         if item.name.startswith("."):
             continue
@@ -1138,7 +1139,7 @@ def organize_folder(folder: Path, by: str = "type", dry_run: bool = False) -> di
             errors += 1
             details.append(f"  {item.name} → FAILED: {msg}")
 
-    _audit("Organized a folder",
+    _audit("Previewed folder organization" if dry_run else "Organized a folder",
            f"{folder.name} by {by} · {moved} moved{' (preview)' if dry_run else ''}", "files")
     return {
         "folder": str(folder),
@@ -1164,7 +1165,7 @@ def find_duplicates(folder: Path) -> list[list[Path]]:
     import hashlib
     by_size: dict[int, list[Path]] = {}
     for item in folder.rglob("*"):
-        if not item.is_file():
+        if item.is_symlink() or not item.is_file():
             continue
         try:
             size = item.stat().st_size
@@ -1179,7 +1180,11 @@ def find_duplicates(folder: Path) -> list[list[Path]]:
         by_hash: dict[str, list[Path]] = {}
         for f in files:
             try:
-                h = hashlib.md5(f.read_bytes()).hexdigest()
+                digest = hashlib.sha256()
+                with f.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                h = digest.hexdigest()
             except Exception:
                 continue
             by_hash.setdefault(h, []).append(f)
@@ -1190,6 +1195,8 @@ def find_duplicates(folder: Path) -> list[list[Path]]:
 
 
 def remove_duplicates(folder: Path, dry_run: bool = False) -> dict:
+    if not dry_run:
+        return {"error": "Duplicate deletion is unavailable until individual files can be reviewed and confirmed."}
     groups = find_duplicates(folder)
     removed = 0
     freed = 0
@@ -1206,29 +1213,34 @@ def remove_duplicates(folder: Path, dry_run: bool = False) -> dict:
                     dup.unlink()
                 removed += 1
                 freed += size
-                details.append(f"Removed duplicate: {dup.relative_to(folder)} (kept {keeper.relative_to(folder)})")
+                details.append(f"Duplicate: {dup.relative_to(folder)} (original: {keeper.relative_to(folder)})")
             except Exception as e:
                 details.append(f"Failed to remove {dup}: {e}")
-    _audit("Removed duplicate files",
+    _audit("Previewed duplicate files" if dry_run else "Removed duplicate files",
            f"{folder.name} · {removed} removed{' (preview)' if dry_run else ''}", "files")
     return {"folder": str(folder), "groups": len(groups), "removed": removed, "freed_bytes": freed, "dry_run": dry_run, "details": details}
 
 
 def clean_empty_folders(folder: Path, dry_run: bool = False) -> dict:
+    if not dry_run:
+        return {"error": "Folder deletion is unavailable until individual folders can be reviewed and confirmed."}
     removed = 0
     details: list[str] = []
     for root, dirs, files in os.walk(folder, topdown=False):
         for d in dirs:
             dir_path = Path(root) / d
             try:
+                if dir_path.is_symlink():
+                    continue
                 if not any(dir_path.iterdir()):
                     if not dry_run:
                         dir_path.rmdir()
                     removed += 1
-                    details.append(f"Removed empty folder: {dir_path.relative_to(folder)}")
+                    details.append(f"Empty folder: {dir_path.relative_to(folder)}")
             except Exception as e:
                 details.append(f"Failed to remove {dir_path}: {e}")
-    _audit("Cleaned empty folders", f"{folder.name} · {removed} removed{' (preview)' if dry_run else ''}", "files")
+    _audit("Previewed empty folders" if dry_run else "Cleaned empty folders",
+           f"{folder.name} · {removed} found" if dry_run else f"{folder.name} · {removed} removed", "files")
     return {"folder": str(folder), "removed": removed, "dry_run": dry_run, "details": details}
 
 

@@ -684,18 +684,33 @@ class Brain:
         return " ".join(parts)
 
     def _format_duplicate_result(self, result: dict, dry: bool) -> str:
+        if "error" in result:
+            return result["error"]
         prefix = "Preview: " if dry else ""
         if result["groups"] == 0:
             return f"{prefix}No duplicate files found in {Path(result['folder']).name}."
         if result["removed"] == 0:
             return f"{prefix}Found {result['groups']} duplicate group(s) but removed none."
         freed_mb = result["freed_bytes"] / (1024 * 1024)
+        if dry:
+            details = "\n".join(result.get("details", [])[:10])
+            if len(result.get("details", [])) > 10:
+                details += "\nShowing the first 10 results."
+            return (f"Preview: Found {result['removed']} duplicate file(s) in {result['folder']} "
+                    f"({freed_mb:.1f} MB). No files were deleted.\n{details}")
         return f"{prefix}Removed {result['removed']} duplicate file(s), freed {freed_mb:.1f} MB in {Path(result['folder']).name}."
 
     def _format_empty_folder_result(self, result: dict, dry: bool) -> str:
+        if "error" in result:
+            return result["error"]
         prefix = "Preview: " if dry else ""
         if result["removed"] == 0:
             return f"{prefix}No empty folders found in {Path(result['folder']).name}."
+        if dry:
+            details = "\n".join(result.get("details", [])[:10])
+            if len(result.get("details", [])) > 10:
+                details += "\nShowing the first 10 results."
+            return f"Preview: Found {result['removed']} empty folder(s) in {result['folder']}. No folders were deleted.\n{details}"
         return f"{prefix}Removed {result['removed']} empty folder(s) in {Path(result['folder']).name}."
 
     # ------------------------------------------------------------------ #
@@ -1195,7 +1210,7 @@ class Brain:
         if re.search(r"\b(duplicate|duplicates|copy|copies|kopyalar|tekrar)\b", t) and \
            re.search(r"\b(find|remove|delete|clean|bul|sil|temizle)\b", t):
             folder = self._resolve_folder(t) or Path.home() / "Downloads"
-            dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme)\b", t))
+            dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme|find|bul)\b", t))
             result = actions.remove_duplicates(folder, dry)
             return self._format_duplicate_result(result, dry)
 

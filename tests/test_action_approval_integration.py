@@ -78,6 +78,15 @@ class ApprovalIntegrationTests(unittest.TestCase):
             self.assertEqual(review.call_args.args[0], "open_app")
         self.action.assert_called_once()
 
+    def test_find_duplicates_is_always_a_preview(self) -> None:
+        result = {"folder": "Downloads", "groups": 1, "removed": 1,
+                  "freed_bytes": 10, "details": ["Duplicate: example.txt"]}
+        with patch.object(self.agent, "_resolve_folder", return_value=Path("Downloads")), \
+             patch.object(brain.actions, "remove_duplicates", return_value=result) as find:
+            reply = self.agent.handle("find duplicates in downloads")
+        find.assert_called_once_with(Path("Downloads"), True)
+        self.assertIn("No files were deleted", reply)
+
     def test_recycle_bin_requires_confirmation_and_executes_once(self) -> None:
         self.dispatch.stop()
         with patch.object(brain.actions, "empty_recycle_bin", return_value="Done") as empty:
