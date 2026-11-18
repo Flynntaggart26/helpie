@@ -80,6 +80,12 @@ class VoiceStopTests(unittest.TestCase):
 
     def test_stop_during_synthesis_prevents_fallback_and_allows_next_turn(self) -> None:
         entered, finish, played = threading.Event(), threading.Event(), threading.Event()
+        pygame_stub = types.ModuleType("pygame")
+        pygame_stub.mixer = Mock()
+        pygame_stub.mixer.get_init.return_value = True
+        modules = patch.dict(sys.modules, {"pygame": pygame_stub})
+        modules.start()
+        self.addCleanup(modules.stop)
         speaker = voice.Speaker(cloud_consent=True)
         def synth(_text):
             entered.set()
@@ -102,6 +108,7 @@ class VoiceStopTests(unittest.TestCase):
         finally:
             finish.set()
             speaker.close()
+            speaker._worker.join(3)
 
     def test_local_speech_is_purged_when_cancelled(self) -> None:
         cancel = threading.Event()
