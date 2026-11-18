@@ -2530,7 +2530,12 @@ function startOverlay() {
     <div class="overlay-capture-indicator" id="overlay-capture-indicator" data-capture-state="off" role="status" aria-live="polite">
       Screen access off
     </div>
-    <div class="overlay-hint" data-state-label="idle">Idle</div>
+    <div class="voice-banner" aria-hidden="true">
+      <span class="voice-banner-logo">H</span>
+      <span class="voice-banner-copy"><strong>Helpie</strong><span>Listening to you</span></span>
+      <span class="voice-banner-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="voice-banner-live">LIVE</span>
+    </div>
   `;
   document.body.appendChild(root);
 
@@ -2626,11 +2631,14 @@ async function pollOverlayState() {
   };
   const marker = document.querySelector(".overlay-marker");
   const overlayRoot = document.querySelector(".overlay-root");
+  if (monitor.primary) overlayRoot?.classList.add("overlay-primary");
   try {
     while (document.querySelector(".overlay-root") && window.helpieOverlayActive) {
       try {
         const data = await api("/api/overlay/state");
         const state = data.state || "idle";
+        const voiceBanner = overlayRoot?.querySelector(".voice-banner");
+        if (voiceBanner) voiceBanner.style.setProperty("--voice-level", String(Math.max(0, Math.min(1, Number(data.voice_level) || 0))));
         const cloudActive = !!data.cloud_voice_active;
         const transfer = data.screen_frame_transfer || { active: false, remote: false };
         const remoteCloudActive = cloudActive || (transfer.active && transfer.remote);

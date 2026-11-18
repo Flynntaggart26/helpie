@@ -102,6 +102,7 @@ class App:
         self._pointer_left_down = False
         self._pointer_click_id = 0
         self._listening = False
+        self._voice_level = 0.0
         self._closing = False
         self._speaking = False
         self._cloud_voice_active = False
@@ -423,6 +424,7 @@ class App:
 
                 def on_level(value: float) -> None:
                     nonlocal last_push, loudest
+                    self._voice_level = max(0.0, min(1.0, value))
                     loudest = max(loudest, value)
                     now = time.time()
                     if now - last_push > 0.08:
@@ -485,6 +487,7 @@ class App:
             self._listening = False
             self.push_state("idle")
         finally:
+            self._voice_level = 0.0
             self._listening = False
             if push_to_talk:
                 self._push_to_talk_stop.set()
@@ -860,6 +863,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/overlay/state":
                 self._json({"state": app.state,
+                            "voice_level": app._voice_level if app.state in {"listening", "hearing"} else 0.0,
                             "cloud_voice_active": app._cloud_voice_active,
                             "screen_frame_transfer": dict(app._screen_frame_transfer),
                             "capture_session": app.overlay_capture_status(),

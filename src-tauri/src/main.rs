@@ -414,8 +414,10 @@ fn show_companion(app: &AppHandle, port: u16) {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.hide();
     }
+    if let Some(tiny) = app.get_webview_window("tiny") {
+        let _ = tiny.hide();
+    }
     show_overlay(app, port);
-    show_tiny(app, port);
 }
 
 /// Hide through Win32 rather than `window.hide()`.

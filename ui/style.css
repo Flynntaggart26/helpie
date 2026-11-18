@@ -1920,9 +1920,52 @@ body.overlay-mode .overlay-root {
   font-size: 12px;
 }
 
+.voice-banner {
+  --voice-level: 0;
+  display: none;
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 12px;
+  min-width: 310px;
+  padding: 11px 16px;
+  border: 1px solid rgba(129, 215, 255, .55);
+  border-radius: 18px;
+  background: linear-gradient(115deg, #101e37, #142d53, #23204b, #101e37);
+  background-size: 300% 300%;
+  animation: voice-colors 8s ease infinite;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4), 0 0 18px rgba(38,158,255,.35);
+  color: #f4f9ff;
+}
+.overlay-primary.overlay-state-listening .voice-banner,
+.overlay-primary.overlay-state-hearing .voice-banner { display: flex; }
+.voice-banner-logo {
+  display: grid; place-items: center; width: 34px; height: 34px;
+  border-radius: 11px; font-weight: 800;
+  background: linear-gradient(145deg, #32c9ff, #2353e9);
+  box-shadow: 0 0 14px rgba(48,180,255,.6);
+}
+.voice-banner-copy { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+.voice-banner-copy strong { font-size: 13px; }
+.voice-banner-copy span { font-size: 11px; color: #bfd1e7; }
+.voice-banner-wave { display: flex; align-items: center; justify-content: center; gap: 3px; height: 32px; flex: 1; }
+.voice-banner-wave i {
+  width: 3px; height: 5px; border-radius: 5px; background: #75e4ff;
+  box-shadow: 0 0 7px #43baff;
+  transform: scaleY(calc(1 + var(--voice-level) * 5));
+  transition: transform 90ms ease-out;
+}
+.voice-banner-wave i:nth-child(3n) { transform: scaleY(calc(1 + var(--voice-level) * 2.5)); }
+.voice-banner-wave i:nth-child(2n) { transform: scaleY(calc(1 + var(--voice-level) * 3.7)); }
+.voice-banner-live { font-size: 9px; font-weight: 700; letter-spacing: .09em; color: #9ee9ff; }
+@keyframes voice-colors { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+@media (prefers-reduced-motion: reduce) { .voice-banner { animation: none; } .voice-banner-wave i { transition: none; } }
+
 .overlay-capture-indicator {
   position: absolute;
-  top: 16px;
+  top: 90px;
   left: 50%;
   transform: translateX(-50%);
   max-width: min(90vw, 520px);
