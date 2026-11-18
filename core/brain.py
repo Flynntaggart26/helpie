@@ -7,11 +7,14 @@ import json
 import math
 import random
 import re
+import time
+import threading
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlparse
 
 import actions
+import action_policy
 import audit
 import documents
 import memory
@@ -613,6 +616,8 @@ class Brain:
         self.llm.configure(cfg)
         self.llm.memory_text = memory.as_prompt()
         self.pending: Optional[tuple[str, dict]] = None
+        self._model_proposal: Optional[tuple[action_policy.ProposedAction, float]] = None
+        self._model_proposal_lock = threading.Lock()
         self._in_plan = False
         self._screen_capture_allowed = contextvars.ContextVar(
             "helpie_screen_capture_allowed", default=True,
@@ -771,6 +776,13 @@ class Brain:
             self._screen_capture_source.reset(source_token)
             self._screen_capture_allowed.reset(token)
 
+    def cancel_model_proposal(self) -> None:
+        with self._model_proposal_lock:
+            had_proposal = self._model_proposal is not None
+            self._model_proposal = None
+        if had_proposal:
+            audit.log("Model action cancelled", source="action")
+
     def _handle(self, text: str) -> str:
         raw = (text or "").strip()
         if not raw:
@@ -778,11 +790,30 @@ class Brain:
         t = _norm(raw)
         alt = re.sub(r"\s+", " ", FILLERS.sub(" ", t)).strip()
 
+        with self._model_proposal_lock:
+            pending_proposal = self._model_proposal
+            if pending_proposal and (time.monotonic() >= pending_proposal[1]
+                                     or action_policy.confirmation(t) is not None):
+                self._model_proposal = None
+        if pending_proposal:
+            proposal, deadline = pending_proposal
+            if time.monotonic() >= deadline:
+                audit.log("Model action approval expired", ok=False, source="action")
+                return "That action request expired. Please ask again."
+            decision = action_policy.confirmation(t)
+            if decision == "no":
+                audit.log("Model action cancelled", source="action")
+                return "Okay, cancelled."
+            if decision == "yes":
+                audit.log("Model action approved", source="action")
+                return self._dispatch(proposal.name, proposal.args)
+            return f"Please say yes or no. Proposed action: {proposal.preview}."
+
         if self.pending:
             pending, self.pending = self.pending, None
-            if any(word in t for word in CONFIRM_YES):
+            if action_policy.confirmation(t) == "yes":
                 return self._dispatch(*pending, confirmed=True)
-            if any(word in t for word in CONFIRM_NO):
+            if action_policy.confirmation(t) == "no":
                 return "Okay, cancelled."
             self.pending = pending
             return "I need a yes or a no to continue."
@@ -1205,8 +1236,19 @@ class Brain:
             if reply:
                 cleaned, action = self._extract_action(reply)
                 if action:
-                    spoken = self._dispatch(*action)
-                    return f"{cleaned} {spoken}".strip() if cleaned else spoken
+                    if self._in_plan:
+                        audit.log("Blocked model action in a plan", ok=False, source="action")
+                        return "I cannot run a model-proposed action inside a plan. Please ask for one action."
+                    proposal = action_policy.review_model_action(*action)
+                    if proposal is None:
+                        audit.log("Blocked unsupported model action", ok=False, source="action")
+                        return "I cannot perform that proposed action. Please request a supported action directly."
+                    with self._model_proposal_lock:
+                        if self._model_proposal is not None:
+                            return "Another action is awaiting confirmation. Please answer yes or no."
+                        self._model_proposal = (proposal, time.monotonic() + 60.0)
+                    audit.log("Requested model action approval", source="action")
+                    return f"Proposed action: {proposal.preview}. Say yes to confirm or no to cancel."
                 return cleaned or reply
             if getattr(self.llm, "last_error", ""):
                 return self.llm.last_error

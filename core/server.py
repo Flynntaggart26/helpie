@@ -965,6 +965,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/stop":
             app.stop_push_to_talk()
+            app.brain.cancel_model_proposal()
             app.speaker.stop()
             app.clear_visual_annotations()
             app.push_state("idle")
