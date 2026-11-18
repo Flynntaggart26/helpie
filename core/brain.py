@@ -618,6 +618,7 @@ class Brain:
         self.pending: Optional[tuple[str, dict]] = None
         self._model_proposal: Optional[tuple[action_policy.ProposedAction, float]] = None
         self._model_proposal_lock = threading.Lock()
+        self._model_proposal_generation = 0
         self._in_plan = False
         self._screen_capture_allowed = contextvars.ContextVar(
             "helpie_screen_capture_allowed", default=True,
@@ -780,10 +781,13 @@ class Brain:
         with self._model_proposal_lock:
             had_proposal = self._model_proposal is not None
             self._model_proposal = None
+            self._model_proposal_generation += 1
         if had_proposal:
             audit.log("Model action cancelled", source="action")
 
     def _handle(self, text: str) -> str:
+        with self._model_proposal_lock:
+            proposal_generation = self._model_proposal_generation
         raw = (text or "").strip()
         if not raw:
             return "I didn't hear anything. Try again?"
@@ -1244,6 +1248,10 @@ class Brain:
                         audit.log("Blocked unsupported model action", ok=False, source="action")
                         return "I cannot perform that proposed action. Please request a supported action directly."
                     with self._model_proposal_lock:
+                        if proposal_generation != self._model_proposal_generation:
+                            return "The action request was cancelled."
+                        if self._model_proposal and time.monotonic() >= self._model_proposal[1]:
+                            self._model_proposal = None
                         if self._model_proposal is not None:
                             return "Another action is awaiting confirmation. Please answer yes or no."
                         self._model_proposal = (proposal, time.monotonic() + 60.0)

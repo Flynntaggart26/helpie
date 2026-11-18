@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+import unicodedata
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,9 @@ def review_model_action(name: str, args: object) -> ProposedAction | None:
     if not isinstance(value, str):
         return None
     value = value.strip()
-    if not value or len(value) > 80 or any(ord(char) < 32 or ord(char) == 127 for char in value):
+    if (not value or len(value) > 80
+            or any(unicodedata.category(char).startswith("C") or char in "\u2028\u2029"
+                   for char in value)):
         return None
     return ProposedAction(name=name, args={spec[0]: value}, preview=f"{spec[1]}: {value}")
 

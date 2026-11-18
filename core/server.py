@@ -966,6 +966,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/stop":
             app.stop_push_to_talk()
             app.brain.cancel_model_proposal()
+            app.brain.pending = None
             app.speaker.stop()
             app.clear_visual_annotations()
             app.push_state("idle")
@@ -1063,6 +1064,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
         if path == "/api/new_chat":
+            app.brain.cancel_model_proposal()
             app.brain.llm.reset()
             app.brain.pending = None
             chat = app.history.new_chat()
@@ -1074,6 +1076,7 @@ class Handler(BaseHTTPRequestHandler):
             if not chat:
                 self._json({"error": "chat not found"}, 404)
                 return
+            app.brain.cancel_model_proposal()
             app.brain.llm.reset()
             app.brain.pending = None
             app.bus.push({"type": "history", "chats": app.history.list_chats()})

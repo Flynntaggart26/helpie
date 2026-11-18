@@ -18,6 +18,7 @@ class ActionPolicyTests(unittest.TestCase):
     def test_rejects_unknown_chains_and_invalid_targets(self) -> None:
         for name, args in (("plan", {"steps": []}), ("open_app", {"app": "x", "other": 1}),
                            ("open_app", {"app": "x\nrun"}), ("close_app", {"app": "x" * 81}),
+                           ("open_app", {"app": "safe\u202eevil"}),
                            ("open_app", [])):
             with self.subTest(name=name, args=args):
                 self.assertIsNone(review_model_action(name, args))
