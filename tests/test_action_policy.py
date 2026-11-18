@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "core"))
-from action_policy import confirmation, review_model_action
+from action_policy import confirmation, review_direct_action, review_model_action
 
 
 class ActionPolicyTests(unittest.TestCase):
@@ -28,6 +28,13 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertEqual(confirmation("cancel"), "no")
         self.assertIsNone(confirmation("yes but do not do it"))
         self.assertIsNone(confirmation("nobody asked"))
+
+    def test_recycle_bin_is_destructive_and_only_direct(self) -> None:
+        proposal = review_direct_action("empty_recycle_bin", {})
+        self.assertEqual(proposal.risk, "destructive")
+        self.assertIn("Permanently", proposal.preview)
+        self.assertIsNone(review_model_action("empty_recycle_bin", {}))
+        self.assertIsNone(review_direct_action("empty_recycle_bin", {"extra": True}))
 
 
 if __name__ == "__main__":

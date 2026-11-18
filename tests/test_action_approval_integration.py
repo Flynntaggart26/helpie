@@ -78,6 +78,52 @@ class ApprovalIntegrationTests(unittest.TestCase):
             self.assertEqual(review.call_args.args[0], "open_app")
         self.action.assert_called_once()
 
+    def test_recycle_bin_requires_confirmation_and_executes_once(self) -> None:
+        self.dispatch.stop()
+        with patch.object(brain.actions, "empty_recycle_bin", return_value="Done") as empty:
+            self.assertIn("Permanently", self.agent.handle("empty recycle bin"))
+            empty.assert_not_called()
+            self.assertEqual(self.agent.handle("yes"), "Done")
+            empty.assert_called_once_with()
+            self.agent.handle("empty recycle bin")
+            self.assertIn("cancelled", self.agent.handle("no").lower())
+            empty.assert_called_once()
+
+    def test_recycle_bin_cannot_run_in_plan_or_routine_without_confirmation(self) -> None:
+        self.dispatch.stop()
+        with patch.object(brain.actions, "empty_recycle_bin") as empty:
+            self.agent._in_plan = True
+            self.assertIn("separately", self.agent.handle("empty recycle bin"))
+            self.agent._in_plan = False
+            self.assertIn("confirm", self.agent._execute_routine_step("empty_recycle_bin", {}))
+            empty.assert_not_called()
+
+    def test_recycle_bin_proposal_expires_and_stop_cancels(self) -> None:
+        self.dispatch.stop()
+        with patch.object(brain.actions, "empty_recycle_bin") as empty:
+            with patch.object(brain.time, "monotonic", return_value=100):
+                self.agent.handle("empty recycle bin")
+            with patch.object(brain.time, "monotonic", return_value=161):
+                self.assertIn("expired", self.agent.handle("yes").lower())
+            self.agent.handle("empty recycle bin")
+            self.agent.cancel_model_proposal()
+            self.assertIsNone(self.agent._model_proposal)
+            empty.assert_not_called()
+
+    def test_recycle_bin_reports_failure_when_windows_command_fails(self) -> None:
+        result = Mock(returncode=1)
+        with patch.object(brain.actions.subprocess, "run", return_value=result), \
+             patch.object(brain.actions.audit, "log") as log:
+            self.assertIn("could not", brain.actions.empty_recycle_bin().lower())
+            log.assert_called_once_with("Emptied the recycle bin", ok=False)
+
+    def test_recycle_bin_reports_success_only_after_successful_command(self) -> None:
+        result = Mock(returncode=0)
+        with patch.object(brain.actions.subprocess, "run", return_value=result), \
+             patch.object(brain.actions, "_audit") as log:
+            self.assertEqual(brain.actions.empty_recycle_bin(), "Recycle Bin emptied.")
+            log.assert_called_once_with("Emptied the recycle bin")
+
 
 if __name__ == "__main__":
     unittest.main()

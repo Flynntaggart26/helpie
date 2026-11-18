@@ -11,6 +11,7 @@ class ProposedAction:
     name: str
     args: dict[str, Any]
     preview: str
+    risk: str = "reversible_local"
 
 
 def review_model_action(name: str, args: object) -> ProposedAction | None:
@@ -33,6 +34,9 @@ def review_model_action(name: str, args: object) -> ProposedAction | None:
 
 def review_direct_action(name: str, args: object) -> ProposedAction | None:
     """Validate a direct single action using the same target boundaries."""
+    if name == "empty_recycle_bin" and isinstance(args, dict) and not args:
+        return ProposedAction(name=name, args={}, preview="Permanently empty the Recycle Bin",
+                              risk="destructive")
     return review_model_action(name, args)
 
 

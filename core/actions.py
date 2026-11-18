@@ -863,9 +863,20 @@ def cancel_shutdown() -> str:
 
 
 def empty_recycle_bin() -> str:
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "Clear-RecycleBin -Force -ErrorAction Stop"],
+            capture_output=True, text=True, timeout=30, creationflags=CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        audit.log("Emptied the recycle bin", ok=False)
+        return "I could not empty the Recycle Bin."
+    if result.returncode != 0:
+        audit.log("Emptied the recycle bin", ok=False)
+        return "I could not empty the Recycle Bin."
     _audit("Emptied the recycle bin")
-    _powershell("Clear-RecycleBin -Force -ErrorAction SilentlyContinue")
-    return "Recycle bin emptied."
+    return "Recycle Bin emptied."
 
 
 def battery() -> str:

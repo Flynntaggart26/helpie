@@ -783,7 +783,7 @@ class Brain:
             self._model_proposal = None
             self._model_proposal_generation += 1
         if had_proposal:
-            audit.log("Model action cancelled", source="action")
+            audit.log("Pending action cancelled", source="action")
 
     def _handle(self, text: str) -> str:
         with self._model_proposal_lock:
@@ -802,14 +802,16 @@ class Brain:
         if pending_proposal:
             proposal, deadline = pending_proposal
             if time.monotonic() >= deadline:
-                audit.log("Model action approval expired", ok=False, source="action")
+                audit.log("Pending action approval expired", ok=False, source="action")
                 return "That action request expired. Please ask again."
             decision = action_policy.confirmation(t)
             if decision == "no":
-                audit.log("Model action cancelled", source="action")
+                audit.log("Pending action cancelled", source="action")
                 return "Okay, cancelled."
             if decision == "yes":
-                audit.log("Model action approved", source="action")
+                audit.log("Pending action approved", source="action")
+                if proposal.risk == "destructive":
+                    return self._dispatch(proposal.name, proposal.args, confirmed=True)
                 return self._dispatch(proposal.name, proposal.args)
             return f"Please say yes or no. Proposed action: {proposal.preview}."
 
@@ -1073,7 +1075,18 @@ class Brain:
             return actions.cancel_shutdown()
 
         if re.search(r"recycle bin|geri dönüşüm", t) and re.search(r"(empty|clear|boşalt|temizle)", t):
-            return actions.empty_recycle_bin()
+            if self._in_plan:
+                audit.log("Blocked destructive action in a plan", ok=False, source="action")
+                return "Please request emptying the Recycle Bin separately so I can ask for confirmation."
+            proposal = action_policy.review_direct_action("empty_recycle_bin", {})
+            with self._model_proposal_lock:
+                if proposal_generation != self._model_proposal_generation:
+                    return "The action request was cancelled."
+                if self._model_proposal is not None:
+                    return "Another action is awaiting confirmation. Please answer yes or no."
+                self._model_proposal = (proposal, time.monotonic() + 60.0)
+            audit.log("Requested destructive action approval", source="action")
+            return f"Proposed action: {proposal.preview}. Say yes to confirm or no to cancel."
 
         # notes
         match = re.search(r"(?:take a note|make a note|note that|add a note|not al)[:\s]+(.+)$", t)
@@ -1407,6 +1420,11 @@ class Brain:
         return self._dispatch(proposal.name, proposal.args)
 
     def _dispatch(self, name: str, args: dict, confirmed: bool = False) -> str:
+        if name == "empty_recycle_bin":
+            if not confirmed or args != {}:
+                audit.log("Blocked unconfirmed destructive action", ok=False, source="action")
+                return "Please request emptying the Recycle Bin directly and confirm it."
+            return actions.empty_recycle_bin()
         if name == "power":
             mode = str(args.get("mode", "shutdown")).lower()
             if mode not in {"shutdown", "restart", "sleep"}:
