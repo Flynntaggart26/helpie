@@ -22,6 +22,7 @@ import actions
 import audit
 import autostart
 import config
+import file_review
 import history
 import memory
 import plugins
@@ -1009,6 +1010,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         app = self.app
 
+        if path == "/api/file-review/preview":
+            roots = {"downloads": "Downloads", "desktop": "Desktop", "documents": "Documents"}
+            folder = body.get("folder")
+            kind = body.get("kind")
+            if not isinstance(folder, str) or folder not in roots or kind not in ("duplicates", "empty_folders"):
+                self._json({"error": "Choose a supported folder and review type."}, 400)
+                return
+            try:
+                result = file_review.preview(Path.home() / roots[folder], kind)
+            except (OSError, ValueError):
+                self._json({"error": "The selected folder could not be reviewed."}, 400)
+                return
+            audit.log("Reviewed files without deletion", source="files")
+            self._json(result)
+            return
         if path == "/api/ask":
             text = str(body.get("text", "")).strip()
             source = str(body.get("source", "chat"))

@@ -2194,6 +2194,27 @@ function bind() {
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-note-export-pdf").addEventListener("click", exportVisualNotePdf);
   $("visual-note-export-svg").addEventListener("click", exportVisualNoteSvg);
+  $("file-review-start").addEventListener("click", async () => {
+    const button = $("file-review-start"), status = $("file-review-status"), list = $("file-review-results");
+    button.disabled = true;
+    list.replaceChildren();
+    status.textContent = "Reviewing files on this device…";
+    try {
+      const result = await api("/api/file-review/preview", { method: "POST", body: JSON.stringify({
+        folder: $("file-review-folder").value, kind: $("file-review-kind").value,
+      }) });
+      for (const item of result.items || []) {
+        const row = document.createElement("li");
+        row.textContent = item.matches ? `${item.path} — matches ${item.matches} (${item.size} bytes)` : item.path;
+        list.appendChild(row);
+      }
+      status.textContent = `${result.root}: ${result.items.length} result(s). Nothing was deleted.${result.limited ? " Review was limited; results may be incomplete." : ""}`;
+    } catch (_) {
+      status.textContent = "Could not review that folder. Check that it exists and is accessible.";
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);
   $("visual-note-tool").addEventListener("change", () => {
     $("visual-note-status").textContent = $("visual-note-tool").value === "geometry"
