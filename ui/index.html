@@ -132,6 +132,8 @@
           <label class="visual-note-title-label" for="visual-note-title">Title</label>
           <input class="visual-note-title" id="visual-note-title" type="text" maxlength="120" placeholder="Untitled visual note" />
           <div class="visual-note-toolbar">
+            <label for="visual-note-tool">Tool</label>
+            <select id="visual-note-tool"><option value="draw">Draw</option><option value="geometry">Move geometry</option></select>
             <label for="visual-note-color">Pen</label>
             <select id="visual-note-color" aria-label="Pen color">
               <option value="#55d6ff">Cyan</option>
@@ -162,6 +164,8 @@
             <input id="visual-point-y" type="number" min="0" max="100" step="1" />
             <label for="visual-point-label">Label</label>
             <input id="visual-point-label" type="text" maxlength="32" />
+            <label for="visual-point-radius">Radius (0–50%)</label>
+            <input id="visual-point-radius" type="number" min="0.01" max="50" step="0.01" disabled />
             <button class="ghost" id="visual-point-apply" type="button">Apply geometry changes</button>
           </fieldset>
           <div class="visual-note-status muted" id="visual-note-status" aria-live="polite">Draw a sketch, then save it.</div>

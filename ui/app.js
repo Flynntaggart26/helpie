@@ -317,8 +317,9 @@ async function loadNotes() {
 
 const VISUAL_NOTE_COLORS = new Set(["#55d6ff", "#f59e0b", "#f472b6", "#f8fafc"]);
 let visualPointEditorObject = null;
+let activeGeometryDrag = null;
 
-function drawVisualNoteCanvas() {
+function drawVisualNoteCanvas(showHandles = true) {
   const canvas = $("visual-note-canvas");
   if (!canvas) return;
   refreshVisualPointOptions();
@@ -361,6 +362,22 @@ function drawVisualNoteCanvas() {
     }
     context.stroke();
   }
+  if (showHandles && $("visual-note-tool")?.value === "geometry") {
+    const selected = $("visual-point-select").value;
+    context.save();
+    for (const handle of HelpieGeometry.handles(state.visualNoteItems)) {
+      const point = HelpieGeometry.canvasPosition(state.visualNoteItems, handle.key, rect.width, rect.height);
+      if (!point) continue;
+      context.beginPath();
+      context.arc(point.x, point.y, 6, 0, Math.PI * 2);
+      context.fillStyle = handle.key === selected ? "#fbbf24" : "#f8fafc";
+      context.strokeStyle = "#075985";
+      context.lineWidth = 2;
+      context.fill();
+      context.stroke();
+    }
+    context.restore();
+  }
 }
 
 function refreshVisualPointOptions() {
@@ -393,7 +410,12 @@ function loadVisualPointEditor() {
   visualPointEditorObject = point?.object || null;
   $("visual-point-x").value = point ? String(Math.round(point.x * 10000) / 100) : "";
   $("visual-point-y").value = point ? String(Math.round(point.y * 10000) / 100) : "";
+  $("visual-point-x").disabled = point?.part === "radius";
+  $("visual-point-y").disabled = point?.part === "radius";
   $("visual-point-label").value = point?.object.label || "";
+  const radius = $("visual-point-radius");
+  radius.disabled = point?.object.kind !== "circle";
+  radius.value = radius.disabled ? "" : String(Math.round(point.object.radius * 10000) / 100);
 }
 
 function drawVisualNoteItems(context, width, height) {
@@ -630,6 +652,78 @@ function pushVisualNoteUndo() {
   if (state.visualNoteUndoStack.length > 20) state.visualNoteUndoStack.shift();
 }
 
+function undoVisualNote() {
+  const previous = state.visualNoteUndoStack.pop();
+  if (!previous) return;
+  state.visualNoteStrokes = previous.strokes;
+  state.visualNoteItems = previous.visualItems;
+  state.visualNotePointCount = state.visualNoteStrokes.reduce(
+    (total, stroke) => total + (stroke.points?.length || 0), 0);
+  state.visualNoteDirty = true;
+  state.activeVisualStroke = null;
+  $("visual-note-status").textContent = "Last change undone. Save to keep this change.";
+  drawVisualNoteCanvas();
+}
+
+function beginGeometryDrag(event) {
+  if (activeGeometryDrag || (event.pointerType === "mouse" && event.button !== 0)) return;
+  const canvas = $("visual-note-canvas");
+  const rect = canvas.getBoundingClientRect();
+  const key = HelpieGeometry.hitTest(state.visualNoteItems, rect.width, rect.height,
+    event.clientX - rect.left, event.clientY - rect.top);
+  const target = key && HelpieGeometry.resolve(state.visualNoteItems, key);
+  if (!target) {
+    $("visual-note-status").textContent = "Drag a visible handle to move it.";
+    return;
+  }
+  $("visual-point-select").value = key;
+  loadVisualPointEditor();
+  activeGeometryDrag = {
+    key, pointerId: event.pointerId, item: state.visualNoteItems[target.i],
+    i: target.i, j: target.j, original: JSON.parse(JSON.stringify(target.object)),
+    before: { strokes: JSON.parse(JSON.stringify(state.visualNoteStrokes)),
+      visualItems: JSON.parse(JSON.stringify(state.visualNoteItems)) },
+    wasDirty: state.visualNoteDirty, changed: false,
+  };
+  canvas.setPointerCapture(event.pointerId);
+  drawVisualNoteCanvas();
+}
+
+function continueGeometryDrag(event) {
+  const drag = activeGeometryDrag;
+  if (!drag || drag.pointerId !== event.pointerId || state.visualNoteItems[drag.i] !== drag.item) return;
+  const rect = $("visual-note-canvas").getBoundingClientRect();
+  const local = HelpieGeometry.localPosition(state.visualNoteItems, drag.key, rect.width, rect.height,
+    event.clientX - rect.left, event.clientY - rect.top);
+  if (!local) return;
+  const current = HelpieGeometry.resolve(state.visualNoteItems, drag.key);
+  if (!current) return;
+  const edit = HelpieGeometry.propose(state.visualNoteItems, drag.key,
+    Number(local.x.toFixed(4)), Number(local.y.toFixed(4)), current.object.label || "");
+  if (!edit) return;
+  drag.item.objects[drag.j] = edit.object;
+  drag.changed = JSON.stringify(edit.object) !== JSON.stringify(drag.original);
+  state.visualNoteDirty = drag.wasDirty || drag.changed;
+  drawVisualNoteCanvas();
+}
+
+function finishGeometryDrag(event, cancelled = false) {
+  const drag = activeGeometryDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  activeGeometryDrag = null;
+  if (state.visualNoteItems[drag.i] !== drag.item) return;
+  if (cancelled) {
+    drag.item.objects[drag.j] = drag.original;
+    state.visualNoteDirty = drag.wasDirty;
+    $("visual-note-status").textContent = "Geometry move cancelled.";
+  } else if (drag.changed) {
+    state.visualNoteUndoStack.push(drag.before);
+    if (state.visualNoteUndoStack.length > 20) state.visualNoteUndoStack.shift();
+    $("visual-note-status").textContent = "Geometry moved. Save the note to keep the change.";
+  }
+  drawVisualNoteCanvas();
+}
+
 async function importLatestVisualAnswer() {
   try {
     const data = await api("/api/visual-notes/current");
@@ -682,8 +776,9 @@ async function exportVisualNote() {
 
 async function exportVisualNotePng() {
   const canvas = $("visual-note-canvas");
-  drawVisualNoteCanvas();
+  drawVisualNoteCanvas(false);
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  drawVisualNoteCanvas();
   if (!blob) {
     $("visual-note-status").textContent = "Could not create the PNG image.";
     return;
@@ -2061,16 +2156,25 @@ function bind() {
   $("visual-note-export").addEventListener("click", exportVisualNote);
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);
+  $("visual-note-tool").addEventListener("change", () => {
+    $("visual-note-status").textContent = $("visual-note-tool").value === "geometry"
+      ? "Drag a visible handle, or use the coordinate controls below."
+      : "Draw on the canvas.";
+    drawVisualNoteCanvas();
+  });
   $("visual-point-apply").addEventListener("click", () => {
     const xField = $("visual-point-x"), yField = $("visual-point-y");
     const x = Number(xField.value), y = Number(yField.value);
+    const radiusField = $("visual-point-radius");
+    const radius = radiusField.disabled ? undefined : Number(radiusField.value) / 100;
     if (!xField.value.trim() || !yField.value.trim()
+        || (!radiusField.disabled && !radiusField.value.trim())
         || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
       $("visual-note-status").textContent = "Choose a handle and enter coordinates from 0 to 100.";
       return;
     }
     const edit = HelpieGeometry.propose(state.visualNoteItems, $("visual-point-select").value,
-      x / 100, y / 100, $("visual-point-label").value);
+      x / 100, y / 100, $("visual-point-label").value, radius);
     if (!edit) {
       $("visual-note-status").textContent = "That change is invalid. Keep segments nonzero and circles inside the geometry box.";
       return;
@@ -2082,18 +2186,7 @@ function bind() {
     drawVisualNoteCanvas();
   });
   $("visual-note-title").addEventListener("input", () => { state.visualNoteDirty = true; });
-  $("visual-note-undo").addEventListener("click", () => {
-    const previous = state.visualNoteUndoStack.pop();
-    if (!previous) return;
-    state.visualNoteStrokes = previous.strokes;
-    state.visualNoteItems = previous.visualItems;
-    state.visualNotePointCount = state.visualNoteStrokes.reduce(
-      (total, stroke) => total + (stroke.points?.length || 0), 0);
-    state.visualNoteDirty = true;
-    state.activeVisualStroke = null;
-    $("visual-note-status").textContent = "Last change undone. Save to keep this change.";
-    drawVisualNoteCanvas();
-  });
+  $("visual-note-undo").addEventListener("click", undoVisualNote);
   $("visual-note-clear").addEventListener("click", () => {
     if (state.visualNoteStrokes.length) pushVisualNoteUndo();
     state.visualNoteStrokes = [];
@@ -2113,12 +2206,25 @@ function bind() {
   });
   $("visual-note-canvas").addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    beginVisualNoteStroke(event);
+    if ($("visual-note-tool").value === "geometry") beginGeometryDrag(event);
+    else beginVisualNoteStroke(event);
   });
-  $("visual-note-canvas").addEventListener("pointermove", continueVisualNoteStroke);
-  $("visual-note-canvas").addEventListener("pointerup", () => { state.activeVisualStroke = null; });
-  $("visual-note-canvas").addEventListener("pointercancel", () => { state.activeVisualStroke = null; });
-  $("visual-note-canvas").addEventListener("lostpointercapture", () => { state.activeVisualStroke = null; });
+  $("visual-note-canvas").addEventListener("pointermove", (event) => {
+    if (activeGeometryDrag) continueGeometryDrag(event);
+    else continueVisualNoteStroke(event);
+  });
+  $("visual-note-canvas").addEventListener("pointerup", (event) => {
+    finishGeometryDrag(event);
+    state.activeVisualStroke = null;
+  });
+  $("visual-note-canvas").addEventListener("pointercancel", (event) => {
+    finishGeometryDrag(event, true);
+    state.activeVisualStroke = null;
+  });
+  $("visual-note-canvas").addEventListener("lostpointercapture", (event) => {
+    finishGeometryDrag(event, true);
+    state.activeVisualStroke = null;
+  });
   $("visual-note-list").addEventListener("click", async (event) => {
     const open = event.target.closest("[data-visual-note-open]");
     const remove = event.target.closest("[data-visual-note-delete]");

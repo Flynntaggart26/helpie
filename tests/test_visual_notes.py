@@ -36,6 +36,12 @@ class VisualNoteTests(unittest.TestCase):
         saved = visual_notes.save_note("", "Geometry", [], [item])
         restored = visual_notes.get_note(saved["id"])
         self.assertEqual(restored["visual_items"], [item])
+        item["objects"][2]["radius"] = 0.25
+        item["objects"][0]["x"] = 0.55
+        item["objects"][1]["x1"] = 0.3
+        item["objects"][3]["points"][1] = [0.7, 0.3]
+        updated = visual_notes.save_note(saved["id"], "Geometry", [], [item])
+        self.assertEqual(visual_notes.get_note(updated["id"])["visual_items"], [item])
 
     def test_create_list_reopen_and_edit_preserves_note_id(self) -> None:
         created = visual_notes.save_note("", "Sketch", [stroke()])
