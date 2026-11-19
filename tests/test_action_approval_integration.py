@@ -134,6 +134,21 @@ class ApprovalIntegrationTests(unittest.TestCase):
         find.assert_called_once_with(Path("Downloads"), True)
         self.assertIn("No files were deleted", reply)
 
+    def test_file_removal_is_not_sent_to_model_or_reported_as_done(self) -> None:
+        for command in ("delete this file", "remove these files", "dosyayı sil", "klasörü kaldır"):
+            with self.subTest(command=command):
+                reply = self.agent.handle(command)
+                self.assertIn("not available yet", reply)
+                self.assertIn("haven't moved or deleted", reply)
+        self.llm.chat.assert_not_called()
+        self.action.assert_not_called()
+
+    def test_deleted_files_list_is_honest_while_recycle_is_unavailable(self) -> None:
+        for command in ("show files you deleted", "show deleted files", "sildiğin dosyaları listele"):
+            with self.subTest(command=command):
+                self.assertIn("no completed", self.agent.handle(command).lower())
+        self.llm.chat.assert_not_called()
+
     def test_recycle_bin_requires_confirmation_and_executes_once(self) -> None:
         self.dispatch.stop()
         with patch.object(brain.actions, "empty_recycle_bin", return_value="Done") as empty:

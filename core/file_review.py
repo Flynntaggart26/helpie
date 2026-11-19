@@ -30,7 +30,7 @@ def _identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
 
 
 def preview(root: Path, kind: str) -> dict:
-    if kind not in {"duplicates", "empty_folders"}:
+    if kind not in {"files", "duplicates", "empty_folders"}:
         raise ValueError("Unknown review type.")
     if _is_link(root.lstat()) or not root.is_dir():
         raise ValueError("The selected folder must be a normal directory.")
@@ -78,6 +78,12 @@ def preview(root: Path, kind: str) -> dict:
         rows = sorted(empty, key=lambda item: item["path"])[:MAX_RESULTS]
         return {"root": str(root), "kind": kind, "items": rows,
                 "limited": limited or len(empty) > MAX_RESULTS}
+    if kind == "files":
+        rows = sorted(({"path": path.relative_to(root).as_posix(), "size": info.st_size,
+                        "fingerprint": _fingerprint("file", path.relative_to(root).as_posix(), _identity(info))}
+                       for path, info in files), key=lambda item: item["path"])
+        return {"root": str(root), "kind": kind, "items": rows[:MAX_RESULTS],
+                "limited": limited or len(rows) > MAX_RESULTS}
     groups: dict[int, list[tuple[Path, os.stat_result]]] = {}
     for path, info in files:
         groups.setdefault(info.st_size, []).append((path, info))

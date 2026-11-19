@@ -1046,7 +1046,7 @@ class Handler(BaseHTTPRequestHandler):
             roots = {"downloads": "Downloads", "desktop": "Desktop", "documents": "Documents"}
             folder = body.get("folder")
             kind = body.get("kind")
-            if not isinstance(folder, str) or folder not in roots or kind not in ("duplicates", "empty_folders"):
+            if not isinstance(folder, str) or folder not in roots or kind not in ("files", "duplicates", "empty_folders"):
                 self._json({"error": "Choose a supported folder and review type."}, 400)
                 return
             try:

@@ -842,6 +842,20 @@ class Brain:
             self.pending = pending
             return "I need a yes or a no to continue."
 
+        # Never let a file-removal request fall through to the model and sound
+        # like it succeeded while the action-bound recycle flow is unavailable.
+        file_term = r"(?:files?|folders?|dosya\w*|klasör\w*|klasor\w*)"
+        removal = r"(?:delete|remove|erase|sil|silin|kaldır|kaldir)"
+        if (re.search(rf"\b(?:list|show|which|what)\b.{{0,100}}\b{file_term}\b.{{0,100}}\b(?:deleted|removed|recycled)\b", t)
+                or re.search(rf"\b(?:list|show|which|what)\b.{{0,100}}\b(?:deleted|removed|recycled)\b.{{0,100}}\b{file_term}\b", t)
+                or re.search(r"\bsil(?:inen|diğin|digin|diğim|digim)\w*\b.{0,100}\bdosya\w*\b", t)):
+            return "There are no completed Helpie Recycle Bin moves to list in this version."
+        if (re.search(rf"\b{removal}\b.{{0,160}}\b{file_term}\b", t)
+                or re.search(rf"\b{file_term}\b.{{0,160}}\b{removal}\b", t)):
+            audit.log("File removal request not executed", ok=False, source="files")
+            return ("I haven't moved or deleted any files. Moving files to the Recycle Bin "
+                    "is not available yet. You can review files in Commands → Review files.")
+
         # Keep an explicit Helpie update request inside the trusted updater.
         # Otherwise it can fall through to the general assistant and be
         # misinterpreted as a filesystem or app-launch command.

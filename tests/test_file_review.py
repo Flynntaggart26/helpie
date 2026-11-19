@@ -13,6 +13,31 @@ import file_review
 
 
 class FileReviewTests(unittest.TestCase):
+    def test_file_review_and_recheck_do_not_delete_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "example.txt").write_text("first", encoding="utf-8")
+            (root / "subfolder").mkdir()
+            (root / "subfolder" / "other.txt").write_text("other", encoding="utf-8")
+            result = file_review.preview(root, "files")
+            self.assertEqual([item["path"] for item in result["items"]], ["example.txt", "subfolder/other.txt"])
+            self.assertEqual(result["items"][0]["size"], 5)
+            selected = [result["items"][0]]
+            self.assertTrue(file_review.recheck(root, "files", selected)["items"][0]["unchanged"])
+            (root / "example.txt").write_text("different", encoding="utf-8")
+            self.assertFalse(file_review.recheck(root, "files", selected)["items"][0]["unchanged"])
+            self.assertTrue((root / "example.txt").exists())
+
+    def test_file_review_marks_result_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("a", "b", "c"):
+                (root / name).write_bytes(b"x")
+            with patch.object(file_review, "MAX_RESULTS", 2):
+                result = file_review.preview(root, "files")
+            self.assertTrue(result["limited"])
+            self.assertEqual(len(result["items"]), 2)
+
     def test_duplicates_are_individual_read_only_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

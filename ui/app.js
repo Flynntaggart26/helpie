@@ -71,7 +71,7 @@ const COMMANDS = [
   ["Memory", '"Remember that I prefer short answers", "What do you remember about me"'],
   ["Briefing", '"Good morning", "Give me a briefing"'],
   ["Chain commands", '"Open Chrome and search for cats", "Sesi kıs ve parlaklığı azalt", "Lock the screen, then take a screenshot"'],
-  ["Organize files", '"Organize downloads by type", "Organize desktop by date", "Organize all preview", "Remove duplicates in downloads", "Clean empty folders"'],
+  ["Organize files", '"Organize downloads by type", "Organize desktop by date", "Organize all preview", "Find duplicates in downloads"'],
   ["Routines", '"Run start_work routine", "Save routine my_morning", "Run routine with params", "List routines"'],
   ["Email & Calendar", '"Read emails", "Send email to john@doe.com", "Show calendar", "Create meeting tomorrow 10am"'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
@@ -2266,7 +2266,8 @@ function bind() {
         checkbox.reviewItem = { path: item.path, fingerprint: item.fingerprint };
         checkbox.addEventListener("change", () => { clearRecheckStatus(); updateReviewSelection(); });
         const description = document.createElement("span");
-        description.textContent = item.matches ? `${item.path} — matches ${item.matches} (${item.size} bytes)` : item.path;
+        description.textContent = item.matches ? `${item.path} — matches ${item.matches} (${item.size} bytes)`
+          : Number.isFinite(item.size) ? `${item.path} (${item.size} bytes)` : item.path;
         label.append(checkbox, description);
         const resultStatus = document.createElement("span");
         resultStatus.className = "file-review-result-status";
