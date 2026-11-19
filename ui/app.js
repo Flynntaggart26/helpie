@@ -2749,18 +2749,8 @@ function startOverlay() {
   root.className = "overlay-root overlay-state-idle";
   root.innerHTML = `
     <div class="overlay-marker" style="left: 0; top: 0; visibility: hidden;">
-      <svg class="overlay-cursor" viewBox="0 0 56 56" width="56" height="56" aria-hidden="true">
-        <defs>
-          <linearGradient id="helpie-cursor-gradient" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#2169db" />
-            <stop offset="1" stop-color="#10429f" />
-          </linearGradient>
-        </defs>
-        <path class="overlay-cursor-glow" d="M5 5 51 28 35 34 25 49Q22 53 18 49L5 10Q4 7 5 5Z" />
-        <path class="overlay-cursor-outline" d="M5 5 51 28 35 34 25 49Q22 53 18 49L5 10Q4 7 5 5Z" />
-        <path class="overlay-cursor-shape" d="M5 5 51 28 35 34 25 49Q22 53 18 49L5 10Q4 7 5 5Z" />
-        <text class="overlay-cursor-monogram" x="15" y="35">H</text>
-        <circle class="overlay-cursor-hotspot" cx="49" cy="28" r="2.4" />
+      <svg class="overlay-cursor" viewBox="0 0 200 220" width="36" height="36" aria-hidden="true">
+        <path class="overlay-cursor-shape" d="M37 7 C19 5 6 20 7 39 L16 179 C18 207 47 215 66 195 L103 151 Q110 143 122 140 L168 127 C193 120 195 93 174 79 L55 12 Q46 7 37 7 Z" />
       </svg>
       <span class="overlay-thinking-dots" aria-hidden="true">
         <i></i><i></i><i></i>
