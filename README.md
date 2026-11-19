@@ -29,7 +29,7 @@ App icon  →  full chat/settings  |  hold Ctrl + H  →  companion + offset Hel
   three dots fold together and rotate beneath a still “Thinking” label; while speaking, a blue orb
   pulses. The companion can show short-lived pins, highlight boxes, and arrows after an explicit request.
   The Notes page also has a local sketch pad where you can draw, import recent vector answers,
-  save/reopen/edit notes, undo changes, and export JSON or PNG; it does not store screen images.
+  save/reopen/edit notes, undo changes, and export JSON, PNG, or an image-based PDF; it does not store screen images.
   In a visual note, choose **Move geometry** to drag visible point, endpoint, polygon vertex,
   circle center, or radius handles. The controls below the canvas also edit coordinates,
   labels, and circle radius by keyboard. Relation marks are visual and do not solve constraints.

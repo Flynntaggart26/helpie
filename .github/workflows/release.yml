@@ -55,8 +55,13 @@ jobs:
         shell: pwsh
         run: |
           node --check ui/app.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check ui/geometry-edit.js
-          node --test tests/test_geometry_edit.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check ui/note-pdf.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test tests/test_geometry_edit.cjs tests/test_note_pdf.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Tauri installer
         shell: pwsh

@@ -799,6 +799,29 @@ async function exportVisualNotePng() {
   $("visual-note-status").textContent = "Exported this note as a PNG image.";
 }
 
+async function exportVisualNotePdf() {
+  const canvas = $("visual-note-canvas");
+  try {
+    drawVisualNoteCanvas(false);
+    const image = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    drawVisualNoteCanvas();
+    if (!image || image.type !== "image/jpeg") throw new Error("JPEG unavailable");
+    const pdf = HelpieNotePdf.build(new Uint8Array(await image.arrayBuffer()), canvas.width, canvas.height);
+    await api("/api/visual-notes/exported", { method: "POST", body: "{}" });
+    const url = URL.createObjectURL(pdf);
+    const anchor = document.createElement("a");
+    const title = $("visual-note-title").value.trim() || "visual-note";
+    anchor.href = url;
+    anchor.download = `${title.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 60) || "visual-note"}.pdf`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $("visual-note-status").textContent = "Exported this note as an image-based PDF.";
+  } catch (error) {
+    drawVisualNoteCanvas();
+    $("visual-note-status").textContent = "Could not export this note as PDF.";
+  }
+}
+
 function beginVisualNoteStroke(event) {
   const canvas = $("visual-note-canvas");
   const rect = canvas.getBoundingClientRect();
@@ -2155,6 +2178,7 @@ function bind() {
   $("visual-note-import-answer").addEventListener("click", importLatestVisualAnswer);
   $("visual-note-export").addEventListener("click", exportVisualNote);
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
+  $("visual-note-export-pdf").addEventListener("click", exportVisualNotePdf);
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);
   $("visual-note-tool").addEventListener("change", () => {
     $("visual-note-status").textContent = $("visual-note-tool").value === "geometry"
