@@ -2929,8 +2929,8 @@ async function pollOverlayState() {
             const height = overlayRoot?.clientHeight || window.innerHeight;
             const clickOffset = (2.5 * 96) / 2.54;
             const isCenteredState = state === "thinking" || state === "speaking";
-            const anchorX = isCenteredState ? 28 : 32.8;
-            const anchorY = isCenteredState ? 28 : 18;
+            const anchorX = isCenteredState ? 28 : 7.7;
+            const anchorY = isCenteredState ? 28 : 1.2;
             const targetX = ((point.x - monitor.left) / monitor.width) * width + clickOffset;
             const targetY = ((point.y - monitor.top) / monitor.height) * height + clickOffset;
             const maxLeft = Math.max(0, width - marker.offsetWidth);

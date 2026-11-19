@@ -1686,6 +1686,7 @@ body.overlay-mode .overlay-root {
   width: 36px;
   height: 36px;
   overflow: visible;
+  transform-origin: 7.7px 1.2px;
 }
 .overlay-cursor-shape {
   fill: #075bdc;
@@ -1712,7 +1713,7 @@ body.overlay-mode .overlay-root {
   border-radius: 50%;
   background: #075bdc;
   box-shadow: 0 0 9px rgba(29, 128, 255, 0.85);
-  animation: overlay-dot-fold 1.8s ease-in-out infinite;
+  animation: overlay-dot-fold 2.2s cubic-bezier(.45, 0, .2, 1) infinite;
 }
 .overlay-thinking-dots i:nth-child(1) { left: 21px; top: 4px; --fold-x: 0px; --fold-y: 17px; }
 .overlay-thinking-dots i:nth-child(2) { left: 5px; top: 34px; --fold-x: 16px; --fold-y: -13px; }
@@ -1730,15 +1731,16 @@ body.overlay-mode .overlay-root {
   border: 3px solid #06111f;
   border-radius: 50%;
   background: #075bdc;
-  box-shadow: 0 0 14px rgba(29, 128, 255, 0.85);
+  box-shadow: inset 0 3px 5px rgba(151, 204, 255, .2), 0 0 14px rgba(29, 128, 255, .7), 0 0 24px rgba(29, 128, 255, .25);
   animation: overlay-heartbeat 1.35s ease-in-out infinite;
+  will-change: transform;
 }
 .overlay-click-ripple {
   display: none;
   position: absolute;
   z-index: 0;
-  left: 32.8px;
-  top: 18px;
+  left: 7.7px;
+  top: 1.2px;
   width: 12px;
   height: 12px;
   border: 2px solid #fff;
@@ -2061,15 +2063,15 @@ body.voice-close-mode > :not(.voice-close-button) { display: none !important; }
 
 @keyframes overlay-dot-fold {
   0%, 100% { transform: translate(0, 0); }
-  45%, 55% { transform: translate(var(--fold-x), var(--fold-y)); }
+  42%, 58% { transform: translate(var(--fold-x), var(--fold-y)); }
 }
 
 @keyframes overlay-heartbeat {
   0%, 100% { transform: scale(1); }
-  12% { transform: scale(1.22); }
-  25% { transform: scale(0.98); }
-  36% { transform: scale(1.15); }
-  48% { transform: scale(1); }
+  14% { transform: scale(1.17); }
+  28% { transform: scale(1.02); }
+  39% { transform: scale(1.11); }
+  58% { transform: scale(1); }
 }
 
 @keyframes overlay-click-ripple {
@@ -2120,7 +2122,7 @@ body.voice-close-mode > :not(.voice-close-button) { display: none !important; }
 .overlay-state-thinking .overlay-cursor { display: none; }
 .overlay-state-thinking .overlay-thinking-dots {
   display: block;
-  animation: overlay-thinking-fold 1.8s linear infinite;
+  animation: overlay-thinking-fold 2.2s linear infinite;
 }
 .overlay-state-thinking .overlay-speaking-orb { display: none; }
 .overlay-state-thinking .overlay-marker { animation: none; }
@@ -2138,7 +2140,7 @@ body.voice-close-mode > :not(.voice-close-button) { display: none !important; }
 .overlay-state-speaking[data-speech-meter="true"] .overlay-speaking-orb i {
   animation: none;
   transform: scale(calc(1 + var(--speech-level, 0) * .55));
-  transition: transform 70ms ease-out;
+  transition: transform 120ms cubic-bezier(.22, .8, .3, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .overlay-state-speaking[data-speech-meter="true"] .overlay-speaking-orb i { transform: none; transition: none; }
