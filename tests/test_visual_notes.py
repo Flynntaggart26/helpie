@@ -25,6 +25,18 @@ class VisualNoteTests(unittest.TestCase):
         self.file_patch.start()
         self.addCleanup(self.file_patch.stop)
 
+    def test_edited_geometry_reopens_with_constraints(self) -> None:
+        item = {"kind": "geometry", "x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8,
+                "objects": [
+                    {"kind": "point", "x": 0.35, "y": 0.45, "label": "A"},
+                    {"kind": "segment", "x1": 0.2, "y1": 0.4, "x2": 0.8, "y2": 0.4, "label": "line"},
+                    {"kind": "circle", "cx": 0.6, "cy": 0.5, "radius": 0.2, "label": "C"},
+                    {"kind": "polygon", "points": [[0.1, 0.1], [0.8, 0.2], [0.4, 0.9]], "label": "P"},
+                ], "constraints": [{"kind": "horizontal", "objects": [1]}]}
+        saved = visual_notes.save_note("", "Geometry", [], [item])
+        restored = visual_notes.get_note(saved["id"])
+        self.assertEqual(restored["visual_items"], [item])
+
     def test_create_list_reopen_and_edit_preserves_note_id(self) -> None:
         created = visual_notes.save_note("", "Sketch", [stroke()])
 

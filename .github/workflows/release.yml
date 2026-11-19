@@ -53,7 +53,10 @@ jobs:
 
       - name: Check frontend JavaScript syntax
         shell: pwsh
-        run: node --check ui/app.js
+        run: |
+          node --check ui/app.js
+          node --check ui/geometry-edit.js
+          node --test tests/test_geometry_edit.cjs
 
       - name: Build Tauri installer
         shell: pwsh

@@ -316,6 +316,7 @@ async function loadNotes() {
 }
 
 const VISUAL_NOTE_COLORS = new Set(["#55d6ff", "#f59e0b", "#f472b6", "#f8fafc"]);
+let visualPointEditorObject = null;
 
 function drawVisualNoteCanvas() {
   const canvas = $("visual-note-canvas");
@@ -365,19 +366,12 @@ function drawVisualNoteCanvas() {
 function refreshVisualPointOptions() {
   const select = $("visual-point-select");
   if (!select) return;
-  const choices = [];
-  state.visualNoteItems.forEach((item, itemIndex) => {
-    if (item.kind !== "geometry" || !Array.isArray(item.objects)) return;
-    item.objects.forEach((object, objectIndex) => {
-      if (object.kind === "point") choices.push({ key: `${itemIndex}:${objectIndex}`,
-        label: `Geometry ${itemIndex + 1}, point ${objectIndex + 1}${object.label ? `: ${object.label}` : ""}` });
-    });
-  });
+  const choices = HelpieGeometry.handles(state.visualNoteItems);
   const previous = select.value;
   select.replaceChildren();
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = choices.length ? "Choose a point" : "No geometry points";
+  empty.textContent = choices.length ? "Choose a handle" : "No geometry handles";
   select.appendChild(empty);
   choices.forEach((choice) => {
     const option = document.createElement("option");
@@ -386,22 +380,20 @@ function refreshVisualPointOptions() {
     select.appendChild(option);
   });
   if (choices.some((choice) => choice.key === previous)) select.value = previous;
+  const selected = selectedVisualPoint();
+  if ((selected?.object || null) !== visualPointEditorObject) loadVisualPointEditor();
 }
 
 function selectedVisualPoint() {
-  const value = $("visual-point-select").value;
-  if (!/^\d+:\d+$/.test(value)) return null;
-  const [itemIndex, objectIndex] = value.split(":").map(Number);
-  const item = state.visualNoteItems[itemIndex];
-  const point = item?.kind === "geometry" ? item.objects?.[objectIndex] : null;
-  return point?.kind === "point" ? point : null;
+  return HelpieGeometry.resolve(state.visualNoteItems, $("visual-point-select").value);
 }
 
 function loadVisualPointEditor() {
   const point = selectedVisualPoint();
+  visualPointEditorObject = point?.object || null;
   $("visual-point-x").value = point ? String(Math.round(point.x * 10000) / 100) : "";
   $("visual-point-y").value = point ? String(Math.round(point.y * 10000) / 100) : "";
-  $("visual-point-label").value = point?.label || "";
+  $("visual-point-label").value = point?.object.label || "";
 }
 
 function drawVisualNoteItems(context, width, height) {
@@ -2070,20 +2062,23 @@ function bind() {
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);
   $("visual-point-apply").addEventListener("click", () => {
-    const point = selectedVisualPoint();
     const xField = $("visual-point-x"), yField = $("visual-point-y");
     const x = Number(xField.value), y = Number(yField.value);
-    if (!point || !xField.value.trim() || !yField.value.trim()
+    if (!xField.value.trim() || !yField.value.trim()
         || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
-      $("visual-note-status").textContent = "Choose a point and enter coordinates from 0 to 100.";
+      $("visual-note-status").textContent = "Choose a handle and enter coordinates from 0 to 100.";
+      return;
+    }
+    const edit = HelpieGeometry.propose(state.visualNoteItems, $("visual-point-select").value,
+      x / 100, y / 100, $("visual-point-label").value);
+    if (!edit) {
+      $("visual-note-status").textContent = "That change is invalid. Keep segments nonzero and circles inside the geometry box.";
       return;
     }
     pushVisualNoteUndo();
-    point.x = x / 100;
-    point.y = y / 100;
-    point.label = $("visual-point-label").value.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 32);
+    state.visualNoteItems[edit.i].objects[edit.j] = edit.object;
     state.visualNoteDirty = true;
-    $("visual-note-status").textContent = "Point updated. Save the note to keep the change.";
+    $("visual-note-status").textContent = "Geometry updated. Save the note to keep the change.";
     drawVisualNoteCanvas();
   });
   $("visual-note-title").addEventListener("input", () => { state.visualNoteDirty = true; });

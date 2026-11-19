@@ -152,16 +152,17 @@
           <canvas id="visual-note-canvas" class="visual-note-canvas" aria-label="Visual note drawing canvas. Use a mouse, pen, or touch to draw."></canvas>
           <div id="visual-note-description" class="visual-note-description" aria-live="polite"></div>
           <fieldset class="visual-note-point-editor">
-            <legend>Edit a geometry point</legend>
-            <label for="visual-point-select">Point</label>
-            <select id="visual-point-select"><option value="">No geometry points</option></select>
+            <legend>Edit a geometry point or handle</legend>
+            <span class="muted">Coordinates are relative to the geometry box. Relation marks are visual and do not move other shapes.</span>
+            <label for="visual-point-select">Point or handle</label>
+            <select id="visual-point-select"><option value="">No geometry handles</option></select>
             <label for="visual-point-x">X (0–100%)</label>
             <input id="visual-point-x" type="number" min="0" max="100" step="1" />
             <label for="visual-point-y">Y (0–100%)</label>
             <input id="visual-point-y" type="number" min="0" max="100" step="1" />
             <label for="visual-point-label">Label</label>
             <input id="visual-point-label" type="text" maxlength="32" />
-            <button class="ghost" id="visual-point-apply" type="button">Apply point changes</button>
+            <button class="ghost" id="visual-point-apply" type="button">Apply geometry changes</button>
           </fieldset>
           <div class="visual-note-status muted" id="visual-note-status" aria-live="polite">Draw a sketch, then save it.</div>
           <h3>Saved visual notes</h3>
@@ -798,6 +799,7 @@
   </div>
 
   <div class="toast" id="toast" hidden></div>
+  <script src="geometry-edit.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
