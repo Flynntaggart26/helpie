@@ -254,6 +254,7 @@ class VoiceStopTests(unittest.TestCase):
             handler.do_POST()
         app.cancel_turns.assert_called_once()
         app.cancel_voice.assert_called_once()
+        app.recycle_broker.cancel.assert_called_once()
         shell.request.assert_called_once_with("hide-overlay")
         shell.stop_live_capture.assert_called_once()
         handler._json.assert_called_once_with({"ok": True})

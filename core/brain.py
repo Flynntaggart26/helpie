@@ -849,7 +849,14 @@ class Brain:
         if (re.search(rf"\b(?:list|show|which|what)\b.{{0,100}}\b{file_term}\b.{{0,100}}\b(?:deleted|removed|recycled)\b", t)
                 or re.search(rf"\b(?:list|show|which|what)\b.{{0,100}}\b(?:deleted|removed|recycled)\b.{{0,100}}\b{file_term}\b", t)
                 or re.search(r"\bsil(?:inen|diğin|digin|diğim|digim)\w*\b.{0,100}\bdosya\w*\b", t)):
-            return "There are no completed Helpie Recycle Bin moves to list in this version."
+            audit.log("Viewed Recycle Bin activity", source="files")
+            broker = getattr(getattr(self, "_app", None), "recycle_broker", None)
+            if broker is None or not broker.available():
+                return "Recycle Bin moves are not available yet. There are no completed Helpie moves to list."
+            items = broker.recent()
+            if not items:
+                return "There are no completed Helpie Recycle Bin moves in this session."
+            return "Moved to the Recycle Bin during this session:\n" + "\n".join(f"- {item}" for item in items)
         if (re.search(rf"\b{removal}\b.{{0,160}}\b{file_term}\b", t)
                 or re.search(rf"\b{file_term}\b.{{0,160}}\b{removal}\b", t)):
             audit.log("File removal request not executed", ok=False, source="files")

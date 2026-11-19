@@ -101,3 +101,7 @@ class RecycleBroker:
         """Only moves reported successful by the adapter in this session."""
         with self._lock:
             return list(reversed(self._history))
+
+    def available(self) -> bool:
+        """True only when an actual recycle adapter has been configured."""
+        return self._recycle is not None

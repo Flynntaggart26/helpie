@@ -177,6 +177,7 @@ function setView(view) {
     requestAnimationFrame(resizeVisualNoteCanvas);
   }
   if (view === "reminders") loadReminders();
+  if (view === "commands") loadRecycleHistory();
   if (view === "routines") {
     loadRoutines();
     loadTemplates();
@@ -187,6 +188,25 @@ function setView(view) {
   }
   if (view === "tiny") {
     startTinyDashboard();
+  }
+}
+
+async function loadRecycleHistory() {
+  const list = $("recycle-history-items"), status = $("recycle-history-status");
+  try {
+    const result = await api("/api/recycle/history");
+    list.replaceChildren();
+    for (const name of result.items || []) {
+      const row = document.createElement("li");
+      row.textContent = name;
+      list.appendChild(row);
+    }
+    status.textContent = result.available
+      ? (result.items.length ? `${result.items.length} item(s) moved this session.` : "No items moved by Helpie in this session.")
+      : "Recycle Bin moves are not available yet. No Helpie moves can be listed.";
+  } catch (_) {
+    list.replaceChildren();
+    status.textContent = "Could not load Recycle Bin activity.";
   }
 }
 
@@ -2027,6 +2047,7 @@ async function paletteRun(item) {
 /*  Wiring                                                             */
 /* ------------------------------------------------------------------ */
 function bind() {
+  $("recycle-history-refresh").addEventListener("click", loadRecycleHistory);
   const tinyClose = $("tiny-close");
   if (tinyClose) {
     tinyClose.addEventListener("click", () => {

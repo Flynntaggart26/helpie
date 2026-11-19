@@ -20,6 +20,22 @@ class FileReviewApiTests(unittest.TestCase):
         handler._json = Mock()
         return handler
 
+    def test_recycle_history_requires_auth_and_only_returns_broker_receipts(self) -> None:
+        handler = self.handler({})
+        handler.path = "/api/recycle/history"
+        handler.app.recycle_broker.available.return_value = True
+        handler.app.recycle_broker.recent.return_value = ["example.txt"]
+        with patch.object(server.audit, "log") as log:
+            handler.do_GET()
+        handler._json.assert_called_once_with({"available": True, "items": ["example.txt"]})
+        log.assert_called_once_with("Viewed Recycle Bin activity", source="files")
+        handler = self.handler({})
+        handler.path = "/api/recycle/history"
+        handler._authorized_api.return_value = False
+        handler.do_GET()
+        handler.app.recycle_broker.recent.assert_not_called()
+        handler._json.assert_not_called()
+
     def test_recheck_uses_fixed_root_and_audits(self) -> None:
         selected = [{"path": "item.txt", "fingerprint": "a" * 64}]
         handler = self.handler({"folder": "downloads", "kind": "duplicates", "selected": selected})

@@ -23,6 +23,7 @@ class RecycleBrokerTests(unittest.TestCase):
             broker.prepare(self.item)
         self.verify.assert_not_called()
         self.assertEqual(broker.recent(), [])
+        self.assertFalse(broker.available())
 
     def test_explicit_approval_is_one_shot_and_records_only_success(self) -> None:
         token = self.broker.prepare(self.item)

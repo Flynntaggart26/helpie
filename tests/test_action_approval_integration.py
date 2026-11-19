@@ -149,6 +149,16 @@ class ApprovalIntegrationTests(unittest.TestCase):
                 self.assertIn("no completed", self.agent.handle(command).lower())
         self.llm.chat.assert_not_called()
 
+    def test_deleted_files_list_uses_only_session_receipts(self) -> None:
+        app = Mock()
+        app.recycle_broker.available.return_value = True
+        app.recycle_broker.recent.return_value = ["example.txt", "folder/report.pdf"]
+        self.agent._app = app
+        reply = self.agent.handle("show files you deleted")
+        self.assertIn("example.txt", reply)
+        self.assertIn("folder/report.pdf", reply)
+        self.llm.chat.assert_not_called()
+
     def test_recycle_bin_requires_confirmation_and_executes_once(self) -> None:
         self.dispatch.stop()
         with patch.object(brain.actions, "empty_recycle_bin", return_value="Done") as empty:

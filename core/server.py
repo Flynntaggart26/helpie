@@ -27,6 +27,7 @@ import history
 import memory
 import plugins
 import reminders
+import recycle_broker
 import routines
 import updater
 import visual_notes
@@ -118,6 +119,7 @@ class App:
         self._voice_level = 0.0
         self.file_review_drafts = file_review.ReviewDrafts(
             native_reader=windows_file_identity.read_guarded_identity if os.name == "nt" else None)
+        self.recycle_broker = recycle_broker.RecycleBroker(verify=lambda _candidate: False)
         self._speech_level: Optional[float] = None
         self._closing = False
         self._speaking = False
@@ -736,6 +738,7 @@ class App:
     def shutdown(self) -> None:
         self._closing = True
         self.cancel_voice()
+        self.recycle_broker.cancel()
         if self._live_capture_status.get("active"):
             try:
                 import shell
@@ -892,6 +895,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/"):
             if path != "/api/health" and not self._authorized_api():
+                return
+            if path == "/api/recycle/history":
+                audit.log("Viewed Recycle Bin activity", source="files")
+                self._json({"available": app.recycle_broker.available(),
+                            "items": app.recycle_broker.recent()})
                 return
             if path == "/api/init":
                 current = app.history.current_chat()
@@ -1097,6 +1105,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/stop":
             app.cancel_turns()
             app.cancel_voice()
+            app.recycle_broker.cancel()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
             app.clear_visual_annotations()
@@ -1151,6 +1160,7 @@ class Handler(BaseHTTPRequestHandler):
 
             app.cancel_turns()
             app.cancel_voice()
+            app.recycle_broker.cancel()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
             app.clear_visual_annotations()
