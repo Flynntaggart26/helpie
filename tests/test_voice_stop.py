@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import array
 import sys
 import threading
 import types
@@ -15,6 +16,22 @@ import server
 
 
 class VoiceStopTests(unittest.TestCase):
+    def test_playback_levels_follow_only_mocked_output_audio(self) -> None:
+        pygame_stub = types.ModuleType("pygame")
+        pygame_stub.mixer = Mock()
+        pygame_stub.mixer.get_init.return_value = (8000, -16, 1)
+        pygame_stub.mixer.Sound.return_value.get_raw.return_value = array.array("h", [0] * 400 + [8192] * 400).tobytes()
+        pygame_stub.mixer.music.get_busy.side_effect = [True, True, False]
+        pygame_stub.mixer.music.get_pos.side_effect = [0, 50]
+        levels = []
+        speaker = voice.Speaker.__new__(voice.Speaker)
+        speaker._stop = threading.Event()
+        speaker.volume = 1.0
+        speaker.on_level = levels.append
+        with patch.dict(sys.modules, {"pygame": pygame_stub}), patch.object(voice.time, "sleep"):
+            self.assertTrue(speaker._play_file("mock.mp3", threading.Event()))
+        self.assertEqual(levels, [0.0, 1.0, None])
+
     def test_voice_selection_endpoint_updates_shared_speaker_settings(self) -> None:
         app = Mock()
         handler = server.Handler.__new__(server.Handler)

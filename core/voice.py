@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import array
 import io
 import math
 import os
@@ -420,6 +421,7 @@ class Speaker:
         on_start: Optional[Callable[[], None]] = None,
         on_end: Optional[Callable[[], None]] = None,
         on_error: Optional[Callable[[str], None]] = None,
+        on_level: Optional[Callable[[Optional[float]], None]] = None,
     ) -> None:
         self.voice = voice
         self.rate = rate
@@ -428,6 +430,7 @@ class Speaker:
         self.on_start = on_start
         self.on_end = on_end
         self.on_error = on_error
+        self.on_level = on_level
         self._queue: "queue.Queue[Optional[tuple[str, Optional[Callable[[str], None]], threading.Event]]]" = queue.Queue()
         self._stop = threading.Event()
         self._speech_lock = threading.Lock()
@@ -565,6 +568,17 @@ class Speaker:
                 pygame.mixer.init(frequency=44100)
             if cancel.is_set():
                 return False
+            samples = None
+            frequency = channels = 0
+            try:
+                frequency, sample_format, channels = pygame.mixer.get_init()
+                if sample_format == -16 and 1 <= channels <= 2 and 8000 <= frequency <= 192000:
+                    raw = pygame.mixer.Sound(path).get_raw()
+                    if len(raw) <= 32 * 1024 * 1024:
+                        samples = array.array("h")
+                        samples.frombytes(raw)
+            except Exception:
+                samples = None
             pygame.mixer.music.load(path)
             pygame.mixer.music.set_volume(max(0.0, min(1.0, self.volume)))
             pygame.mixer.music.play()
@@ -572,10 +586,21 @@ class Speaker:
                 if self._stop.is_set() or cancel.is_set():
                     pygame.mixer.music.stop()
                     return False
+                if samples is not None and self.on_level:
+                    position = pygame.mixer.music.get_pos()
+                    if position >= 0:
+                        start = int(position * frequency / 1000) * channels
+                        end = min(len(samples), start + int(frequency * 0.05) * channels)
+                        values = samples[start:end:max(1, (end - start) // 256)]
+                        level = (sum(value * value for value in values) / len(values)) ** 0.5 if values else 0.0
+                        self.on_level(min(1.0, level / 8192.0 * self.volume))
                 time.sleep(0.05)
             return True
         except Exception:
             return False
+        finally:
+            if self.on_level:
+                self.on_level(None)
 
     def _run(self) -> None:
         try:

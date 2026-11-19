@@ -2135,6 +2135,14 @@ body.voice-close-mode > :not(.voice-close-button) { display: none !important; }
 .overlay-state-speaking .overlay-cursor { display: none; }
 .overlay-state-speaking .overlay-thinking-dots { display: none; }
 .overlay-state-speaking .overlay-speaking-orb { display: block; }
+.overlay-state-speaking[data-speech-meter="true"] .overlay-speaking-orb i {
+  animation: none;
+  transform: scale(calc(1 + var(--speech-level, 0) * .55));
+  transition: transform 70ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay-state-speaking[data-speech-meter="true"] .overlay-speaking-orb i { transform: none; transition: none; }
+}
 .overlay-state-speaking .overlay-hint {
   background: rgba(8, 126, 231, 0.88);
   color: #ffffff;

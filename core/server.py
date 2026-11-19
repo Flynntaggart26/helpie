@@ -115,6 +115,7 @@ class App:
         self._pointer_click_id = 0
         self._listening = False
         self._voice_level = 0.0
+        self._speech_level: Optional[float] = None
         self._closing = False
         self._speaking = False
         self._cloud_voice_active = False
@@ -142,6 +143,7 @@ class App:
             on_start=self._on_speak_start,
             on_end=self._on_speak_end,
             on_error=self._on_speak_error,
+            on_level=self._on_speak_level,
         )
         self.listener = Listener()
         self.wake_word = WakeWordListener(on_wake=self._on_wake_word)
@@ -370,6 +372,7 @@ class App:
 
     def _on_speak_end(self) -> None:
         self._speaking = False
+        self._speech_level = None
         self._cloud_voice_active = False
         self.bus.push({"type": "cloud_voice", "active": False})
         if not self._listening:
@@ -377,6 +380,9 @@ class App:
 
     def _on_speak_error(self, message: str) -> None:
         self.bus.push({"type": "error", "text": message})
+
+    def _on_speak_level(self, level: Optional[float]) -> None:
+        self._speech_level = level
 
     def _speak(self, text: str) -> None:
         self.speaker.say(text)
@@ -956,6 +962,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/overlay/state":
                 self._json({"state": app.state,
                             "voice_level": app._voice_level if app.state in {"listening", "hearing"} else 0.0,
+                            "speech_level": app._speech_level if app.state == "speaking" else None,
                             "cloud_voice_active": app._cloud_voice_active,
                             "screen_frame_transfer": dict(app._screen_frame_transfer),
                             "capture_session": app.overlay_capture_status(),

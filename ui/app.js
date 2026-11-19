@@ -2901,6 +2901,11 @@ async function pollOverlayState() {
         const state = data.state || "idle";
         const voiceBanner = overlayRoot?.querySelector(".voice-banner");
         if (voiceBanner) voiceBanner.style.setProperty("--voice-level", String(Math.max(0, Math.min(1, Number(data.voice_level) || 0))));
+        const measuredSpeech = state === "speaking" && typeof data.speech_level === "number" && Number.isFinite(data.speech_level);
+        if (overlayRoot) {
+          overlayRoot.dataset.speechMeter = measuredSpeech ? "true" : "false";
+          overlayRoot.style.setProperty("--speech-level", String(measuredSpeech ? Math.max(0, Math.min(1, data.speech_level)) : 0));
+        }
         const cloudActive = !!data.cloud_voice_active;
         const transfer = data.screen_frame_transfer || { active: false, remote: false };
         const remoteCloudActive = cloudActive || (transfer.active && transfer.remote);
