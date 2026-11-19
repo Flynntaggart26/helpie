@@ -2217,10 +2217,31 @@ function bind() {
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-note-export-pdf").addEventListener("click", exportVisualNotePdf);
   $("visual-note-export-svg").addEventListener("click", exportVisualNoteSvg);
+  function updateReviewSelection() {
+    const count = $("file-review-results").querySelectorAll('input[type="checkbox"]:checked').length;
+    $("file-review-selection").textContent = `${count} item(s) selected for review. Nothing is deleted.`;
+    $("file-review-clear").disabled = count === 0;
+  }
+  function clearReviewResults() {
+    $("file-review-results").replaceChildren();
+    updateReviewSelection();
+  }
+  $("file-review-clear").addEventListener("click", () => {
+    $("file-review-results").querySelectorAll('input[type="checkbox"]:checked').forEach(input => { input.checked = false; });
+    updateReviewSelection();
+  });
+  for (const id of ["file-review-folder", "file-review-kind"]) {
+    $(id).addEventListener("change", () => {
+      clearReviewResults();
+      $("file-review-status").textContent = "Options changed. Review again to see current results.";
+    });
+  }
   $("file-review-start").addEventListener("click", async () => {
     const button = $("file-review-start"), status = $("file-review-status"), list = $("file-review-results");
     button.disabled = true;
-    list.replaceChildren();
+    $("file-review-folder").disabled = true;
+    $("file-review-kind").disabled = true;
+    clearReviewResults();
     status.textContent = "Reviewing files on this device…";
     try {
       const result = await api("/api/file-review/preview", { method: "POST", body: JSON.stringify({
@@ -2228,7 +2249,14 @@ function bind() {
       }) });
       for (const item of result.items || []) {
         const row = document.createElement("li");
-        row.textContent = item.matches ? `${item.path} — matches ${item.matches} (${item.size} bytes)` : item.path;
+        const label = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.addEventListener("change", updateReviewSelection);
+        const description = document.createElement("span");
+        description.textContent = item.matches ? `${item.path} — matches ${item.matches} (${item.size} bytes)` : item.path;
+        label.append(checkbox, description);
+        row.appendChild(label);
         list.appendChild(row);
       }
       status.textContent = `${result.root}: ${result.items.length} result(s). Nothing was deleted.${result.limited ? " Review was limited; results may be incomplete." : ""}`;
@@ -2236,6 +2264,8 @@ function bind() {
       status.textContent = "Could not review that folder. Check that it exists and is accessible.";
     } finally {
       button.disabled = false;
+      $("file-review-folder").disabled = false;
+      $("file-review-kind").disabled = false;
     }
   });
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);

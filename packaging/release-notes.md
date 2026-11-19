@@ -20,6 +20,17 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
+- The companion has a refreshed glowing pointer, click effect, animated thinking
+  dots and a speaking orb. The orb can react to Edge speech output when decoded
+  audio is available; otherwise it uses a heartbeat animation. A small close
+  button stops and hides the companion.
+- The voice list includes additional neural voices. A voice selection saves
+  immediately; Microsoft online speech remains separately opt-in. If online
+  playback fails, Helpie reports its fallback to the default Windows voice.
+- The Commands page can scan for duplicate files or empty folders and select
+  individual results for review. This is read-only; no files are deleted.
+- Visual notes support SVG and image-based PDF exports, plus geometry handle
+  dragging and keyboard editing. Desktop accessibility review remains open.
 - Voice recordings are decoded as WAV at the microphone's actual sample rate.
   Stop cancels the current voice turn and queued speech; Ctrl+H release still
   submits the recorded phrase.
@@ -32,7 +43,7 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
   Bin requires explicit confirmation. Duplicate-file and empty-folder deletion
   is temporarily unavailable until per-item review and safe confirmation exist;
   previews do not delete files.
-- The pointer is smaller and darker. A spoken “close” or “kapat” closes Helpie.
+- A spoken “close” or “kapat” closes Helpie.
 - Hold Ctrl+H to speak and release to send. The companion displays a top-center
   listening panel with a color animation and a waveform that responds to voice level.
 - The Helpie pointer follows the mouse with a down-right offset and shows a click

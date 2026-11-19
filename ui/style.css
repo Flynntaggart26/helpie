@@ -1727,7 +1727,7 @@ body.overlay-mode .overlay-root {
 }
 .overlay-speaking-orb i {
   position: absolute;
-  inset: 6px;
+  inset: 8px;
   border: 3px solid #06111f;
   border-radius: 50%;
   background: #075bdc;
@@ -1735,6 +1735,9 @@ body.overlay-mode .overlay-root {
   animation: overlay-heartbeat 1.35s ease-in-out infinite;
   will-change: transform;
 }
+#file-review-results { padding-left: 1.5rem; }
+#file-review-results label { display: flex; align-items: baseline; gap: 10px; padding: 5px 0; overflow-wrap: anywhere; }
+#file-review-results input { flex: none; accent-color: var(--accent); }
 .overlay-click-ripple {
   display: none;
   position: absolute;
