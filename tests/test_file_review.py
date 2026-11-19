@@ -122,6 +122,23 @@ class FileReviewTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 drafts.prepare(Path("."), "empty_folders", selected)
 
+    def test_native_identity_change_cannot_confirm_review(self) -> None:
+        selected = [{"path": "folder/item", "fingerprint": "a" * 64}]
+        valid = {"limited": False, "items": [{"unchanged": True}]}
+        identities = iter(["old-identity", "new-identity"])
+        drafts = file_review.ReviewDrafts(native_reader=lambda root, name: next(identities))
+        with patch.object(file_review, "recheck", return_value=valid):
+            token = drafts.prepare(Path("C:/test"), "empty_folders", selected)
+            with self.assertRaises(ValueError):
+                drafts.confirm(token)
+
+    def test_native_snapshot_rejects_parent_and_absolute_paths(self) -> None:
+        valid = {"limited": False, "items": [{"unchanged": True}]}
+        drafts = file_review.ReviewDrafts(native_reader=lambda root, name: "identity")
+        for name in ("../outside", "/outside", "C:/outside", "dir\\outside"):
+            with self.subTest(path=name), patch.object(file_review, "recheck", return_value=valid), self.assertRaises(ValueError):
+                drafts.prepare(Path("C:/test"), "empty_folders", [{"path": name, "fingerprint": "a" * 64}])
+
     def test_cancel_while_preparing_does_not_create_draft(self) -> None:
         entered, resume = threading.Event(), threading.Event()
         drafts = file_review.ReviewDrafts()

@@ -30,6 +30,7 @@ import reminders
 import routines
 import updater
 import visual_notes
+import windows_file_identity
 from brain import Brain, VISUAL_SCHEMA_VERSION
 from voice import Listener, Speaker, WakeWordListener, list_microphones
 
@@ -115,7 +116,8 @@ class App:
         self._pointer_click_id = 0
         self._listening = False
         self._voice_level = 0.0
-        self.file_review_drafts = file_review.ReviewDrafts()
+        self.file_review_drafts = file_review.ReviewDrafts(
+            native_reader=windows_file_identity.read_guarded_identity if os.name == "nt" else None)
         self._speech_level: Optional[float] = None
         self._closing = False
         self._speaking = False

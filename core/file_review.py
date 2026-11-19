@@ -8,7 +8,7 @@ import os
 import stat
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 MAX_ENTRIES = 2000
 MAX_RESULTS = 100
@@ -94,7 +94,9 @@ def preview(root: Path, kind: str) -> dict:
                 digest = hashlib.sha256()
                 with path.open("rb") as stream:
                     opened = os.fstat(stream.fileno())
-                    if _is_link(opened) or _identity(opened) != _identity(before):
+                    # On Windows path stat and handle fstat can report different
+                    # ctime values; compare shared identity, size and write time.
+                    if _is_link(opened) or _identity(opened)[:4] != _identity(before)[:4]:
                         limited = True
                         continue
                     while True:
@@ -109,7 +111,7 @@ def preview(root: Path, kind: str) -> dict:
                     after = os.fstat(stream.fileno())
                     if limited and hashed_bytes > MAX_HASH_BYTES:
                         continue
-                    if _identity(after) != _identity(before) or time.monotonic() >= deadline:
+                    if _identity(after)[:4] != _identity(before)[:4] or time.monotonic() >= deadline:
                         limited = True
                         continue
                 hashes.setdefault((size, digest.hexdigest()), []).append(
@@ -163,10 +165,11 @@ def recheck(root: Path, kind: str, selected: list[dict]) -> dict:
 class ReviewDrafts:
     """One short-lived confirmation for a read-only review, never for deletion."""
 
-    def __init__(self) -> None:
+    def __init__(self, native_reader=None) -> None:
         self._lock = threading.Lock()
         self._draft = None
         self._generation = 0
+        self._native_reader = native_reader
 
     @staticmethod
     def _verify(root: Path, kind: str, selected: list[dict]) -> None:
@@ -174,18 +177,34 @@ class ReviewDrafts:
         if result["limited"] or not all(item["unchanged"] for item in result["items"]):
             raise ValueError("Review is incomplete or items have changed.")
 
+    def _native_snapshot(self, root: Path, selected: list[dict]) -> tuple:
+        if self._native_reader is None:
+            return ()
+        identities = []
+        for item in selected:
+            name = item["path"]
+            relative = PurePosixPath(name)
+            if (relative.is_absolute() or not relative.parts or "\\" in name or ":" in name
+                    or any(part in (".", "..") for part in relative.parts)):
+                raise ValueError("Invalid relative file path.")
+            identities.append((name, self._native_reader(root, name)))
+        return tuple(identities)
+
     def prepare(self, root: Path, kind: str, selected: list[dict]) -> str:
         with self._lock:
             self._generation += 1
             generation = self._generation
             self._draft = None
         self._verify(root, kind, selected)
+        native_snapshot = self._native_snapshot(root, selected)
+        if self._native_reader is not None:
+            self._verify(root, kind, selected)
         token = os.urandom(32).hex()
         snapshot = [{"path": item["path"], "fingerprint": item["fingerprint"]} for item in selected]
         with self._lock:
             if generation != self._generation:
                 raise ValueError("Review was cancelled.")
-            self._draft = (token, time.monotonic() + DRAFT_SECONDS, root, kind, snapshot)
+            self._draft = (token, time.monotonic() + DRAFT_SECONDS, root, kind, snapshot, native_snapshot)
         return token
 
     def cancel(self) -> None:
@@ -203,6 +222,10 @@ class ReviewDrafts:
                 or time.monotonic() >= draft[1]):
             raise ValueError("Review confirmation is invalid or expired.")
         self._verify(draft[2], draft[3], draft[4])
+        if self._native_reader is not None:
+            if self._native_snapshot(draft[2], draft[4]) != draft[5]:
+                raise ValueError("A selected file identity changed.")
+            self._verify(draft[2], draft[3], draft[4])
         with self._lock:
             if generation != self._generation or time.monotonic() >= draft[1]:
                 raise ValueError("Review was cancelled or expired.")
