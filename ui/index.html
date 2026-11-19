@@ -213,7 +213,16 @@
           <p class="muted" id="file-review-selection" aria-live="polite">No items selected. Selection is for review only; deletion is not available.</p>
           <button class="ghost" id="file-review-clear" type="button" disabled>Clear selection</button>
           <button class="ghost" id="file-review-recheck" type="button" disabled>Recheck selected items</button>
+          <button class="ghost" id="file-review-prepare" type="button" disabled>Review selection</button>
           <p class="muted" id="file-review-recheck-status" aria-live="polite">Rechecking is read-only. Results can change again at any time.</p>
+          <dialog id="file-review-dialog" class="file-review-dialog" aria-labelledby="file-review-dialog-title">
+            <h2 id="file-review-dialog-title">Confirm your review</h2>
+            <p>This confirms a read-only review. No files will be deleted or approved for deletion. The confirmation expires after 60 seconds.</p>
+            <p id="file-review-dialog-root"></p>
+            <ul id="file-review-dialog-items"></ul>
+            <button class="ghost" id="file-review-dialog-cancel" type="button">Cancel</button>
+            <button class="primary" id="file-review-dialog-confirm" type="button">Confirm review</button>
+          </dialog>
         </div>
         <div class="panel">
           <h2>What you can say</h2>

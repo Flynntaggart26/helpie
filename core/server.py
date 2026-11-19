@@ -115,6 +115,7 @@ class App:
         self._pointer_click_id = 0
         self._listening = False
         self._voice_level = 0.0
+        self.file_review_drafts = file_review.ReviewDrafts()
         self._speech_level: Optional[float] = None
         self._closing = False
         self._speaking = False
@@ -1025,7 +1026,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         app = self.app
 
-        if path in ("/api/file-review/preview", "/api/file-review/recheck"):
+        if path in ("/api/file-review/confirm-review", "/api/file-review/cancel-review"):
+            if path.endswith("/cancel-review"):
+                app.file_review_drafts.cancel()
+                audit.log("Cancelled read-only file review", source="files")
+                self._json({"ok": True})
+                return
+            try:
+                app.file_review_drafts.confirm(body.get("token"))
+            except (OSError, ValueError):
+                self._json({"error": "Review expired, changed, or could not be verified."}, 409)
+                return
+            audit.log("Confirmed read-only file review", source="files")
+            self._json({"ok": True, "deleted": False})
+            return
+        if path in ("/api/file-review/preview", "/api/file-review/recheck", "/api/file-review/prepare-review"):
             roots = {"downloads": "Downloads", "desktop": "Desktop", "documents": "Documents"}
             folder = body.get("folder")
             kind = body.get("kind")
@@ -1034,12 +1049,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 root = Path.home() / roots[folder]
-                result = (file_review.preview(root, kind) if path.endswith("/preview")
-                          else file_review.recheck(root, kind, body.get("selected")))
+                if path.endswith("/preview"):
+                    result = file_review.preview(root, kind)
+                elif path.endswith("/recheck"):
+                    result = file_review.recheck(root, kind, body.get("selected"))
+                else:
+                    result = {"token": app.file_review_drafts.prepare(root, kind, body.get("selected")),
+                              "expires_in_seconds": file_review.DRAFT_SECONDS}
             except (OSError, ValueError):
                 self._json({"error": "The selected folder could not be reviewed."}, 400)
                 return
             audit.log("Reviewed files without deletion" if path.endswith("/preview")
+                      else "Prepared read-only file review" if path.endswith("/prepare-review")
                       else "Rechecked files without deletion", source="files")
             self._json(result)
             return

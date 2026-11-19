@@ -2217,6 +2217,7 @@ function bind() {
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-note-export-pdf").addEventListener("click", exportVisualNotePdf);
   $("visual-note-export-svg").addEventListener("click", exportVisualNoteSvg);
+  let reviewRoot = "", reviewToken = null;
   function clearRecheckStatus() {
     $("file-review-results").querySelectorAll(".file-review-result-status").forEach(node => { node.textContent = ""; });
     $("file-review-recheck-status").textContent = "Rechecking is read-only. Results can change again at any time.";
@@ -2226,9 +2227,11 @@ function bind() {
     $("file-review-selection").textContent = `${count} item(s) selected for review. Nothing is deleted.`;
     $("file-review-clear").disabled = count === 0;
     $("file-review-recheck").disabled = count === 0;
+    $("file-review-prepare").disabled = count === 0;
   }
   function clearReviewResults() {
     $("file-review-results").replaceChildren();
+    reviewRoot = "";
     clearRecheckStatus();
     updateReviewSelection();
   }
@@ -2254,6 +2257,7 @@ function bind() {
       const result = await api("/api/file-review/preview", { method: "POST", body: JSON.stringify({
         folder: $("file-review-folder").value, kind: $("file-review-kind").value,
       }) });
+      reviewRoot = result.root;
       for (const item of result.items || []) {
         const row = document.createElement("li");
         const label = document.createElement("label");
@@ -2281,7 +2285,7 @@ function bind() {
   $("file-review-recheck").addEventListener("click", async () => {
     const selected = [...$("file-review-results").querySelectorAll('input[type="checkbox"]:checked')];
     if (!selected.length) return;
-    const controls = [$("file-review-start"), $("file-review-folder"), $("file-review-kind"), $("file-review-clear"), $("file-review-recheck"), ...$("file-review-results").querySelectorAll('input[type="checkbox"]')];
+    const controls = [$("file-review-start"), $("file-review-folder"), $("file-review-kind"), $("file-review-clear"), $("file-review-recheck"), $("file-review-prepare"), ...$("file-review-results").querySelectorAll('input[type="checkbox"]')];
     controls.forEach(control => { control.disabled = true; });
     clearRecheckStatus();
     const status = $("file-review-recheck-status");
@@ -2303,6 +2307,60 @@ function bind() {
     } finally {
       controls.forEach(control => { control.disabled = false; });
       updateReviewSelection();
+    }
+  });
+  $("file-review-prepare").addEventListener("click", async () => {
+    const selected = [...$("file-review-results").querySelectorAll('input[type="checkbox"]:checked')];
+    if (!selected.length) return;
+    const controls = [$("file-review-start"), $("file-review-folder"), $("file-review-kind"), $("file-review-clear"), $("file-review-recheck"), $("file-review-prepare"), ...$("file-review-results").querySelectorAll('input[type="checkbox"]')];
+    controls.forEach(control => { control.disabled = true; });
+    const status = $("file-review-recheck-status");
+    status.textContent = "Checking the selection before showing your review…";
+    try {
+      const result = await api("/api/file-review/prepare-review", { method: "POST", body: JSON.stringify({
+        folder: $("file-review-folder").value, kind: $("file-review-kind").value,
+        selected: selected.map(input => input.reviewItem),
+      }) });
+      reviewToken = result.token;
+      $("file-review-dialog-root").textContent = `Folder: ${reviewRoot} · ${selected.length} selected item(s)`;
+      const list = $("file-review-dialog-items");
+      list.replaceChildren();
+      for (const input of selected) {
+        const row = document.createElement("li");
+        row.textContent = input.closest("label").querySelector("span").textContent;
+        list.appendChild(row);
+      }
+      $("file-review-dialog").showModal();
+      status.textContent = "Review the selected items. Nothing will be deleted.";
+    } catch (_) {
+      status.textContent = "Could not prepare this review. Items may have changed or the scan was incomplete. Nothing was deleted.";
+    } finally {
+      controls.forEach(control => { control.disabled = false; });
+      updateReviewSelection();
+    }
+  });
+  $("file-review-dialog-cancel").addEventListener("click", () => $("file-review-dialog").close());
+  $("file-review-dialog").addEventListener("close", () => {
+    if (reviewToken) {
+      reviewToken = null;
+      api("/api/file-review/cancel-review", { method: "POST" }).catch(() => {});
+      $("file-review-recheck-status").textContent = "Review cancelled. Nothing was deleted.";
+    }
+  });
+  $("file-review-dialog-confirm").addEventListener("click", async () => {
+    if (!reviewToken) return;
+    const token = reviewToken;
+    reviewToken = null;
+    const confirmButton = $("file-review-dialog-confirm"), cancelButton = $("file-review-dialog-cancel");
+    confirmButton.disabled = cancelButton.disabled = true;
+    try {
+      await api("/api/file-review/confirm-review", { method: "POST", body: JSON.stringify({ token }) });
+      $("file-review-recheck-status").textContent = "Review confirmed. Nothing was deleted or approved for deletion.";
+    } catch (_) {
+      $("file-review-recheck-status").textContent = "Review expired or the items changed. Review them again. Nothing was deleted.";
+    } finally {
+      confirmButton.disabled = cancelButton.disabled = false;
+      $("file-review-dialog").close();
     }
   });
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);

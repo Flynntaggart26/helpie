@@ -41,6 +41,37 @@ class FileReviewApiTests(unittest.TestCase):
             handler.do_POST()
         self.assertEqual(handler._json.call_args.args[1], 400)
 
+    def test_confirm_review_is_read_only_and_rejects_invalid_token(self) -> None:
+        handler = self.handler({"token": "review-token"})
+        handler.path = "/api/file-review/confirm-review"
+        with patch.object(server.audit, "log") as log:
+            handler.do_POST()
+        handler.app.file_review_drafts.confirm.assert_called_once_with("review-token")
+        log.assert_called_once_with("Confirmed read-only file review", source="files")
+        handler._json.assert_called_once_with({"ok": True, "deleted": False})
+        handler = self.handler({"token": "wrong"})
+        handler.path = "/api/file-review/confirm-review"
+        handler.app.file_review_drafts.confirm.side_effect = ValueError
+        handler.do_POST()
+        self.assertEqual(handler._json.call_args.args[1], 409)
+
+    def test_prepare_and_cancel_use_read_only_draft(self) -> None:
+        selected = [{"path": "item", "fingerprint": "a" * 64}]
+        handler = self.handler({"folder": "downloads", "kind": "duplicates", "selected": selected})
+        handler.path = "/api/file-review/prepare-review"
+        handler.app.file_review_drafts.prepare.return_value = "temporary-token"
+        with patch.object(server.audit, "log") as log:
+            handler.do_POST()
+        handler.app.file_review_drafts.prepare.assert_called_once_with(Path.home() / "Downloads", "duplicates", selected)
+        handler._json.assert_called_once_with({"token": "temporary-token", "expires_in_seconds": 60.0})
+        log.assert_called_once_with("Prepared read-only file review", source="files")
+        handler = self.handler({})
+        handler.path = "/api/file-review/cancel-review"
+        with patch.object(server.audit, "log") as log:
+            handler.do_POST()
+        log.assert_called_once_with("Cancelled read-only file review", source="files")
+        handler.app.file_review_drafts.cancel.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()
