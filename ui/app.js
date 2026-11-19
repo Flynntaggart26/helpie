@@ -822,6 +822,25 @@ async function exportVisualNotePdf() {
   }
 }
 
+async function exportVisualNoteSvg() {
+  try {
+    const rect = $("visual-note-canvas").getBoundingClientRect();
+    const svg = HelpieNoteSvg.build(state.visualNoteItems, state.visualNoteStrokes,
+      Math.round(rect.width), Math.round(rect.height));
+    await api("/api/visual-notes/exported", { method: "POST", body: "{}" });
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    const anchor = document.createElement("a");
+    const title = $("visual-note-title").value.trim() || "visual-note";
+    anchor.href = url;
+    anchor.download = `${title.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 60) || "visual-note"}.svg`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $("visual-note-status").textContent = "Exported this note as vector SVG.";
+  } catch (error) {
+    $("visual-note-status").textContent = "Could not export this note as SVG.";
+  }
+}
+
 function beginVisualNoteStroke(event) {
   const canvas = $("visual-note-canvas");
   const rect = canvas.getBoundingClientRect();
@@ -2179,6 +2198,7 @@ function bind() {
   $("visual-note-export").addEventListener("click", exportVisualNote);
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-note-export-pdf").addEventListener("click", exportVisualNotePdf);
+  $("visual-note-export-svg").addEventListener("click", exportVisualNoteSvg);
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);
   $("visual-note-tool").addEventListener("change", () => {
     $("visual-note-status").textContent = $("visual-note-tool").value === "geometry"
