@@ -2772,7 +2772,7 @@ function startOverlay() {
   root.className = "overlay-root overlay-state-idle";
   root.innerHTML = `
     <div class="overlay-marker" style="left: 0; top: 0; visibility: hidden;">
-      <svg class="overlay-cursor" viewBox="0 0 200 220" width="36" height="36" aria-hidden="true">
+      <svg class="overlay-cursor" viewBox="0 0 200 220" width="42" height="42" aria-hidden="true">
         <path class="overlay-cursor-shape" d="M37 7 C19 5 6 20 7 39 L16 179 C18 207 47 215 66 195 L103 151 Q110 143 122 140 L168 127 C193 120 195 93 174 79 L55 12 Q46 7 37 7 Z" />
       </svg>
       <span class="overlay-thinking-dots" aria-hidden="true">
@@ -2929,8 +2929,8 @@ async function pollOverlayState() {
             const height = overlayRoot?.clientHeight || window.innerHeight;
             const clickOffset = (2.5 * 96) / 2.54;
             const isCenteredState = state === "thinking" || state === "speaking";
-            const anchorX = isCenteredState ? 28 : 7.7;
-            const anchorY = isCenteredState ? 28 : 1.2;
+            const anchorX = isCenteredState ? 28 : 9;
+            const anchorY = isCenteredState ? 28 : 1.4;
             const targetX = ((point.x - monitor.left) / monitor.width) * width + clickOffset;
             const targetY = ((point.y - monitor.top) / monitor.height) * height + clickOffset;
             const maxLeft = Math.max(0, width - marker.offsetWidth);
