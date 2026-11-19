@@ -1025,7 +1025,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         app = self.app
 
-        if path == "/api/file-review/preview":
+        if path in ("/api/file-review/preview", "/api/file-review/recheck"):
             roots = {"downloads": "Downloads", "desktop": "Desktop", "documents": "Documents"}
             folder = body.get("folder")
             kind = body.get("kind")
@@ -1033,11 +1033,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "Choose a supported folder and review type."}, 400)
                 return
             try:
-                result = file_review.preview(Path.home() / roots[folder], kind)
+                root = Path.home() / roots[folder]
+                result = (file_review.preview(root, kind) if path.endswith("/preview")
+                          else file_review.recheck(root, kind, body.get("selected")))
             except (OSError, ValueError):
                 self._json({"error": "The selected folder could not be reviewed."}, 400)
                 return
-            audit.log("Reviewed files without deletion", source="files")
+            audit.log("Reviewed files without deletion" if path.endswith("/preview")
+                      else "Rechecked files without deletion", source="files")
             self._json(result)
             return
         if path == "/api/voice/select":

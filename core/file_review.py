@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import stat
 import time
@@ -15,6 +16,14 @@ MAX_SECONDS = 8.0
 
 def _is_link(info: os.stat_result) -> bool:
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 0x400)
+
+
+def _fingerprint(*values: object) -> str:
+    return hashlib.sha256(json.dumps(values, ensure_ascii=True, separators=(",", ":")).encode("ascii")).hexdigest()
+
+
+def _identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
 def preview(root: Path, kind: str) -> dict:
@@ -42,7 +51,12 @@ def preview(root: Path, kind: str) -> dict:
                         break
                     entries.append(entry)
             if not entries and folder != root and not limited:
-                empty.append(folder.relative_to(root).as_posix())
+                info = folder.lstat()
+                if not _is_link(info) and stat.S_ISDIR(info.st_mode):
+                    name = folder.relative_to(root).as_posix()
+                    empty.append({"path": name, "fingerprint": _fingerprint("empty", name, _identity(info))})
+                else:
+                    limited = True
             for entry in entries:
                 try:
                     info = os.stat(entry.path, follow_symlinks=False)
@@ -58,13 +72,13 @@ def preview(root: Path, kind: str) -> dict:
         except OSError:
             limited = True
     if kind == "empty_folders":
-        rows = [{"path": path} for path in sorted(empty)[:MAX_RESULTS]]
+        rows = sorted(empty, key=lambda item: item["path"])[:MAX_RESULTS]
         return {"root": str(root), "kind": kind, "items": rows,
                 "limited": limited or len(empty) > MAX_RESULTS}
     groups: dict[int, list[tuple[Path, os.stat_result]]] = {}
     for path, info in files:
         groups.setdefault(info.st_size, []).append((path, info))
-    hashes: dict[tuple[int, str], list[tuple[str, int, int]]] = {}
+    hashes: dict[tuple[int, str], list[tuple[str, tuple[int, int, int, int, int]]]] = {}
     hashed_bytes = 0
     for size, candidates in groups.items():
         if len(candidates) < 2:
@@ -77,7 +91,7 @@ def preview(root: Path, kind: str) -> dict:
                 digest = hashlib.sha256()
                 with path.open("rb") as stream:
                     opened = os.fstat(stream.fileno())
-                    if _is_link(opened) or (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns):
+                    if _is_link(opened) or _identity(opened) != _identity(before):
                         limited = True
                         continue
                     while True:
@@ -92,24 +106,52 @@ def preview(root: Path, kind: str) -> dict:
                     after = os.fstat(stream.fileno())
                     if limited and hashed_bytes > MAX_HASH_BYTES:
                         continue
-                    if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) or time.monotonic() >= deadline:
+                    if _identity(after) != _identity(before) or time.monotonic() >= deadline:
                         limited = True
                         continue
                 hashes.setdefault((size, digest.hexdigest()), []).append(
-                    (path.relative_to(root).as_posix(), before.st_dev, before.st_ino))
+                    (path.relative_to(root).as_posix(), _identity(before)))
             except OSError:
                 limited = True
     rows = []
-    for (size, _digest), entries in hashes.items():
+    for (size, digest), entries in hashes.items():
         entries.sort()
         unique = []
         identities = set()
-        for path, device, inode in entries:
-            if (device, inode) not in identities:
-                identities.add((device, inode))
-                unique.append(path)
+        for path, identity in entries:
+            if identity[:2] not in identities:
+                identities.add(identity[:2])
+                unique.append((path, identity))
         if len(unique) > 1:
-            rows.extend({"path": path, "matches": unique[0], "size": size} for path in unique[1:])
+            keeper, keeper_identity = unique[0]
+            rows.extend({"path": path, "matches": keeper, "size": size,
+                         "fingerprint": _fingerprint("duplicate", path, identity, keeper, keeper_identity, digest)}
+                        for path, identity in unique[1:])
     rows.sort(key=lambda item: item["path"])
     return {"root": str(root), "kind": kind, "items": rows[:MAX_RESULTS],
             "limited": limited or len(rows) > MAX_RESULTS}
+
+
+def recheck(root: Path, kind: str, selected: list[dict]) -> dict:
+    """Compare a previous read-only preview with a new bounded preview.
+
+    A match is informational and must never authorize deletion: files can change
+    immediately afterwards and the fingerprints are supplied by the caller.
+    """
+    if not isinstance(selected, list) or not 1 <= len(selected) <= MAX_RESULTS:
+        raise ValueError("Select between 1 and 100 items.")
+    seen = set()
+    for item in selected:
+        if not isinstance(item, dict):
+            raise ValueError("Invalid selection.")
+        path, fingerprint = item.get("path"), item.get("fingerprint")
+        if (not isinstance(path, str) or not 1 <= len(path) <= 4096 or path in seen
+                or not isinstance(fingerprint, str) or len(fingerprint) != 64
+                or any(char not in "0123456789abcdef" for char in fingerprint)):
+            raise ValueError("Invalid selection.")
+        seen.add(path)
+    current = preview(root, kind)
+    fingerprints = {item["path"]: item["fingerprint"] for item in current["items"]}
+    return {"root": current["root"], "kind": kind, "limited": current["limited"],
+            "items": [{"path": item["path"], "unchanged": fingerprints.get(item["path"]) == item["fingerprint"]}
+                      for item in selected]}

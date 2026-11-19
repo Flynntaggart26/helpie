@@ -2217,17 +2217,24 @@ function bind() {
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-note-export-pdf").addEventListener("click", exportVisualNotePdf);
   $("visual-note-export-svg").addEventListener("click", exportVisualNoteSvg);
+  function clearRecheckStatus() {
+    $("file-review-results").querySelectorAll(".file-review-result-status").forEach(node => { node.textContent = ""; });
+    $("file-review-recheck-status").textContent = "Rechecking is read-only. Results can change again at any time.";
+  }
   function updateReviewSelection() {
     const count = $("file-review-results").querySelectorAll('input[type="checkbox"]:checked').length;
     $("file-review-selection").textContent = `${count} item(s) selected for review. Nothing is deleted.`;
     $("file-review-clear").disabled = count === 0;
+    $("file-review-recheck").disabled = count === 0;
   }
   function clearReviewResults() {
     $("file-review-results").replaceChildren();
+    clearRecheckStatus();
     updateReviewSelection();
   }
   $("file-review-clear").addEventListener("click", () => {
     $("file-review-results").querySelectorAll('input[type="checkbox"]:checked').forEach(input => { input.checked = false; });
+    clearRecheckStatus();
     updateReviewSelection();
   });
   for (const id of ["file-review-folder", "file-review-kind"]) {
@@ -2252,11 +2259,14 @@ function bind() {
         const label = document.createElement("label");
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.addEventListener("change", updateReviewSelection);
+        checkbox.reviewItem = { path: item.path, fingerprint: item.fingerprint };
+        checkbox.addEventListener("change", () => { clearRecheckStatus(); updateReviewSelection(); });
         const description = document.createElement("span");
         description.textContent = item.matches ? `${item.path} — matches ${item.matches} (${item.size} bytes)` : item.path;
         label.append(checkbox, description);
-        row.appendChild(label);
+        const resultStatus = document.createElement("span");
+        resultStatus.className = "file-review-result-status";
+        row.append(label, resultStatus);
         list.appendChild(row);
       }
       status.textContent = `${result.root}: ${result.items.length} result(s). Nothing was deleted.${result.limited ? " Review was limited; results may be incomplete." : ""}`;
@@ -2266,6 +2276,33 @@ function bind() {
       button.disabled = false;
       $("file-review-folder").disabled = false;
       $("file-review-kind").disabled = false;
+    }
+  });
+  $("file-review-recheck").addEventListener("click", async () => {
+    const selected = [...$("file-review-results").querySelectorAll('input[type="checkbox"]:checked')];
+    if (!selected.length) return;
+    const controls = [$("file-review-start"), $("file-review-folder"), $("file-review-kind"), $("file-review-clear"), $("file-review-recheck"), ...$("file-review-results").querySelectorAll('input[type="checkbox"]')];
+    controls.forEach(control => { control.disabled = true; });
+    clearRecheckStatus();
+    const status = $("file-review-recheck-status");
+    status.textContent = "Rechecking selected items on this device…";
+    try {
+      const result = await api("/api/file-review/recheck", { method: "POST", body: JSON.stringify({
+        folder: $("file-review-folder").value, kind: $("file-review-kind").value,
+        selected: selected.map(input => input.reviewItem),
+      }) });
+      const byPath = new Map(result.items.map(item => [item.path, item.unchanged]));
+      for (const input of selected) {
+        const marker = input.closest("li").querySelector(".file-review-result-status");
+        marker.textContent = byPath.get(input.reviewItem.path) === true ? "Still matches previous review" : "Changed or could not be verified";
+      }
+      const unchanged = result.items.filter(item => item.unchanged).length;
+      status.textContent = `${unchanged} of ${selected.length} selected item(s) still match the earlier review. Others changed or could not be verified.${result.limited ? " The scan was limited." : ""} Nothing was deleted; items can change again at any time.`;
+    } catch (_) {
+      status.textContent = "Could not recheck the selection. Nothing was deleted.";
+    } finally {
+      controls.forEach(control => { control.disabled = false; });
+      updateReviewSelection();
     }
   });
   $("visual-point-select").addEventListener("change", loadVisualPointEditor);

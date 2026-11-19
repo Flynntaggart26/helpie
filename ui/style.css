@@ -1738,6 +1738,7 @@ body.overlay-mode .overlay-root {
 #file-review-results { padding-left: 1.5rem; }
 #file-review-results label { display: flex; align-items: baseline; gap: 10px; padding: 5px 0; overflow-wrap: anywhere; }
 #file-review-results input { flex: none; accent-color: var(--accent); }
+.file-review-result-status { display: block; margin-left: 24px; color: var(--muted); font-size: 12px; }
 .overlay-click-ripple {
   display: none;
   position: absolute;
