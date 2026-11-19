@@ -41,7 +41,14 @@ MAX_REQUEST_BODY = 1_048_576
 VOICES = [
     {"id": "en-US-AriaNeural", "label": "Aria — English (US, female)"},
     {"id": "en-US-GuyNeural", "label": "Guy — English (US, male)"},
+    {"id": "en-US-JennyNeural", "label": "Jenny — English (US, female)"},
+    {"id": "en-US-AvaMultilingualNeural", "label": "Ava — multilingual (female)"},
+    {"id": "en-US-EmmaMultilingualNeural", "label": "Emma — multilingual (female)"},
+    {"id": "en-US-AndrewMultilingualNeural", "label": "Andrew — multilingual (male)"},
+    {"id": "en-US-BrianMultilingualNeural", "label": "Brian — multilingual (male)"},
     {"id": "en-GB-SoniaNeural", "label": "Sonia — English (UK)"},
+    {"id": "en-GB-RyanNeural", "label": "Ryan — English (UK)"},
+    {"id": "en-GB-LibbyNeural", "label": "Libby — English (UK)"},
     {"id": "tr-TR-EmelNeural", "label": "Emel — Turkish"},
     {"id": "tr-TR-AhmetNeural", "label": "Ahmet — Turkish"},
 ]
@@ -623,7 +630,7 @@ class App:
             safe["weather"] = ""
         return safe
 
-    def update_settings(self, patch: dict) -> dict:
+    def update_settings(self, patch: dict, *, broadcast: bool = True) -> dict:
         previous_cfg = dict(self.cfg)
         self.cfg = dict(self.cfg)
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
@@ -712,7 +719,8 @@ class App:
         self.brain.refresh(self.cfg)
         self.speaker.update(self.cfg.get("voice"), self.cfg.get("rate"), self.cfg.get("volume"),
                             cloud_consent=bool(self.cfg.get("cloud_tts_consent", False)))
-        self.bus.push({"type": "settings", "value": self.public_cfg()})
+        if broadcast:
+            self.bus.push({"type": "settings", "value": self.public_cfg()})
         return self.public_cfg()
 
     # -- lifecycle ------------------------------------------------------- #
@@ -1024,6 +1032,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             audit.log("Reviewed files without deletion", source="files")
             self._json(result)
+            return
+        if path == "/api/voice/select":
+            voice = body.get("voice")
+            if not isinstance(voice, str) or voice not in {item["id"] for item in VOICES}:
+                self._json({"error": "Choose an available voice."}, 400)
+                return
+            app.update_settings({"voice": voice}, broadcast=False)
+            audit.log("Changed answering voice", source="settings")
+            self._json({"voice": voice})
             return
         if path == "/api/ask":
             text = str(body.get("text", "")).strip()

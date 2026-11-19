@@ -396,6 +396,9 @@ fn show_overlay(app: &AppHandle, port: u16) {
 
 fn hide_overlay(app: &AppHandle) {
     COMPANION_ACTIVE.store(false, Ordering::Relaxed);
+    if let Some(window) = app.get_webview_window("voice-close") {
+        hide_without_activation(&window);
+    }
     #[cfg(windows)]
     if let Some(session) = app.try_state::<capture::LiveCaptureSession>() {
         session.stop();
@@ -418,6 +421,32 @@ fn show_companion(app: &AppHandle, port: u16) {
         let _ = tiny.hide();
     }
     show_overlay(app, port);
+    show_voice_close(app, port);
+}
+
+// A small interactive window leaves the full-screen annotation layer click-through.
+fn show_voice_close(app: &AppHandle, port: u16) {
+    let Some(monitor) = app.primary_monitor().ok().flatten() else { return };
+    let window = if let Some(window) = app.get_webview_window("voice-close") {
+        let _ = window.eval("(() => { const b = document.querySelector('.voice-close-button'); if (b) b.disabled = false; })();");
+        window
+    } else {
+        let Ok(url) = Url::parse(&format!("{}/?view=voice-close", base_url(port))) else { return };
+        let Ok(window) = WebviewWindowBuilder::new(app, "voice-close", WebviewUrl::External(url))
+            .title("Close Helpie companion")
+            .decorations(false).transparent(true).shadow(false).resizable(false)
+            .always_on_top(true).skip_taskbar(true).focused(false).visible(false).build()
+            else { return };
+        window
+    };
+    let scale = monitor.scale_factor();
+    let size = (36.0 * scale).round() as u32;
+    let position = monitor.position();
+    let x = position.x + (monitor.size().width as i32 / 2) + (130.0 * scale).round() as i32;
+    let y = position.y + (24.0 * scale).round() as i32;
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+    let _ = window.set_size(PhysicalSize::new(size, size));
+    show_interactive_without_activation(&window);
 }
 
 /// Hide through Win32 rather than `window.hide()`.
@@ -452,6 +481,16 @@ fn hide_without_activation(window: &WebviewWindow) {
 /// whatever the user is doing.
 #[cfg(windows)]
 fn show_without_activation(window: &WebviewWindow) {
+    show_window_without_activation(window, true);
+}
+
+#[cfg(windows)]
+fn show_interactive_without_activation(window: &WebviewWindow) {
+    show_window_without_activation(window, false);
+}
+
+#[cfg(windows)]
+fn show_window_without_activation(window: &WebviewWindow, click_through: bool) {
     use std::ffi::c_void;
 
     #[link(name = "user32")]
@@ -476,7 +515,8 @@ fn show_without_activation(window: &WebviewWindow) {
         SetWindowLongPtrW(
             raw,
             GWL_EXSTYLE,
-            style | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            (if click_through { style | WS_EX_TRANSPARENT } else { style & !WS_EX_TRANSPARENT })
+                | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         );
         ShowWindow(raw, SW_SHOWNOACTIVATE);
     }
@@ -484,6 +524,11 @@ fn show_without_activation(window: &WebviewWindow) {
 
 #[cfg(not(windows))]
 fn show_without_activation(window: &WebviewWindow) {
+    let _ = window.show();
+}
+
+#[cfg(not(windows))]
+fn show_interactive_without_activation(window: &WebviewWindow) {
     let _ = window.show();
 }
 

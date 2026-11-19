@@ -1552,6 +1552,7 @@ kbd { padding: 2px 6px; color: #dbe6f5; }
   .overlay-thinking-dots i,
   .overlay-speaking-orb i,
   .overlay-click-ripple,
+  .overlay-marker.is-clicking .overlay-cursor,
   .overlay-capture-indicator::before {
     animation: none !important;
     transition: none !important;
@@ -1749,8 +1750,9 @@ body.overlay-mode .overlay-root {
 }
 .overlay-marker.is-clicking .overlay-click-ripple {
   display: block;
-  animation: overlay-click-ripple 480ms ease-out both;
+  animation: overlay-click-ripple 560ms cubic-bezier(.15,.7,.2,1) both;
 }
+.overlay-marker.is-clicking .overlay-cursor { animation: overlay-click-press 560ms ease-out; }
 .overlay-tag {
   position: relative;
   z-index: 1;
@@ -1915,7 +1917,7 @@ body.overlay-mode .overlay-root {
   align-items: center;
   gap: 12px;
   min-width: 310px;
-  padding: 11px 16px;
+  padding: 11px 48px 11px 16px;
   border: 1px solid rgba(129, 215, 255, .55);
   border-radius: 18px;
   background: linear-gradient(115deg, #101e37, #142d53, #23204b, #101e37);
@@ -1947,6 +1949,18 @@ body.overlay-mode .overlay-root {
 .voice-banner-live { font-size: 9px; font-weight: 700; letter-spacing: .09em; color: #9ee9ff; }
 @keyframes voice-colors { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 @media (prefers-reduced-motion: reduce) { .voice-banner { animation: none; } .voice-banner-wave i { transition: none; } }
+
+html.voice-close-mode, body.voice-close-mode { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+body.voice-close-mode > :not(.voice-close-button) { display: none !important; }
+.voice-close-button {
+  width: 36px; height: 36px; display: grid; place-items: center; padding: 0;
+  border: 1px solid rgba(175, 218, 255, .42); border-radius: 12px;
+  background: rgba(12, 28, 51, .94); color: #dcefff; font: 24px/1 "Segoe UI", sans-serif;
+  cursor: pointer; transition: background .16s, transform .16s;
+}
+.voice-close-button:hover { background: #274a73; }
+.voice-close-button:active { transform: scale(.9); }
+.voice-close-button:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
 
 .overlay-capture-indicator {
   position: absolute;
@@ -2060,7 +2074,13 @@ body.overlay-mode .overlay-root {
 
 @keyframes overlay-click-ripple {
   from { opacity: 0.95; transform: translate(-50%, -50%) scale(0.25); }
-  to { opacity: 0; transform: translate(-50%, -50%) scale(2.7); }
+  45% { opacity: .65; }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(3.1); }
+}
+@keyframes overlay-click-press {
+  0%, 100% { transform: scale(1); }
+  25% { transform: scale(.86); }
+  55% { transform: scale(1.05); }
 }
 
 /* idle: default, subtle cyan */

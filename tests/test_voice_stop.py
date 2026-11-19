@@ -15,6 +15,51 @@ import server
 
 
 class VoiceStopTests(unittest.TestCase):
+    def test_voice_selection_endpoint_updates_shared_speaker_settings(self) -> None:
+        app = Mock()
+        handler = server.Handler.__new__(server.Handler)
+        handler.app = app
+        handler.path = "/api/voice/select"
+        handler._trusted_local_request = Mock(return_value=True)
+        handler._authorized_api = Mock(return_value=True)
+        handler._body = Mock(return_value={"voice": "en-US-EmmaMultilingualNeural"})
+        handler._json = Mock()
+        with patch.object(server.audit, "log"):
+            handler.do_POST()
+        app.update_settings.assert_called_once_with({"voice": "en-US-EmmaMultilingualNeural"}, broadcast=False)
+        handler._json.assert_called_once_with({"voice": "en-US-EmmaMultilingualNeural"})
+
+    def test_online_synthesis_uses_updated_voice(self) -> None:
+        speaker = voice.Speaker.__new__(voice.Speaker)
+        speaker.voice = "en-US-AriaNeural"
+        speaker.rate = "+0%"
+        speaker.volume = 1.0
+        speaker.cloud_consent = True
+        edge = types.ModuleType("edge_tts")
+        edge.Communicate = Mock()
+        with patch.dict(sys.modules, {"edge_tts": edge}), patch.object(voice.asyncio, "run"):
+            speaker.update(voice="en-US-EmmaMultilingualNeural")
+            self.assertIsNotNone(speaker._synth("Example"))
+        edge.Communicate.assert_called_once_with("Example", "en-US-EmmaMultilingualNeural", rate="+0%")
+
+    def test_online_voice_failure_reports_local_fallback(self) -> None:
+        pygame_stub = types.ModuleType("pygame")
+        pygame_stub.mixer = Mock()
+        pygame_stub.mixer.get_init.return_value = True
+        errors = Mock()
+        with patch.dict(sys.modules, {"pygame": pygame_stub}):
+            speaker = voice.Speaker(cloud_consent=True, on_error=errors)
+            try:
+                with patch.object(speaker, "_synth", return_value=None), \
+                     patch.object(speaker, "_speak_local", return_value=True) as local:
+                    speaker.say("Example")
+                    speaker.wait_idle(3)
+                    local.assert_called_once()
+                    self.assertIn("default Windows voice", errors.call_args.args[0])
+            finally:
+                speaker.close()
+                speaker._worker.join(3)
+
     def test_transcribe_decodes_wav_and_preserves_rate(self) -> None:
         pcm = b"\x01\x00\x02\x00" * 30
         for rate in (16000, 44100):

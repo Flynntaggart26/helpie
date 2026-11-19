@@ -433,6 +433,7 @@ class Speaker:
         self._speech_lock = threading.Lock()
         self._speech_cancel = threading.Event()
         self._busy = False
+        self._cloud_failure_reported = False
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
@@ -611,6 +612,12 @@ class Speaker:
                                 os.remove(path)
                             except OSError:
                                 pass
+                    if spoken:
+                        self._cloud_failure_reported = False
+                    elif not cancel.is_set() and not self._stop.is_set() and not self._cloud_failure_reported:
+                        self._cloud_failure_reported = True
+                        if self.on_error:
+                            self.on_error("The selected online voice is unavailable. Using the default Windows voice instead. Check your connection and voice settings.")
                 if not spoken and not cancel.is_set() and not self._stop.is_set():
                     if on_piece:
                         on_piece(text)

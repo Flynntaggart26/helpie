@@ -1172,7 +1172,28 @@ function providerChip(s) {
   return { on: !!s.has_key, label: s.has_key ? "Gemini connected" : "commands only" };
 }
 
+let voiceSelectionPending = Promise.resolve();
+function saveVoiceSelection() {
+  const select = $("set-voice"), chosen = select.value;
+  const previous = (state.settings || {}).voice;
+  select.disabled = true;
+  $("voice-selection-status").textContent = "Saving voice…";
+  voiceSelectionPending = api("/api/voice/select", { method: "POST", body: JSON.stringify({ voice: chosen }) })
+    .then(() => {
+      state.settings.voice = chosen;
+      $("voice-selection-status").textContent = $("set-cloud-tts").checked
+        ? "Voice saved for chat and Ctrl+H." : "Voice saved. Enable and save Microsoft Edge neural voice to use it.";
+    })
+    .catch(() => {
+      select.value = previous || "";
+      $("voice-selection-status").textContent = "Could not save voice. Please try again.";
+    })
+    .finally(() => { select.disabled = false; });
+  return voiceSelectionPending;
+}
+
 async function saveSettings() {
+  await voiceSelectionPending;
   const mic = $("set-mic").value;
   const screenTarget = $("set-screen-target").value;
   const patch = {
@@ -2180,7 +2201,9 @@ function bind() {
     applySettings();
   });
   $("test-mic").addEventListener("click", testMic);
+  $("set-voice").addEventListener("change", saveVoiceSelection);
   $("test-voice").addEventListener("click", async () => {
+    await voiceSelectionPending;
     await api("/api/test_voice", { method: "POST", body: JSON.stringify({ text: "Hi, I'm Helpie. This is how I sound." }) });
   });
   $("notes-clear").addEventListener("click", async () => {
@@ -2950,7 +2973,25 @@ async function stopOverlay() {
 }
 
 async function boot() {
-  if (new URLSearchParams(location.search).get("view") === "overlay") {
+  const view = new URLSearchParams(location.search).get("view");
+  if (view === "voice-close") {
+    document.documentElement.classList.add("voice-close-mode");
+    document.body.classList.add("voice-close-mode");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "voice-close-button";
+    button.setAttribute("aria-label", "Stop and close Helpie companion");
+    button.title = "Stop and close Helpie companion";
+    button.textContent = "×";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try { await api("/api/stop", { method: "POST" }); }
+      catch (_) { button.disabled = false; button.title = "Could not close Helpie. Try again."; }
+    });
+    document.body.appendChild(button);
+    return;
+  }
+  if (view === "overlay") {
     startOverlay();
     return;
   }
