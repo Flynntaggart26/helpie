@@ -1,12 +1,31 @@
 /* Serialize validated visual-note data as SVG primitives, never model markup. */
 (function (root) {
   "use strict";
-  const esc = s => String(s ?? "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g, "")
+  const esc = s => Array.from(String(s ?? ""), c => {
+    const n = c.codePointAt(0);
+    return n >= 0xd800 && n <= 0xdfff ? "\ufffd" : c;
+  }).join("").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g, "")
     .replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"})[c]);
   const valid = n => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
+  function describe(items, strokes) {
+    const parts = (Array.isArray(items) ? items : []).slice(0, 3).map((item, index) => {
+      if (!item || typeof item !== "object") return `${index + 1}. visual item`;
+      let detail = typeof item.label === "string" ? item.label : typeof item.text === "string" ? item.text : typeof item.expression === "string" ? item.expression : "";
+      detail = detail.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, 120);
+      if (item.kind === "geometry" && Array.isArray(item.objects)) {
+        const shapes = item.objects.slice(0, 12).filter(o => o && ["point", "segment", "circle", "polygon"].includes(o.kind))
+          .map(o => `${o.kind}${typeof o.label === "string" && o.label ? ` ${o.label.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, 32)}` : ""}`);
+        detail = shapes.join(", ");
+      }
+      const kind = ["pin", "callout", "rect", "arrow", "equation", "graph", "geometry"].includes(item.kind) ? item.kind : "visual item";
+      return `${index + 1}. ${kind}${detail ? `: ${detail}` : ""}`;
+    });
+    const count = Math.min(Array.isArray(strokes) ? strokes.length : 0, 200);
+    return `${parts.length ? `Visual answer: ${parts.join("; ")}. ` : ""}Drawing strokes: ${count}.`;
+  }
   function build(items, strokes, width, height) {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width > 10000 || height > 10000) throw new Error("Invalid dimensions");
-    const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`, '<rect width="100%" height="100%" fill="#080d14"/>'];
+    const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-labelledby="note-title note-description">`, '<title id="note-title">Helpie visual note</title>', `<desc id="note-description">${Math.min(Array.isArray(items) ? items.length : 0, 3)} visual items and ${Math.min(Array.isArray(strokes) ? strokes.length : 0, 200)} drawing strokes.</desc>`, '<rect width="100%" height="100%" fill="#080d14"/>'];
     const label = (text, x, y, size = 14) => { if (text) out.push(`<text x="${x}" y="${y}" fill="#fff" font-family="Segoe UI, sans-serif" font-size="${size}" font-weight="600">${esc(String(text).slice(0, 120))}</text>`); };
     const line = (x1,y1,x2,y2) => out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#55d6ff" stroke-width="3"/>`);
     for (const item of (Array.isArray(items) ? items : []).slice(0,3)) {
@@ -24,7 +43,10 @@
       } else if (item.kind === "equation" && valid(item.x) && valid(item.y)) label(item.text,x,y,20);
       else if (item.kind === "graph" && [item.x,item.y,item.width,item.height].every(valid) && Array.isArray(item.segments)) {
         out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#08111d" stroke="#83a4c8"/>`);
-        for (let n=1;n<4;n++) { line(x+w*n/4,y,x+w*n/4,y+h); line(x,y+h*n/4,x+w,y+h*n/4); }
+        for (let n=1;n<4;n++) {
+          out.push(`<line x1="${x+w*n/4}" y1="${y}" x2="${x+w*n/4}" y2="${y+h}" stroke="#b0cdeb" stroke-opacity="0.3" stroke-width="1"/>`);
+          out.push(`<line x1="${x}" y1="${y+h*n/4}" x2="${x+w}" y2="${y+h*n/4}" stroke="#b0cdeb" stroke-opacity="0.3" stroke-width="1"/>`);
+        }
         for (const segment of item.segments.slice(0,65)) if (Array.isArray(segment) && segment.length <= 65 && segment.length >= 2 && segment.every(p => Array.isArray(p) && p.length===2 && p.every(valid))) out.push(`<polyline fill="none" stroke="#55d6ff" stroke-width="2" points="${segment.map(p=>`${x+p[0]*w},${y+p[1]*h}`).join(" ")}"/>`);
         label(`f(x) = ${item.expression || ""}`,x,y-5);
       } else if (item.kind === "geometry" && [item.x,item.y,item.width,item.height].every(valid) && Array.isArray(item.objects)) {
@@ -48,5 +70,5 @@
     }
     out.push("</svg>"); return out.join("\n");
   }
-  const api={build}; if(typeof module!=="undefined"&&module.exports) module.exports=api; else root.HelpieNoteSvg=api;
+  const api={build,describe}; if(typeof module!=="undefined"&&module.exports) module.exports=api; else root.HelpieNoteSvg=api;
 })(globalThis);

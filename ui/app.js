@@ -325,13 +325,8 @@ function drawVisualNoteCanvas(showHandles = true) {
   refreshVisualPointOptions();
   const description = $("visual-note-description");
   if (description) {
-    const parts = state.visualNoteItems.map((item, index) => {
-      const title = item.label || item.text || item.expression || "";
-      return `${index + 1}. ${item.kind || "visual item"}${title ? `: ${title}` : ""}`;
-    });
-    description.textContent = parts.length
-      ? `Visual answer: ${parts.join("; ")}. Drawing strokes: ${state.visualNoteStrokes.length}.`
-      : `Drawing strokes: ${state.visualNoteStrokes.length}.`;
+    const text = HelpieNoteSvg.describe(state.visualNoteItems, state.visualNoteStrokes);
+    if (description.textContent !== text) description.textContent = text;
   }
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;

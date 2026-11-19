@@ -19,3 +19,16 @@ test("rejects invalid dimensions and skips malformed points",()=>{
   const out=svg.build([{kind:"pin",x:NaN,y:.2}],[],100,100);
   assert.doesNotMatch(out,/<circle/);
 });
+test("SVG has accessible metadata, subdued grid, and well-formed text",()=>{
+  const items=[{kind:"graph",x:0,y:0,width:.8,height:.8,expression:"\ud800x",segments:[]}];
+  const out=svg.build(items,[],500,400);
+  assert.match(out,/<title id="note-title">/);
+  assert.match(out,/<desc id="note-description">1 visual items and 0 drawing strokes\.<\/desc>/);
+  assert.match(out,/stroke-opacity="0.3"/);
+  assert.ok(!out.includes("\ud800"));
+});
+test("describes geometry objects without trusting labels as markup",()=>{
+  const text=svg.describe([{kind:"geometry",objects:[{kind:"point",label:"A"},{kind:"segment",label:"AB"}]}],[{}]);
+  assert.match(text,/point A, segment AB/);
+  assert.match(text,/Drawing strokes: 1/);
+});
