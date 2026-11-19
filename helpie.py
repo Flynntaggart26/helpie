@@ -7,6 +7,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import secrets  # Load the standard library module before adding the bundled core directory.
 import subprocess
 import sys
 import threading

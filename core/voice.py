@@ -465,6 +465,7 @@ class Speaker:
         with self._speech_lock:
             if self._stop.is_set():
                 return
+            self._cloud_failure_reported = False
             cancel = self._speech_cancel
             for piece in pieces:
                 self._queue.put((piece, on_piece, cancel))

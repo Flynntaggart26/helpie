@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import io
 import array
+import os
+import subprocess
 import sys
+import tempfile
 import threading
 import types
 import unittest
@@ -13,9 +16,75 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "core"))
 import voice
 import server
+import config
 
 
 class VoiceStopTests(unittest.TestCase):
+    def test_bootstrap_uses_stdlib_even_with_stale_legacy_module(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            (staged / "helpie.py").write_bytes((root / "helpie.py").read_bytes())
+            core = staged / "core"
+            core.mkdir()
+            (core / "secrets.py").write_text("raise RuntimeError('stale shadow loaded')\n", encoding="utf-8")
+            for name in ("config", "shell", "updater"):
+                (core / f"{name}.py").write_text("", encoding="utf-8")
+            (core / "server.py").write_text("class App: pass\ndef free_port(): pass\ndef serve(): pass\n", encoding="utf-8")
+            script = ("import runpy,sys; runpy.run_path(sys.argv[1],run_name='helpie_boot_test'); "
+                      "import secrets; assert callable(secrets.token_hex)")
+            result = subprocess.run([sys.executable, "-c", script, str(staged / "helpie.py")],
+                                    cwd=str(staged), capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(os.name == "nt", "Windows DPAPI required")
+    def test_dpapi_still_protects_and_unprotects_data(self) -> None:
+        sample = "helpie voice test value"
+        protected = config.protect_secret(sample)
+        self.assertNotEqual(protected, sample)
+        self.assertEqual(config.unprotect_secret(protected), sample)
+
+    def test_speech_failure_is_visible_without_exposing_provider_detail(self) -> None:
+        app = server.App.__new__(server.App)
+        app.bus = Mock()
+        message = "The selected online voice is unavailable. Using the default Windows voice instead."
+        app._on_speak_error(message)
+        self.assertEqual(app._speech_error, message)
+        self.assertGreater(app._speech_error_until, server.time.monotonic())
+        app.bus.push.assert_called_once_with({"type": "error", "kind": "speech", "text": message})
+
+    def test_stdlib_secrets_and_dpapi_do_not_shadow_each_other(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        script = (
+            "import sys, importlib.util; sys.path.insert(0, sys.argv[1]); "
+            "import config, secrets; "
+            "assert callable(secrets.token_hex) and config.dpapi.__name__ == 'dpapi_secrets'; "
+            "spec=importlib.util.find_spec('edge_tts'); "
+            "exec('if spec is not None:\\n from edge_tts.drm import DRM\\n assert len(DRM.generate_muid()) == 32')"
+        )
+        env = dict(os.environ)
+        result = subprocess.run([sys.executable, "-c", script, str(root / "core")],
+                                cwd=str(root), env=env, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_online_voice_switch_requires_boolean_and_saves_preference(self) -> None:
+        handler = server.Handler.__new__(server.Handler)
+        handler.app = Mock()
+        handler.path = "/api/voice/output"
+        handler._trusted_local_request = Mock(return_value=True)
+        handler._authorized_api = Mock(return_value=True)
+        handler._body = Mock(return_value={"cloud_tts_consent": True})
+        handler._json = Mock()
+        with patch.object(server.audit, "log"):
+            handler.do_POST()
+        handler.app.update_settings.assert_called_once_with({"cloud_tts_consent": True}, broadcast=False)
+        handler._json.assert_called_once_with({"cloud_tts_consent": True})
+        handler._body.return_value = {"cloud_tts_consent": "false"}
+        handler.app.update_settings.reset_mock()
+        handler.do_POST()
+        handler.app.update_settings.assert_not_called()
+        self.assertEqual(handler._json.call_args.args[1], 400)
+
     def test_playback_levels_follow_only_mocked_output_audio(self) -> None:
         pygame_stub = types.ModuleType("pygame")
         pygame_stub.mixer = Mock()

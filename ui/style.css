@@ -1989,6 +1989,13 @@ body.voice-close-mode > :not(.voice-close-button) { display: none !important; }
   white-space: nowrap;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.32);
 }
+.overlay-speech-error {
+  position: absolute; top: 126px; left: 50%; transform: translateX(-50%);
+  max-width: min(90vw, 520px); padding: 8px 14px; border: 1px solid #f59e0b;
+  border-radius: 12px; background: #20180c; color: #fff1d1; font-size: 12px;
+  line-height: 1.4; box-shadow: 0 3px 14px rgba(0, 0, 0, .4);
+}
+.overlay-speech-error[hidden] { display: none; }
 .overlay-description {
   position: absolute;
   width: 1px;

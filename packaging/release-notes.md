@@ -20,6 +20,9 @@ Get-FileHash .\__SETUP_NAME__ -Algorithm SHA256
 
 ## What changed
 
+- Fixed a module-name conflict that prevented the selected Edge neural voice
+  from being prepared. The online speech switch now saves immediately and the
+  app shows when Windows' default voice is being used instead.
 - The companion has a refreshed glowing pointer, click effect, animated thinking
   dots and a speaking orb. The orb can react to Edge speech output when decoded
   audio is available; otherwise it uses a heartbeat animation. A small close

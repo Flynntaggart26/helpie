@@ -6,8 +6,8 @@ import os
 import sys
 from pathlib import Path
 
-try:  # The backend puts core/ on sys.path; this resolves to core/secrets.py.
-    import secrets as dpapi
+try:  # Use a distinct name so third-party libraries can import stdlib secrets.
+    import dpapi_secrets as dpapi
 except Exception:  # pragma: no cover
     dpapi = None
 

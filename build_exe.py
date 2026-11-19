@@ -50,7 +50,7 @@ HIDDEN_IMPORTS = [
     "voice",
     "reminders",
     "notify",
-    "secrets",
+    "dpapi_secrets",
     "autostart",
     "updater",
     "wintools",

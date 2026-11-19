@@ -121,6 +121,8 @@ class App:
             native_reader=windows_file_identity.read_guarded_identity if os.name == "nt" else None)
         self.recycle_broker = recycle_broker.RecycleBroker(verify=lambda _candidate: False)
         self._speech_level: Optional[float] = None
+        self._speech_error = ""
+        self._speech_error_until = 0.0
         self._closing = False
         self._speaking = False
         self._cloud_voice_active = False
@@ -384,7 +386,9 @@ class App:
             self.push_state("idle")
 
     def _on_speak_error(self, message: str) -> None:
-        self.bus.push({"type": "error", "text": message})
+        self._speech_error = message
+        self._speech_error_until = time.monotonic() + 15.0
+        self.bus.push({"type": "error", "kind": "speech", "text": message})
 
     def _on_speak_level(self, level: Optional[float]) -> None:
         self._speech_level = level
@@ -660,7 +664,8 @@ class App:
                     continue
                 if key == "provider" and value not in ("gemini", "ollama", "openai"):
                     continue
-                if key in {"screen_context_consent", "companion_live_view_consent"}:
+                if key in {"screen_context_consent", "companion_live_view_consent",
+                           "cloud_speech_consent", "cloud_tts_consent"}:
                     if not isinstance(value, bool):
                         continue
                 if key == "screen_capture_target" and value not in (
@@ -972,6 +977,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/overlay/state":
                 self._json({"state": app.state,
+                            "speech_error": app._speech_error if time.monotonic() < app._speech_error_until else "",
                             "voice_level": app._voice_level if app.state in {"listening", "hearing"} else 0.0,
                             "speech_level": app._speech_level if app.state == "speaking" else None,
                             "cloud_voice_active": app._cloud_voice_active,
@@ -1082,6 +1088,15 @@ class Handler(BaseHTTPRequestHandler):
             app.update_settings({"voice": voice}, broadcast=False)
             audit.log("Changed answering voice", source="settings")
             self._json({"voice": voice})
+            return
+        if path == "/api/voice/output":
+            enabled = body.get("cloud_tts_consent")
+            if not isinstance(enabled, bool):
+                self._json({"error": "Choose whether to enable online speech."}, 400)
+                return
+            app.update_settings({"cloud_tts_consent": enabled}, broadcast=False)
+            audit.log("Changed online speech setting", source="settings")
+            self._json({"cloud_tts_consent": enabled})
             return
         if path == "/api/ask":
             text = str(body.get("text", "")).strip()

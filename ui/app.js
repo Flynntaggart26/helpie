@@ -1124,6 +1124,7 @@ function applySettings() {
   $("set-rate").value = s.rate || "+0%";
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
   $("set-cloud-tts").checked = !!s.cloud_tts_consent;
+  updateVoiceOutputStatus();
   $("set-screen-context").checked = !!s.screen_context_consent;
   $("set-companion-live-view").checked = !!s.companion_live_view_consent;
   $("set-companion-live-view").disabled = !s.screen_context_consent;
@@ -1193,22 +1194,42 @@ function providerChip(s) {
 }
 
 let voiceSelectionPending = Promise.resolve();
+function updateVoiceOutputStatus() {
+  $("voice-selection-status").textContent = (state.settings || {}).cloud_tts_consent
+    ? "Online voice is on. The selected voice is used for replies and Ctrl+H."
+    : "Online voice is off. Replies use the default Windows voice. Turn on the switch above to use your selected voice.";
+}
 function saveVoiceSelection() {
   const select = $("set-voice"), chosen = select.value;
   const previous = (state.settings || {}).voice;
   select.disabled = true;
   $("voice-selection-status").textContent = "Saving voice…";
-  voiceSelectionPending = api("/api/voice/select", { method: "POST", body: JSON.stringify({ voice: chosen }) })
+  voiceSelectionPending = voiceSelectionPending.then(() => api("/api/voice/select", { method: "POST", body: JSON.stringify({ voice: chosen }) }))
     .then(() => {
       state.settings.voice = chosen;
-      $("voice-selection-status").textContent = $("set-cloud-tts").checked
-        ? "Voice saved for chat and Ctrl+H." : "Voice saved. Enable and save Microsoft Edge neural voice to use it.";
+      updateVoiceOutputStatus();
     })
     .catch(() => {
       select.value = previous || "";
       $("voice-selection-status").textContent = "Could not save voice. Please try again.";
     })
     .finally(() => { select.disabled = false; });
+  return voiceSelectionPending;
+}
+
+function saveVoiceOutputPreference() {
+  const toggle = $("set-cloud-tts"), enabled = toggle.checked;
+  toggle.disabled = true;
+  $("voice-selection-status").textContent = "Saving online voice setting…";
+  voiceSelectionPending = voiceSelectionPending.then(() => api("/api/voice/output", {
+    method: "POST", body: JSON.stringify({ cloud_tts_consent: enabled }),
+  })).then(() => {
+    state.settings.cloud_tts_consent = enabled;
+    updateVoiceOutputStatus();
+  }).catch(() => {
+    toggle.checked = !!(state.settings || {}).cloud_tts_consent;
+    $("voice-selection-status").textContent = "Could not save the online voice setting. Please try again.";
+  }).finally(() => { toggle.disabled = false; });
   return voiceSelectionPending;
 }
 
@@ -1553,7 +1574,8 @@ function handleEvent(event) {
     case "error":
       $("hint").textContent = event.text;
       $("hint").hidden = false;
-      setStatus("idle");
+      if (event.kind === "speech") $("voice-selection-status").textContent = event.text;
+      else setStatus("idle");
       break;
     case "settings":
       state.settings = event.value;
@@ -2223,8 +2245,14 @@ function bind() {
   });
   $("test-mic").addEventListener("click", testMic);
   $("set-voice").addEventListener("change", saveVoiceSelection);
+  $("set-cloud-tts").addEventListener("change", saveVoiceOutputPreference);
   $("test-voice").addEventListener("click", async () => {
     await voiceSelectionPending;
+    if (!(state.settings || {}).cloud_tts_consent) {
+      updateVoiceOutputStatus();
+      toast("Turn on Microsoft Edge neural voice to test the selected voice.");
+      return;
+    }
     await api("/api/test_voice", { method: "POST", body: JSON.stringify({ text: "Hi, I'm Helpie. This is how I sound." }) });
   });
   $("notes-clear").addEventListener("click", async () => {
@@ -2938,6 +2966,7 @@ function startOverlay() {
     <div class="overlay-capture-indicator" id="overlay-capture-indicator" data-capture-state="off" role="status" aria-live="polite">
       Screen access off
     </div>
+    <div class="overlay-speech-error" role="status" aria-live="polite" hidden></div>
     <div class="overlay-description" role="status" aria-live="polite"></div>
     <div class="voice-banner" aria-hidden="true">
       <span class="voice-banner-logo">H</span>
@@ -3048,6 +3077,12 @@ async function pollOverlayState() {
         const state = data.state || "idle";
         const voiceBanner = overlayRoot?.querySelector(".voice-banner");
         if (voiceBanner) voiceBanner.style.setProperty("--voice-level", String(Math.max(0, Math.min(1, Number(data.voice_level) || 0))));
+        const speechError = overlayRoot?.querySelector(".overlay-speech-error");
+        if (speechError) {
+          const message = typeof data.speech_error === "string" ? data.speech_error : "";
+          speechError.hidden = !monitor.primary || !message;
+          if (speechError.textContent !== message) speechError.textContent = message;
+        }
         const measuredSpeech = state === "speaking" && typeof data.speech_level === "number" && Number.isFinite(data.speech_level);
         if (overlayRoot) {
           overlayRoot.dataset.speechMeter = measuredSpeech ? "true" : "false";
