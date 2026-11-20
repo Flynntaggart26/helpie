@@ -287,6 +287,13 @@ class ApprovalIntegrationTests(unittest.TestCase):
         self.assertIn("folder/report.pdf", reply)
         self.llm.chat.assert_not_called()
 
+    def test_recycle_history_exposes_invisible_direction_controls(self) -> None:
+        app = Mock()
+        app.recycle_broker.available.return_value = True
+        app.recycle_broker.recent.return_value = ["report\u202eexe.pdf"]
+        self.agent._app = app
+        self.assertIn("report\\u202eexe.pdf", self.agent.handle("show files you deleted"))
+
     def test_recycle_bin_requires_confirmation_and_executes_once(self) -> None:
         self.dispatch.stop()
         with patch.object(brain.actions, "empty_recycle_bin", return_value="Done") as empty:

@@ -191,6 +191,12 @@ function setView(view) {
   }
 }
 
+function formatReviewPath(value) {
+  // Make invisible direction controls and line breaks explicit in file reviews.
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,
+    char => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 async function loadRecycleHistory() {
   const list = $("recycle-history-items"), status = $("recycle-history-status");
   try {
@@ -198,7 +204,8 @@ async function loadRecycleHistory() {
     list.replaceChildren();
     for (const name of result.items || []) {
       const row = document.createElement("li");
-      row.textContent = name;
+      row.textContent = formatReviewPath(name);
+      row.dir = "ltr";
       list.appendChild(row);
     }
     status.textContent = result.available
@@ -2357,15 +2364,16 @@ function bind() {
         checkbox.reviewItem = { path: item.path, fingerprint: item.fingerprint };
         checkbox.addEventListener("change", () => { clearRecheckStatus(); updateReviewSelection(); });
         const description = document.createElement("span");
-        description.textContent = item.matches ? `${item.path} — matches ${item.matches} (${item.size} bytes)`
-          : Number.isFinite(item.size) ? `${item.path} (${item.size} bytes)` : item.path;
+        description.dir = "ltr";
+        description.textContent = item.matches ? `${formatReviewPath(item.path)} — matches ${formatReviewPath(item.matches)} (${item.size} bytes)`
+          : Number.isFinite(item.size) ? `${formatReviewPath(item.path)} (${item.size} bytes)` : formatReviewPath(item.path);
         label.append(checkbox, description);
         const resultStatus = document.createElement("span");
         resultStatus.className = "file-review-result-status";
         row.append(label, resultStatus);
         list.appendChild(row);
       }
-      status.textContent = `${result.root}: ${result.items.length} result(s). Nothing was deleted.${result.limited ? " Review was limited; results may be incomplete." : ""}`;
+      status.textContent = `${formatReviewPath(result.root)}: ${result.items.length} result(s). Nothing was deleted.${result.limited ? " Review was limited; results may be incomplete." : ""}`;
     } catch (_) {
       status.textContent = "Could not review that folder. Check that it exists and is accessible.";
     } finally {
@@ -2414,11 +2422,12 @@ function bind() {
         selected: selected.map(input => input.reviewItem),
       }) });
       reviewToken = result.token;
-      $("file-review-dialog-root").textContent = `Folder: ${reviewRoot} · ${selected.length} selected item(s)`;
+      $("file-review-dialog-root").textContent = `Folder: ${formatReviewPath(reviewRoot)} · ${selected.length} selected item(s)`;
       const list = $("file-review-dialog-items");
       list.replaceChildren();
       for (const input of selected) {
         const row = document.createElement("li");
+        row.dir = "ltr";
         row.textContent = input.closest("label").querySelector("span").textContent;
         list.appendChild(row);
       }

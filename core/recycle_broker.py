@@ -11,11 +11,19 @@ import hmac
 import os
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 from typing import Callable
 
 APPROVAL_SECONDS = 60.0
 MAX_HISTORY = 100
+
+
+def safe_display_path(value: str) -> str:
+    """Expose direction and control characters without changing the stored path."""
+    return "".join(f"\\u{ord(char):04x}" if unicodedata.category(char) == "Cc"
+                   or char in "\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+                   else char for char in value)
 
 
 @dataclass(frozen=True)

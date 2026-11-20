@@ -11,6 +11,10 @@ import recycle_broker
 
 
 class RecycleBrokerTests(unittest.TestCase):
+    def test_display_exposes_direction_controls_without_changing_other_characters(self) -> None:
+        self.assertEqual(recycle_broker.safe_display_path("ödev\u202ecod.exe\n"),
+                         "ödev\\u202ecod.exe\\u000a")
+
     def setUp(self) -> None:
         self.item = recycle_broker.RecycleCandidate("example.txt", b"immutable-id")
         self.verify = Mock(return_value=True)
