@@ -86,9 +86,18 @@ def review_direct_action(name: str, args: object) -> ProposedAction | None:
         mode = args.get("mode")
         if isinstance(mode, str) and mode in labels:
             return ProposedAction(name=name, args={"mode": mode}, preview=labels[mode], risk="device_control")
-    if name in {"clear_notes", "clear_reminders"} and isinstance(args, dict) and not args:
-        label = "Delete all notes" if name == "clear_notes" else "Delete all reminders"
+    if name in {"clear_notes", "clear_reminders", "clear_memory"} and isinstance(args, dict) and not args:
+        label = {"clear_notes": "Delete all notes", "clear_reminders": "Delete all reminders",
+                 "clear_memory": "Delete all saved memories"}[name]
         return ProposedAction(name=name, args={}, preview=label, risk="destructive")
+    if name in {"forget_memory", "delete_routine"} and isinstance(args, dict):
+        key = "text" if name == "forget_memory" else "name"
+        value = args.get(key)
+        if (set(args) == {key} and isinstance(value, str) and 1 <= len(value) <= 200
+                and value == value.strip() and not any(unicodedata.category(c).startswith("C")
+                or c in "\u2028\u2029" for c in value)):
+            label = "Forget exact memory" if name == "forget_memory" else "Delete routine"
+            return ProposedAction(name=name, args={key: value}, preview=f"{label}: {value}", risk="destructive")
     if name == "empty_recycle_bin" and isinstance(args, dict) and not args:
         return ProposedAction(name=name, args={}, preview="Permanently empty the Recycle Bin",
                               risk="destructive")

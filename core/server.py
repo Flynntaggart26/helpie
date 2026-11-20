@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import actions
 import action_policy
+import approval_drafts
 import audit
 import autostart
 import config
@@ -124,6 +125,7 @@ class App:
         self.file_review_drafts = file_review.ReviewDrafts(
             native_reader=windows_file_identity.read_guarded_identity if os.name == "nt" else None)
         self.recycle_broker = recycle_broker.RecycleBroker(verify=lambda _candidate: False)
+        self.ui_action_drafts = approval_drafts.ApprovalDrafts()
         self._speech_level: Optional[float] = None
         self._speech_error = ""
         self._speech_error_until = 0.0
@@ -778,6 +780,7 @@ class App:
         self._closing = True
         self.cancel_voice()
         self.recycle_broker.cancel()
+        self.ui_action_drafts.cancel()
         if self._live_capture_status.get("active"):
             try:
                 import shell
@@ -1155,6 +1158,7 @@ class Handler(BaseHTTPRequestHandler):
             app.cancel_turns()
             app.cancel_voice()
             app.recycle_broker.cancel()
+            app.ui_action_drafts.cancel()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
             app.clear_visual_annotations()
@@ -1210,6 +1214,7 @@ class Handler(BaseHTTPRequestHandler):
             app.cancel_turns()
             app.cancel_voice()
             app.recycle_broker.cancel()
+            app.ui_action_drafts.cancel()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
             app.clear_visual_annotations()
@@ -1336,17 +1341,36 @@ class Handler(BaseHTTPRequestHandler):
             app.bus.push({"type": "memory", "items": memory.list_items()})
             self._json({"ok": True, "item": item, "memory": memory.list_items()})
             return
-        if path == "/api/memory/delete":
-            removed = memory.remove(str(body.get("text", "")))
-            app.brain.llm.memory_text = memory.as_prompt()
-            app.bus.push({"type": "memory", "items": memory.list_items()})
-            self._json({"ok": removed, "memory": memory.list_items()})
+        if path in ("/api/memory/delete", "/api/memory/clear", "/api/routines/delete"):
+            self._json({"error": "This action requires separate confirmation."}, 403)
             return
-        if path == "/api/memory/clear":
-            memory.clear()
-            app.brain.llm.memory_text = memory.as_prompt()
-            app.bus.push({"type": "memory", "items": []})
-            self._json({"ok": True, "memory": []})
+        if path == "/api/action-approval/prepare":
+            try:
+                token, preview = app.ui_action_drafts.prepare(body.get("action"), body.get("args"))
+            except ValueError:
+                self._json({"error": "Unsupported or invalid action."}, 400)
+                return
+            audit.log("Requested data action approval", source="action")
+            self._json({"token": token, "preview": preview, "expires_in_seconds": approval_drafts.APPROVAL_SECONDS})
+            return
+        if path == "/api/action-approval/cancel":
+            token = body.get("token")
+            if not isinstance(token, str):
+                self._json({"error": "Approval token required."}, 400)
+                return
+            app.ui_action_drafts.cancel(token)
+            self._json({"ok": True})
+            return
+        if path == "/api/action-approval/confirm":
+            try:
+                proposal = app.ui_action_drafts.consume(body.get("token"))
+            except ValueError:
+                self._json({"error": "Approval is invalid, cancelled or expired."}, 400)
+                return
+            result = app.brain._dispatch(proposal.name, proposal.args, confirmed=True)
+            if proposal.name == "delete_routine":
+                app.bus.push({"type": "routines", "routines": routines.list_routines()})
+            self._json({"confirmed": True, "result": result})
             return
 
         # --- Plugins ---
@@ -1436,16 +1460,6 @@ class Handler(BaseHTTPRequestHandler):
             ok = routines.save_routine(name, steps, description)
             if ok:
                 audit.log("Saved routine", f"{name} · {len(steps)} steps", source="routine")
-            self._json({"ok": ok})
-            return
-        if path == "/api/routines/delete":
-            name = str(body.get("name", "")).strip()
-            if not name:
-                self._json({"error": "name required"}, 400)
-                return
-            ok = routines.delete_routine(name)
-            if ok:
-                audit.log("Deleted routine", name, source="routine")
             self._json({"ok": ok})
             return
         if path == "/api/routines/run":

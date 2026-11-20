@@ -919,14 +919,10 @@ class Brain:
             return memory.memory_summary()
         if re.search(r"\b(forget (everything|all|it all|me)|clear (your )?memory|"
                      r"wipe (your )?memory|hafızayı (temizle|sil)|her şeyi unut|unut beni)\b", t):
-            count = memory.clear()
-            self._refresh_memory()
-            return f"Memory cleared. I forgot {count} thing{'s' if count != 1 else ''}."
+            return self._request_sensitive_action("clear_memory", {}, proposal_generation)
         match = re.search(r"^(?:please\s+)?(?:forget(?: that)?|unut)\s+(.+)$", raw, re.I)
         if match:
-            removed = memory.remove(match.group(1))
-            self._refresh_memory()
-            return "Forgotten." if removed else "I could not find that in my memory."
+            return self._request_sensitive_action("forget_memory", {"text": match.group(1).strip()}, proposal_generation)
         match = re.search(r"^(?:please\s+)?(?:remember(?: that)?|keep in mind that|"
                           r"don'?t forget that)\s+(.+)$", raw, re.I)
         if not match:
@@ -1041,7 +1037,7 @@ class Brain:
         if re.search(r"\b(delete routine|remove routine)\b", t):
             match = re.search(r"(?:delete|remove)\s+routine\s+(\w+)", t)
             if match:
-                return self._delete_routine(match.group(1))
+                return self._request_sensitive_action("delete_routine", {"name": match.group(1)}, proposal_generation)
 
         if re.search(r"\b(list routines?|show routines?|my routines?)\b", t):
             return self._list_routines()
@@ -1494,7 +1490,7 @@ class Brain:
                 audit.log("External action failed", ok=False, source="action")
                 return "I could not complete the external action."
             return result
-        if name in {"power", "clear_notes", "clear_reminders"}:
+        if name in {"power", "clear_notes", "clear_reminders", "clear_memory", "forget_memory", "delete_routine"}:
             proposal = action_policy.review_direct_action(name, args)
             if not confirmed or proposal is None:
                 audit.log("Blocked unconfirmed sensitive action", ok=False, source="action")
@@ -1502,11 +1498,22 @@ class Brain:
             if name == "power":
                 return self._power(proposal.args["mode"])
             try:
-                result = actions.clear_notes() if name == "clear_notes" else actions.clear_reminders()
+                if name == "clear_memory":
+                    count = memory.clear()
+                    self._refresh_memory()
+                    result = f"Memory cleared. I forgot {count} thing{'s' if count != 1 else ''}."
+                elif name == "forget_memory":
+                    removed = memory.remove(proposal.args["text"])
+                    self._refresh_memory()
+                    result = "Forgotten." if removed else "I could not find that exact memory."
+                elif name == "delete_routine":
+                    result = self._delete_routine(proposal.args["name"])
+                else:
+                    result = actions.clear_notes() if name == "clear_notes" else actions.clear_reminders()
             except Exception:
                 audit.log("Sensitive action failed", ok=False, source="action")
                 return "I could not complete that action."
-            audit.log("Completed confirmed data clearing", source="action")
+            audit.log("Processed confirmed data action", source="action")
             return result
         if name == "type_text":
             return "Typing into other applications is unavailable until the target window can be reviewed and confirmed."

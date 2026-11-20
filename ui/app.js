@@ -921,11 +921,24 @@ function renderMemory(items) {
   node.querySelectorAll("[data-memory]").forEach((button) => {
     button.addEventListener("click", async () => {
       try {
-        await api("/api/memory/delete", { method: "POST", body: JSON.stringify({ text: button.dataset.memory }) });
+        await confirmDataAction("forget_memory", { text: button.dataset.memory });
       } catch (error) {
         toast("Could not forget that.");
       }
     });
+  });
+}
+
+async function confirmDataAction(action, args) {
+  const draft = await api("/api/action-approval/prepare", {
+    method: "POST", body: JSON.stringify({ action, args }),
+  });
+  if (!window.confirm(`${draft.preview}\n\nConfirm this action?`)) {
+    await api("/api/action-approval/cancel", { method: "POST", body: JSON.stringify({ token: draft.token }) });
+    return false;
+  }
+  return api("/api/action-approval/confirm", {
+    method: "POST", body: JSON.stringify({ token: draft.token }),
   });
 }
 
@@ -1831,9 +1844,11 @@ function renderRoutines(items) {
   node.querySelectorAll("[data-delete]").forEach((button) => {
     button.addEventListener("click", async () => {
       try {
-        await api("/api/routines/delete", { method: "POST", body: JSON.stringify({ name: button.dataset.delete }) });
-        toast("Routine deleted.");
-        loadRoutines();
+        const result = await confirmDataAction("delete_routine", { name: button.dataset.delete });
+        if (result) {
+          toast(result.result || "Routine action completed.");
+          loadRoutines();
+        }
       } catch (error) {
         toast("Could not delete that routine.");
       }
@@ -2580,8 +2595,8 @@ function bind() {
     }
   });
   $("memory-clear").addEventListener("click", async () => {
-    await api("/api/memory/clear", { method: "POST", body: "{}" });
-    renderMemory([]);
+    try { await confirmDataAction("clear_memory", {}); }
+    catch (_) { toast("Could not clear memory."); }
   });
   $("update-check").addEventListener("click", () => checkUpdates(true));
   $("update-install").addEventListener("click", installUpdate);

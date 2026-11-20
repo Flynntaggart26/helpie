@@ -159,6 +159,19 @@ class ApprovalIntegrationTests(unittest.TestCase):
         self.agent.handle("yes")
         self.action.assert_called_once_with("clear_notes", {}, confirmed=True)
 
+    def test_chat_memory_and_routine_deletion_require_confirmation(self) -> None:
+        for command, expected, arguments in (
+            ("forget coffee", "forget_memory", {"text": "coffee"}),
+            ("forget everything", "clear_memory", {}),
+            ("delete routine morning", "delete_routine", {"name": "morning"}),
+        ):
+            with self.subTest(command=command):
+                self.action.reset_mock()
+                self.assertIn("confirm", self.agent.handle(command).lower())
+                self.action.assert_not_called()
+                self.agent.handle("yes")
+                self.action.assert_called_once_with(expected, arguments, confirmed=True)
+
     def test_power_request_does_not_execute_without_confirmation(self) -> None:
         self.assertIn("Restart the computer", self.agent.handle("restart computer"))
         self.action.assert_not_called()

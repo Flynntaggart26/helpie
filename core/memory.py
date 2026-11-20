@@ -73,8 +73,6 @@ def remove(text: str) -> bool:
         items = _read()
         kept = [item for item in items if str(item.get("text", "")).lower() != target]
         if len(kept) == len(items):
-            kept = [item for item in items if target not in str(item.get("text", "")).lower()]
-        if len(kept) == len(items):
             return False
         _write(kept)
     return True

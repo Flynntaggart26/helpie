@@ -62,7 +62,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check ui/note-svg.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --test tests/test_geometry_edit.cjs tests/test_note_pdf.cjs tests/test_note_svg.cjs tests/test_file_review_display.cjs
+          node --test tests/test_geometry_edit.cjs tests/test_note_pdf.cjs tests/test_note_svg.cjs tests/test_file_review_display.cjs tests/test_data_action_ui.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Tauri installer
