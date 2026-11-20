@@ -43,6 +43,7 @@ def assert_no_local_state(package_dir: Path) -> None:
 HIDDEN_IMPORTS = [
     "config",
     "actions",
+    "desktop_inspection",
     "brain",
     "llm",
     "documents",

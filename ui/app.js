@@ -197,6 +197,24 @@ function formatReviewPath(value) {
     char => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 
+async function inspectWindowControls(token) {
+  const status = $("window-inspect-status"), list = $("window-inspect-results");
+  list.replaceChildren();
+  status.textContent = "Inspecting button names locally…";
+  try {
+    const data = await api("/api/windows/inspect", { method: "POST", body: JSON.stringify({ token }) });
+    for (const control of data.controls || []) {
+      const item = document.createElement("li");
+      item.textContent = `${formatReviewPath(control.name)} (${control.type})`;
+      item.dir = "ltr";
+      list.appendChild(item);
+    }
+    status.textContent = `${(data.controls || []).length} button(s) found (up to 40; some controls may be omitted). This is read-only; nothing was clicked.`;
+  } catch (_) {
+    status.textContent = "Could not inspect this window. List windows again and retry.";
+  }
+}
+
 async function loadRecycleHistory() {
   const list = $("recycle-history-items"), status = $("recycle-history-status");
   try {
@@ -2337,13 +2355,23 @@ function bind() {
     status.textContent = "Listing open windows on this PC…";
     try {
       const data = await api("/api/windows/review", { method: "POST", body: "{}" });
-      for (const title of data.titles || []) {
+      for (const windowInfo of data.windows || []) {
         const item = document.createElement("li");
-        item.textContent = formatReviewPath(title);
+        const label = document.createElement("span");
+        label.textContent = formatReviewPath(windowInfo.title);
+        const inspect = document.createElement("button");
+        inspect.type = "button";
+        inspect.className = "ghost";
+        inspect.textContent = "Inspect buttons";
+        inspect.setAttribute("aria-label", `Inspect buttons in ${formatReviewPath(windowInfo.title)}`);
+        inspect.addEventListener("click", () => inspectWindowControls(windowInfo.token));
+        item.append(label, inspect);
         item.dir = "ltr";
         list.appendChild(item);
       }
-      status.textContent = `${(data.titles || []).length} window(s) listed locally.${data.limited ? " More windows were omitted." : ""}`;
+      $("window-inspect-results").replaceChildren();
+      $("window-inspect-status").textContent = "Select a listed window to inspect its buttons.";
+      status.textContent = `${(data.windows || []).length} window(s) listed locally.${data.limited ? " More windows were omitted." : ""}`;
     } catch (_) {
       status.textContent = "Could not list open windows.";
     } finally {

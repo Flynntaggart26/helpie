@@ -24,6 +24,7 @@ import approval_drafts
 import audit
 import autostart
 import config
+import desktop_inspection
 import file_review
 import history
 import memory
@@ -126,6 +127,7 @@ class App:
             native_reader=windows_file_identity.read_guarded_identity if os.name == "nt" else None)
         self.recycle_broker = recycle_broker.RecycleBroker(verify=lambda _candidate: False)
         self.ui_action_drafts = approval_drafts.ApprovalDrafts()
+        self.window_selections = desktop_inspection.WindowSelections(actions.list_windows, actions._window_pid)
         self._speech_level: Optional[float] = None
         self._speech_error = ""
         self._speech_error_until = 0.0
@@ -781,6 +783,7 @@ class App:
         self.cancel_voice()
         self.recycle_broker.cancel()
         self.ui_action_drafts.cancel()
+        self.window_selections.clear()
         if self._live_capture_status.get("active"):
             try:
                 import shell
@@ -1159,6 +1162,7 @@ class Handler(BaseHTTPRequestHandler):
             app.cancel_voice()
             app.recycle_broker.cancel()
             app.ui_action_drafts.cancel()
+            app.window_selections.clear()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
             app.clear_visual_annotations()
@@ -1215,6 +1219,7 @@ class Handler(BaseHTTPRequestHandler):
             app.cancel_voice()
             app.recycle_broker.cancel()
             app.ui_action_drafts.cancel()
+            app.window_selections.clear()
             app.brain.cancel_model_proposal()
             app.brain.pending = None
             app.clear_visual_annotations()
@@ -1355,13 +1360,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/windows/review":
             try:
-                windows = actions.list_windows()
-                titles = [window.title[:200] for window in windows[:50] if isinstance(window.title, str) and window.title]
+                windows, limited = app.window_selections.refresh()
             except Exception:
                 self._json({"error": "Could not inspect open windows."}, 503)
                 return
             audit.log("Reviewed open windows", source="action")
-            self._json({"titles": titles, "limited": len(windows) > 50})
+            self._json({"windows": windows, "limited": limited})
+            return
+        if path == "/api/windows/inspect":
+            token = body.get("token")
+            try:
+                hwnd = app.window_selections.resolve(token)
+                controls = desktop_inspection.inspect_window(hwnd)
+                if app.window_selections.resolve(token) != hwnd:
+                    raise ValueError("Window changed during inspection.")
+            except (ValueError, RuntimeError, TimeoutError, OSError):
+                self._json({"error": "Could not inspect that window. List windows again and retry."}, 400)
+                return
+            audit.log("Inspected window controls", source="action")
+            self._json({"controls": controls})
             return
         if path == "/api/action-approval/cancel":
             token = body.get("token")

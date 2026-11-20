@@ -206,10 +206,12 @@
         </div>
         <div class="panel">
           <h2>Review open windows</h2>
-          <p class="muted">List visible window titles locally. This does not read window contents, select controls, or operate an app.</p>
+          <p class="muted">List visible windows locally, then inspect button names in a chosen window. No window contents are sent to a provider; inspection never clicks or types.</p>
           <button class="ghost" id="window-review-start" type="button">List open windows</button>
           <p class="muted" id="window-review-status" aria-live="polite">Window titles are listed only when requested.</p>
           <ol id="window-review-results"></ol>
+          <p class="muted" id="window-inspect-status" aria-live="polite">Select a listed window to inspect its buttons.</p>
+          <ol id="window-inspect-results"></ol>
         </div>
         <div class="panel">
           <h2>Review files</h2>

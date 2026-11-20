@@ -364,22 +364,44 @@ class ApprovalIntegrationTests(unittest.TestCase):
 
     def test_window_review_is_bounded_and_read_only(self) -> None:
         import server
+        import desktop_inspection
         handler = server.Handler.__new__(server.Handler)
         handler.app = Mock()
+        windows = [brain.actions._WindowInfo(i, f"Window {i}") for i in range(60)]
+        handler.app.window_selections = desktop_inspection.WindowSelections(lambda: windows, lambda _: 123)
         handler.path = "/api/windows/review"
         handler._trusted_local_request = Mock(return_value=True)
         handler._authorized_api = Mock(return_value=True)
         handler._body = Mock(return_value={})
         handler._json = Mock()
-        windows = [brain.actions._WindowInfo(i, f"Window {i}") for i in range(60)]
-        with patch.object(brain.actions, "list_windows", return_value=windows), \
-             patch.object(brain.actions, "switch_window") as switch:
+        with patch.object(brain.actions, "switch_window") as switch:
             handler.do_POST()
         payload = handler._json.call_args.args[0]
-        self.assertEqual(len(payload["titles"]), 50)
+        self.assertEqual(len(payload["windows"]), 50)
         self.assertTrue(payload["limited"])
-        self.assertEqual(set(payload), {"titles", "limited"})
+        self.assertEqual(set(payload), {"windows", "limited"})
         switch.assert_not_called()
+
+    def test_window_inspection_discards_results_after_selection_is_cleared(self) -> None:
+        import server
+        import desktop_inspection
+        handler = server.Handler.__new__(server.Handler)
+        handler.app = Mock()
+        windows = [brain.actions._WindowInfo(10, "Example")]
+        handler.app.window_selections = desktop_inspection.WindowSelections(lambda: windows, lambda _: 123)
+        token = handler.app.window_selections.refresh()[0][0]["token"]
+        handler.path = "/api/windows/inspect"
+        handler._trusted_local_request = Mock(return_value=True)
+        handler._authorized_api = Mock(return_value=True)
+        handler._body = Mock(return_value={"token": token})
+        handler._json = Mock()
+        def inspect(_hwnd):
+            handler.app.window_selections.clear()
+            return [{"name": "Private", "type": "button"}]
+        with patch.object(desktop_inspection, "inspect_window", side_effect=inspect):
+            handler.do_POST()
+        self.assertEqual(handler._json.call_args.args[1], 400)
+        self.assertNotIn("Private", str(handler._json.call_args))
 
     def test_user_commands_route_through_direct_policy(self) -> None:
         with patch.object(brain.action_policy, "review_direct_action", wraps=brain.action_policy.review_direct_action) as review:
