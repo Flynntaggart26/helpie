@@ -1550,6 +1550,7 @@ kbd { padding: 2px 6px; color: #dbe6f5; }
   .overlay-marker,
   .overlay-thinking-dots,
   .overlay-thinking-dots i,
+  .overlay-speaking-orb,
   .overlay-speaking-orb i,
   .overlay-click-ripple,
   .overlay-marker.is-clicking .overlay-cursor,
@@ -1724,6 +1725,7 @@ body.overlay-mode .overlay-root {
   flex: 0 0 56px;
   width: 56px;
   height: 56px;
+  animation: overlay-heartbeat 1.35s ease-in-out infinite;
 }
 .overlay-speaking-orb i {
   position: absolute;
@@ -1732,7 +1734,6 @@ body.overlay-mode .overlay-root {
   border-radius: 50%;
   background: #075bdc;
   box-shadow: inset 0 3px 5px rgba(151, 204, 255, .25), 0 0 12px rgba(88, 182, 255, .9), 0 0 24px rgba(29, 128, 255, .5);
-  animation: overlay-heartbeat 1.35s ease-in-out infinite;
   will-change: transform;
 }
 #file-review-results { padding-left: 1.5rem; }

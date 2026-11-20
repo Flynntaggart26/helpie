@@ -20,6 +20,18 @@ import config
 
 
 class VoiceStopTests(unittest.TestCase):
+    def test_voice_detection_keeps_initial_speech_frames(self) -> None:
+        stream = Mock()
+        stream.read.side_effect = [b"ambient"] * 12 + [b"first", b"second", OSError("end")]
+        audio = Mock()
+        audio.get_wav_data.return_value = b"wav"
+        listener = voice.Listener.__new__(voice.Listener)
+        listener._open = Mock(return_value=(Mock(), stream))
+        listener._rms = lambda data: 100 if data == b"ambient" else 1000
+        with patch.object(voice, "sr", types.SimpleNamespace(AudioData=Mock(return_value=audio))) as recognition:
+            self.assertEqual(listener.listen(), b"wav")
+        self.assertEqual(recognition.AudioData.call_args.args[0], b"firstsecond")
+
     def test_bootstrap_uses_stdlib_even_with_stale_legacy_module(self) -> None:
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:

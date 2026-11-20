@@ -11,6 +11,7 @@ import re
 import tempfile
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -288,6 +289,8 @@ class Listener:
             start_time = time.time()
             last_voice = 0.0
             speech_hits = 0
+            # Preserve the beginning of the phrase while detecting speech.
+            pre_roll = deque(maxlen=8)
 
             while not ((stop_event and stop_event.is_set()) or (cancel_event and cancel_event.is_set())):
                 try:
@@ -302,11 +305,12 @@ class Listener:
                 voiced = level > threshold
 
                 if not started:
+                    pre_roll.append(data)
                     speech_hits = speech_hits + 1 if voiced else 0
                     if speech_hits >= 2:
                         started = True
                         last_voice = now
-                        frames.append(data)
+                        frames.extend(pre_roll)
                         if on_speech:
                             on_speech()
                     elif now - start_time > timeout:

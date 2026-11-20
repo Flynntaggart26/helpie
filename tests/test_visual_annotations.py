@@ -85,10 +85,12 @@ class VisualAnnotationTests(unittest.TestCase):
     def test_screen_questions_and_solutions_require_screen_reference(self) -> None:
         for request in ("ekrandaki soruyu çöz", "ekranımdaki matematik sorusunu çöz",
                         "ekrandaki soruyu coz", "solve the question on my screen",
-                        "ekranımda ne var"):
+                        "ekranımda ne var", "ekranımda neler var",
+                        "whats on my screen", "what's on my screen", "view my screen",
+                        "Ekranımda ne görüyorsun", "ekranımdaki yazıyı oku"):
             with self.subTest(request=request):
                 self.assertRegex(request, SCREEN_REQUEST_RE)
-        for request in ("bu soruyu çöz", "solve this problem", "merhaba"):
+        for request in ("bu soruyu çöz", "solve this problem", "merhaba", "ekranı kapatınca ne olur"):
             with self.subTest(request=request):
                 self.assertNotRegex(request, SCREEN_REQUEST_RE)
 
