@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 import unicodedata
+from urllib.parse import urlsplit
 
 # Routines may only run these bounded, local actions without a separate review.
 ROUTINE_ALLOWED_ACTIONS = frozenset({
@@ -46,6 +47,7 @@ def review_model_action(name: str, args: object) -> ProposedAction | None:
         return None
     value = value.strip()
     if (not value or len(value) > 80
+            or any(char in value for char in "/\\:")
             or any(unicodedata.category(char).startswith("C") or char in "\u2028\u2029"
                    for char in value)):
         return None
@@ -54,6 +56,30 @@ def review_model_action(name: str, args: object) -> ProposedAction | None:
 
 def review_direct_action(name: str, args: object) -> ProposedAction | None:
     """Validate a direct single action using the same target boundaries."""
+    if name == "web_search" and isinstance(args, dict) and set(args) == {"query", "engine"}:
+        query, engine = args["query"], args["engine"]
+        if (isinstance(query, str) and 1 < len(query) <= 500 and query == query.strip()
+                and isinstance(engine, str) and engine in {"google", "youtube"}
+                and not any(unicodedata.category(c).startswith("C") or c in "\u2028\u2029" for c in query)):
+            return ProposedAction(name, {"query": query, "engine": engine},
+                                  f"Send this search to {engine.title()}: {query}", "external_communication")
+    if name == "open_url" and isinstance(args, dict) and set(args) == {"url"}:
+        url = args["url"]
+        if not isinstance(url, str) or not 1 <= len(url) <= 2048 or url != url.strip():
+            return None
+        if any(c.isspace() or c == "\\" or unicodedata.category(c).startswith("C") for c in url):
+            return None
+        if url.lower().startswith("www."):
+            url = "https://" + url
+        try:
+            parts = urlsplit(url)
+            if (parts.scheme not in {"http", "https"} or not parts.hostname
+                    or parts.username is not None or parts.password is not None
+                    or parts.port is not None and not 1 <= parts.port <= 65535):
+                return None
+        except ValueError:
+            return None
+        return ProposedAction(name, {"url": url}, f"Open this link: {url}", "external_communication")
     if name == "power" and isinstance(args, dict) and set(args) == {"mode"}:
         labels = {"shutdown": "Shut down the computer", "restart": "Restart the computer",
                   "sleep": "Put the computer to sleep"}

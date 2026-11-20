@@ -202,6 +202,41 @@ class ApprovalIntegrationTests(unittest.TestCase):
                              "I can explain the address.")
         open_url.assert_not_called()
 
+    def test_external_link_requires_confirmation_and_preserves_case(self) -> None:
+        preview = self.agent.handle("open https://example.com/Path?X=Y")
+        self.assertIn("https://example.com/Path?X=Y", preview)
+        self.action.assert_not_called()
+        self.agent.handle("yes")
+        self.action.assert_called_once_with("open_url", {"url": "https://example.com/Path?X=Y"}, confirmed=True)
+
+    def test_search_cancel_and_expiration_prevent_external_action(self) -> None:
+        self.assertIn("Google", self.agent.handle("search cats"))
+        self.agent.handle("no")
+        self.action.assert_not_called()
+        with patch.object(brain.time, "monotonic", return_value=100):
+            self.agent.handle("search dogs")
+        with patch.object(brain.time, "monotonic", return_value=161):
+            self.assertIn("expired", self.agent.handle("yes"))
+        self.action.assert_not_called()
+
+    def test_external_dispatch_refuses_unconfirmed_or_malformed_targets(self) -> None:
+        self.dispatch.stop()
+        with patch.object(brain.actions, "open_url") as open_url, \
+             patch.object(brain.actions, "web_search") as search:
+            self.agent._dispatch("open_url", {"url": "https://example.com"})
+            self.agent._dispatch("open_url", {"url": "https://user:pass@example.com"}, confirmed=True)
+            self.agent._dispatch("web_search", {"query": "test", "engine": "google"})
+        open_url.assert_not_called()
+        search.assert_not_called()
+
+    def test_confirmed_external_action_runs_once_with_reviewed_target(self) -> None:
+        self.dispatch.stop()
+        with patch.object(brain.actions, "open_url", return_value="Opened.") as open_url:
+            self.assertIn("example.com/Path", self.agent.handle("open https://example.com/Path"))
+            open_url.assert_not_called()
+            self.assertEqual(self.agent.handle("yes"), "Opened.")
+            open_url.assert_called_once_with("https://example.com/Path")
+
     def test_write_plugin_command_is_blocked_before_handler(self) -> None:
         handler = Mock(return_value="sent")
         plugin = types.SimpleNamespace(enabled=True, instance=object(),

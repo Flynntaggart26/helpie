@@ -822,7 +822,7 @@ class Brain:
                 return "Okay, cancelled."
             if decision == "yes":
                 audit.log("Pending action approved", source="action")
-                if proposal.risk in {"destructive", "device_control"}:
+                if proposal.risk in {"destructive", "device_control", "external_communication"}:
                     return self._dispatch(proposal.name, proposal.args, confirmed=True)
                 return self._dispatch(proposal.name, proposal.args)
             return f"Please say yes or no. Proposed action: {proposal.preview}."
@@ -1248,9 +1248,13 @@ class Brain:
         if re.search(r"\b(create event|schedule meeting|add to calendar)\b", t):
             return self._dispatch_plugin_command("create event")
 
+        match = re.search(r"(https?://\S+|www\.\S+)", raw, re.I)
+        if match and re.search(r"\b(?:open|visit|go to|aç|git)\b", t):
+            return self._request_sensitive_action("open_url", {"url": match.group(1)}, proposal_generation)
+
         site_key = next((s for s in actions.SITES if s in t), None)
         if site_key and re.search(r"\b(open|go to|launch|aç|git|gir)\b", t):
-            return actions.open_site(site_key)
+            return self._request_sensitive_action("open_url", {"url": actions.SITES[site_key]}, proposal_generation)
 
         app_key = actions.resolve_app(alt)
         if app_key and any(verb in t for verb in CLOSE_VERBS):
@@ -1264,16 +1268,12 @@ class Brain:
         # search
         match = re.search(r"^(?:youtube|yt)\s+(.{2,})$", t)
         if match:
-            return actions.web_search(match.group(1), "youtube")
+            return self._request_sensitive_action("web_search", {"query": match.group(1), "engine": "youtube"}, proposal_generation)
         if re.search(r"\b(search|look up|google|ara|araştır)\b", t):
             engine = "youtube" if "youtube" in t else "google"
             query = _clean_query(t)
             if len(query) > 1:
-                return actions.web_search(query, engine)
-
-        match = re.search(r"(https?://\S+|www\.\S+)", t)
-        if match and re.search(r"\b(?:open|visit|go to|aç|git)\b", t):
-            return actions.open_url(match.group(1))
+                return self._request_sensitive_action("web_search", {"query": query, "engine": engine}, proposal_generation)
 
         # --- Plugin commands (before LLM fallback) ---
         plugin_result = self._dispatch_plugin_command(t)
@@ -1480,6 +1480,20 @@ class Brain:
         return f"Proposed action: {proposal.preview}. Say yes to confirm or no to cancel."
 
     def _dispatch(self, name: str, args: dict, confirmed: bool = False) -> str:
+        if name in {"web_search", "open_url", "open_site"}:
+            if name == "open_site":
+                return "Please request the site directly and confirm its address."
+            proposal = action_policy.review_direct_action(name, args)
+            if not confirmed or proposal is None:
+                audit.log("Blocked unconfirmed external action", ok=False, source="action")
+                return "Please request that external action separately and confirm it."
+            try:
+                result = (actions.open_url(proposal.args["url"]) if name == "open_url" else
+                          actions.web_search(proposal.args["query"], proposal.args["engine"]))
+            except Exception:
+                audit.log("External action failed", ok=False, source="action")
+                return "I could not complete the external action."
+            return result
         if name in {"power", "clear_notes", "clear_reminders"}:
             proposal = action_policy.review_direct_action(name, args)
             if not confirmed or proposal is None:
@@ -1509,9 +1523,6 @@ class Brain:
         handlers: dict[str, Callable[[dict], str]] = {
             "open_app": lambda a: actions.open_app(str(a.get("app", ""))),
             "close_app": lambda a: actions.close_app(str(a.get("app", ""))),
-            "web_search": lambda a: actions.web_search(str(a.get("query", "")), str(a.get("engine", "google"))),
-            "open_site": lambda a: actions.open_site(str(a.get("name", ""))),
-            "open_url": lambda a: actions.open_url(str(a.get("url", ""))),
             "set_volume": lambda a: actions.set_volume(float(a.get("percent", 50))),
             "volume": lambda a: actions.volume(str(a.get("direction", "up"))),
             "set_brightness": lambda a: actions.set_brightness(int(a.get("percent", 50))),
