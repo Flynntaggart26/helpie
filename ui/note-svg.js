@@ -17,7 +17,7 @@
           .map(o => `${o.kind}${typeof o.label === "string" && o.label ? ` ${o.label.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, 32)}` : ""}`);
         detail = shapes.join(", ");
       }
-      const kind = ["pin", "callout", "rect", "arrow", "equation", "graph", "geometry"].includes(item.kind) ? item.kind : "visual item";
+      const kind = ["pin", "callout", "rect", "arrow", "underline", "equation", "graph", "geometry"].includes(item.kind) ? item.kind : "visual item";
       return `${index + 1}. ${kind}${detail ? `: ${detail}` : ""}`;
     });
     const count = Math.min(Array.isArray(strokes) ? strokes.length : 0, 200);
@@ -37,9 +37,9 @@
         label(item.label,x+15,y-10);
       } else if (item.kind === "rect" && [item.x,item.y,item.width,item.height].every(valid)) {
         out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#ffca52" fill-opacity="0.12" stroke="#55d6ff" stroke-width="3"/>`); label(item.label,x,y-7);
-      } else if (item.kind === "arrow" && [item.x1,item.y1,item.x2,item.y2].every(valid)) {
+      } else if ((item.kind === "arrow" || item.kind === "underline") && [item.x1,item.y1,item.x2,item.y2].every(valid)) {
         const x1=item.x1*width,y1=item.y1*height,x2=item.x2*width,y2=item.y2*height,a=Math.atan2(y2-y1,x2-x1); line(x1,y1,x2,y2);
-        out.push(`<polygon points="${x2},${y2} ${x2-11*Math.cos(a-.45)},${y2-11*Math.sin(a-.45)} ${x2-11*Math.cos(a+.45)},${y2-11*Math.sin(a+.45)}" fill="#55d6ff"/>`); label(item.label,(x1+x2)/2,(y1+y2)/2-8);
+        if (item.kind === "arrow") out.push(`<polygon points="${x2},${y2} ${x2-11*Math.cos(a-.45)},${y2-11*Math.sin(a-.45)} ${x2-11*Math.cos(a+.45)},${y2-11*Math.sin(a+.45)}" fill="#55d6ff"/>`); label(item.label,(x1+x2)/2,(y1+y2)/2-8);
       } else if (item.kind === "equation" && valid(item.x) && valid(item.y)) label(item.text,x,y,20);
       else if (item.kind === "graph" && [item.x,item.y,item.width,item.height].every(valid) && Array.isArray(item.segments)) {
         out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#08111d" stroke="#83a4c8"/>`);

@@ -2,6 +2,13 @@
 const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const svg=require("../ui/note-svg.js");
+test("exports an underline without an arrowhead",()=>{
+  const item={kind:"underline",x1:.1,y1:.3,x2:.8,y2:.3,label:""};
+  const out=svg.build([item],[],100,100);
+  assert.match(out,/<line x1="10" y1="30" x2="80" y2="30"/);
+  assert.doesNotMatch(out,/<polygon/);
+  assert.match(svg.describe([item],[]),/underline/);
+});
 test("exports primitives and escapes untrusted labels",()=>{
   const items=[{kind:"callout",x:.2,y:.2,number:1,label:'<script>alert("x")</script>'},
     {kind:"graph",x:.1,y:.1,width:.4,height:.4,expression:"x<2",segments:[[[0,0],[1,1]]]},

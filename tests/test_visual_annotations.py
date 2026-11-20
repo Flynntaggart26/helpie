@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "core"))
 
 from brain import SCREEN_REQUEST_RE, VISUAL_REQUEST_RE, _parse_visual_response  # noqa: E402
+from visual_notes import _normalize_visual_items  # noqa: E402
 
 
 class VisualAnnotationTests(unittest.TestCase):
@@ -80,6 +81,26 @@ class VisualAnnotationTests(unittest.TestCase):
             with self.subTest(request=request):
                 self.assertRegex(request, SCREEN_REQUEST_RE)
         self.assertRegex("circle the chart legend", VISUAL_REQUEST_RE)
+
+    def test_screen_questions_and_solutions_require_screen_reference(self) -> None:
+        for request in ("ekrandaki soruyu çöz", "ekranımdaki matematik sorusunu çöz",
+                        "ekrandaki soruyu coz", "solve the question on my screen",
+                        "ekranımda ne var"):
+            with self.subTest(request=request):
+                self.assertRegex(request, SCREEN_REQUEST_RE)
+        for request in ("bu soruyu çöz", "solve this problem", "merhaba"):
+            with self.subTest(request=request):
+                self.assertNotRegex(request, SCREEN_REQUEST_RE)
+
+    def test_underline_is_bounded_and_nonzero(self) -> None:
+        payload = {"version": 1, "items": [
+            {"kind": "underline", "x1": 0.1, "y1": 0.3, "x2": 0.8, "y2": 0.3},
+            {"kind": "underline", "x1": 0.2, "y1": 0.3, "x2": 0.2, "y2": 0.3},
+            {"kind": "underline", "x1": 0.1, "y1": 0.3, "x2": 1.2, "y2": 0.3},
+        ]}
+        _, items = _parse_visual_response("Answer. [[HELPIE_VISUAL]]" + json.dumps(payload))
+        self.assertEqual([item["kind"] for item in items], ["underline"])
+        self.assertEqual(_normalize_visual_items(items), items)
 
 
 if __name__ == "__main__":

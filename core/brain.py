@@ -79,6 +79,10 @@ VISUAL_REQUEST_RE = re.compile(
 )
 
 SCREEN_REQUEST_RE = re.compile(
+    r"^(?=.*\b(?:ekran\w*|screen|display)\b)"
+    r"(?=.*\b(?:soru\w*|problem\w*|question\w*|çöz\w*|coz\w*|solve\w*|"
+    r"oku\w*|read\w*|anlat\w*|açıkla\w*|acikla\w*|gör\w*|gor\w*|"
+    r"incele\w*|bak\w*|what|see|describe|explain|analy[sz]e)\b)|"
     r"\b(?:what(?:'s| is)? (?:on|in) my screen|what do you see on my screen|"
     r"read my screen|look at (?:my )?screen|describe (?:my |the )?screen|"
     r"explain (?:this|the) (?:error|screen)|what am i looking at|"
@@ -96,6 +100,8 @@ SCREEN_REQUEST_RE = re.compile(
     r"ok çiz|ok ciz|okla göster|okla goster|altını çiz|altini ciz)\b",
     re.I,
 )
+
+SCREEN_SOLUTION_RE = re.compile(r"\b(?:çöz\w*|coz\w*|solve\w*)\b", re.I)
 
 VISUAL_RESPONSE_MARKER = "[[HELPIE_VISUAL]]"
 VISUAL_SCHEMA_VERSION = 1
@@ -424,6 +430,7 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
             "callout": {"kind", "x", "y", "number", "label"},
             "rect": {"kind", "x", "y", "width", "height", "label"},
             "arrow": {"kind", "x1", "y1", "x2", "y2", "label"},
+            "underline": {"kind", "x1", "y1", "x2", "y2", "label"},
             "equation": {"kind", "x", "y", "text"},
             "graph": {"kind", "x", "y", "width", "height", "expression"},
             "geometry": {"kind", "x", "y", "width", "height", "objects",
@@ -486,7 +493,7 @@ def _parse_visual_response(reply: str) -> tuple[str, list[dict]]:
                 or parsed["x"] + parsed["width"] > 1
                 or parsed["y"] + parsed["height"] > 1):
             continue
-        if kind == "arrow" and (parsed["x1"] == parsed["x2"]
+        if kind in {"arrow", "underline"} and (parsed["x1"] == parsed["x2"]
                                 and parsed["y1"] == parsed["y2"]):
             continue
         if kind == "callout":
@@ -1369,6 +1376,7 @@ class Brain:
                     "target": metadata.get("target") or "Primary display",
                     "active_window": "not available",
                 }
+                capture = image, metadata
         else:
             capture = actions.capture_screen_context()
         if (cancel_event and cancel_event.is_set()) or not self.cfg.get("screen_context_consent", False):
@@ -1396,7 +1404,9 @@ class Brain:
             remote = urlparse(endpoint).hostname not in {"localhost", "127.0.0.1", "::1"}
         self.on_event({"type": "screen_frame_transfer", "active": True, "remote": remote})
         answer = None
-        annotate = source == "companion" and bool(VISUAL_REQUEST_RE.search(prompt or ""))
+        annotate = source == "companion" and bool(
+            VISUAL_REQUEST_RE.search(prompt or "") or SCREEN_SOLUTION_RE.search(prompt or "")
+        )
         try:
             answer = self.llm.vision(
                 capture_context + (prompt or "What is on my screen right now?"), image,

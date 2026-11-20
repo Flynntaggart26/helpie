@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import threading
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "core"))
 
 import brain
+import shell
 
 
 class ApprovalIntegrationTests(unittest.TestCase):
@@ -26,6 +28,29 @@ class ApprovalIntegrationTests(unittest.TestCase):
         self.dispatch = patch.object(self.agent, "_dispatch", return_value="Opened.")
         self.action = self.dispatch.start()
         self.addCleanup(self.dispatch.stop)
+
+    def test_companion_screen_solution_requests_and_renders_visual_answer(self) -> None:
+        self.agent.cfg.update(screen_context_consent=True, companion_live_view_consent=True)
+        self.llm.provider = "gemini"
+        items = [{"kind": "underline", "x1": 0.1, "y1": 0.3, "x2": 0.8, "y2": 0.3},
+                 {"kind": "equation", "x": 0.1, "y": 0.6, "text": "x = 2"}]
+        self.llm.vision.return_value = "The answer is two. [[HELPIE_VISUAL]]" + json.dumps({"version": 1, "items": items})
+        self.agent.on_event = Mock()
+        with patch.object(shell, "capture_latest_frame", return_value=(b"synthetic", {"captured_at_ms": "0", "target": "test"})) as capture, \
+             patch.object(shell, "live_capture_status", return_value={"active": True, "companion_active": True}):
+            reply = self.agent.handle("ekrandaki soruyu çöz", source="companion")
+        self.assertEqual(reply, "The answer is two.")
+        capture.assert_called_once()
+        self.assertTrue(self.llm.vision.call_args.kwargs["annotate"])
+        events = [call.args[0] for call in self.agent.on_event.call_args_list]
+        visual = next(event for event in events if event.get("type") == "visual_annotations")
+        self.assertEqual([item["kind"] for item in visual["items"]], ["underline", "equation"])
+
+    def test_vague_question_does_not_capture_a_companion_frame(self) -> None:
+        with patch.object(shell, "capture_latest_frame") as capture:
+            self.agent.handle("bu soruyu çöz", source="companion")
+        capture.assert_not_called()
+        self.llm.vision.assert_not_called()
 
     def test_approval_executes_once_and_cancel_prevents_execution(self) -> None:
         self.assertIn("Calculator", self.agent.handle("explain quantum theory"))

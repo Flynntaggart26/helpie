@@ -470,14 +470,14 @@ function drawVisualNoteItems(context, width, height) {
       context.fillRect(px(item.x), py(item.y), px(item.width), py(item.height));
       context.strokeRect(px(item.x), py(item.y), px(item.width), py(item.height));
       context.fillStyle = "#ffca52"; label(item.label, px(item.x), py(item.y) - 7);
-    } else if (item.kind === "arrow" && [item.x1, item.y1, item.x2, item.y2].every(Number.isFinite)) {
+    } else if ((item.kind === "arrow" || item.kind === "underline") && [item.x1, item.y1, item.x2, item.y2].every(Number.isFinite)) {
       const x1 = px(item.x1), y1 = py(item.y1), x2 = px(item.x2), y2 = py(item.y2);
       const angle = Math.atan2(y2 - y1, x2 - x1);
       context.strokeStyle = "#55d6ff"; context.beginPath(); context.moveTo(x1, y1); context.lineTo(x2, y2); context.stroke();
-      context.beginPath(); context.moveTo(x2, y2);
+      if (item.kind === "arrow") { context.beginPath(); context.moveTo(x2, y2);
       context.lineTo(x2 - 11 * Math.cos(angle - 0.45), y2 - 11 * Math.sin(angle - 0.45));
       context.lineTo(x2 - 11 * Math.cos(angle + 0.45), y2 - 11 * Math.sin(angle + 0.45));
-      context.closePath(); context.fillStyle = "#55d6ff"; context.fill();
+      context.closePath(); context.fillStyle = "#55d6ff"; context.fill(); }
       label(item.label, (x1 + x2) / 2, (y1 + y2) / 2 - 8);
     } else if (item.kind === "equation" && typeof item.text === "string") {
       label(item.text.slice(0, 120), px(item.x), py(item.y), 20);
@@ -2909,14 +2909,14 @@ function updateOverlayAnnotations(payload, monitor) {
       rect.setAttribute("class", "overlay-annotation-rect");
       svg.appendChild(rect);
       addLabel(item.label, x, y - 10);
-    } else if (item.kind === "arrow" && valid(item.x1) && valid(item.y1)
+    } else if ((item.kind === "arrow" || item.kind === "underline") && valid(item.x1) && valid(item.y1)
       && valid(item.x2) && valid(item.y2) && (item.x1 !== item.x2 || item.y1 !== item.y2)) {
       const line = document.createElementNS(svg.namespaceURI, "line");
       line.setAttribute("x1", String(item.x1 * monitor.width));
       line.setAttribute("y1", String(item.y1 * monitor.height));
       line.setAttribute("x2", String(item.x2 * monitor.width));
       line.setAttribute("y2", String(item.y2 * monitor.height));
-      line.setAttribute("marker-end", `url(#${markerId})`);
+      if (item.kind === "arrow") line.setAttribute("marker-end", `url(#${markerId})`);
       line.setAttribute("class", "overlay-annotation-arrow");
       svg.appendChild(line);
       addLabel(item.label, (item.x1 + item.x2) * monitor.width / 2,
