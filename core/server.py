@@ -19,6 +19,7 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 import actions
+import action_policy
 import audit
 import autostart
 import config
@@ -1247,8 +1248,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
         if path == "/api/notes/clear":
-            actions.clear_notes()
-            self._json({"ok": True})
+            self._json({"error": "Ask Helpie to clear notes in chat, then confirm the request."}, 403)
             return
         if path == "/api/visual-notes/save":
             try:
@@ -1314,9 +1314,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": removed})
             return
         if path == "/api/reminders/clear":
-            app.reminders.clear()
-            app.bus.push({"type": "reminders", "reminders": app.reminders.list()})
-            self._json({"ok": True, "reminders": []})
+            self._json({"error": "Ask Helpie to clear reminders in chat, then confirm the request."}, 403)
             return
         if path == "/api/reminders":
             text = str(body.get("text", "")).strip()
@@ -1455,6 +1453,16 @@ class Handler(BaseHTTPRequestHandler):
             params = body.get("params", {}) or {}
             if not name:
                 self._json({"error": "name required"}, 400)
+                return
+            routine = routines.get_routine(name)
+            if not routine:
+                self._json({"error": "Routine not found."}, 404)
+                return
+            steps = routine.get("steps", [])
+            if not isinstance(steps, list) or not steps or any(
+                    not isinstance(step, dict) or step.get("action") not in action_policy.ROUTINE_ALLOWED_ACTIONS
+                    for step in steps):
+                self._json({"error": "This routine contains actions that must be requested separately. No steps were run."}, 403)
                 return
             # Run in background to avoid blocking
             threading.Thread(target=lambda: app.brain._run_routine(name, params), daemon=True).start()

@@ -2299,8 +2299,7 @@ function bind() {
     await api("/api/test_voice", { method: "POST", body: JSON.stringify({ text: "Hi, I'm Helpie. This is how I sound." }) });
   });
   $("notes-clear").addEventListener("click", async () => {
-    await api("/api/notes/clear", { method: "POST", body: "{}" });
-    loadNotes();
+    toast("Ask Helpie to clear notes in chat, then confirm.");
   });
   $("visual-note-new").addEventListener("click", newVisualNote);
   $("visual-note-save").addEventListener("click", saveVisualNote);
@@ -2557,8 +2556,7 @@ function bind() {
   });
   window.addEventListener("resize", resizeVisualNoteCanvas);
   $("reminders-clear").addEventListener("click", async () => {
-    await api("/api/reminders/clear", { method: "POST", body: "{}" });
-    renderReminders([]);
+    toast("Ask Helpie to clear reminders in chat, then confirm.");
   });
   $("memory-form").addEventListener("submit", async (event) => {
     event.preventDefault();

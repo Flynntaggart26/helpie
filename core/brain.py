@@ -677,6 +677,8 @@ class Brain:
         if result["moved"] == 0:
             return f"{prefix}Nothing to organize in {Path(result['folder']).name}."
         lines = [f"{prefix}Organized {result['moved']} file(s) in {Path(result['folder']).name} by {result['by']}."]
+        if dry:
+            lines.append("No files were moved.")
         if result["errors"]:
             lines.append(f"  {result['errors']} error(s).")
         return " ".join(lines)
@@ -687,6 +689,8 @@ class Brain:
         if total == 0:
             return f"{prefix}Nothing to organize."
         parts = [f"{prefix}Organized {total} file(s) across {len(results)} folder(s)."]
+        if dry:
+            parts.append("No files were moved.")
         for r in results:
             if "error" not in r and r.get("moved", 0):
                 parts.append(f"  {Path(r['folder']).name}: {r['moved']} file(s)")
@@ -767,25 +771,7 @@ class Brain:
         return steps[:MAX_PLAN_STEPS]
 
     def _run_plan(self, steps: list[str]) -> str:
-        steps = [str(step).strip(" ,.;") for step in (steps or []) if str(step).strip(" ,.;")]
-        steps = steps[:MAX_PLAN_STEPS]
-        if not steps or self._in_plan:
-            return ""
-        self._in_plan = True
-        replies: list[str] = []
-        try:
-            for step in steps:
-                try:
-                    answer = self.handle(step)
-                except Exception:
-                    answer = ""
-                if answer:
-                    replies.append(answer)
-                if self.pending:
-                    break
-        finally:
-            self._in_plan = False
-        return " ".join(replies) or "I could not run those steps."
+        return "Please request one action at a time. Multi-step execution is unavailable until each action can be reviewed."
 
     # ------------------------------------------------------------------ #
     def handle(self, text: str, allow_screen_capture: bool = True,
@@ -836,7 +822,7 @@ class Brain:
                 return "Okay, cancelled."
             if decision == "yes":
                 audit.log("Pending action approved", source="action")
-                if proposal.risk == "destructive":
+                if proposal.risk in {"destructive", "device_control"}:
                     return self._dispatch(proposal.name, proposal.args, confirmed=True)
                 return self._dispatch(proposal.name, proposal.args)
             return f"Please say yes or no. Proposed action: {proposal.preview}."
@@ -1110,14 +1096,11 @@ class Brain:
             return actions.lock_screen()
 
         if re.search(r"\b(shut ?down|turn off (the )?(pc|computer)|power off|bilgisayarı kapat)\b", t):
-            self.pending = ("power", {"mode": "shutdown"})
-            return "I am about to shut the computer down. Are you sure?"
+            return self._request_sensitive_action("power", {"mode": "shutdown"}, proposal_generation)
         if re.search(r"\b(restart|reboot|yeniden başlat)\b", t):
-            self.pending = ("power", {"mode": "restart"})
-            return "I am about to restart the computer. Are you sure?"
+            return self._request_sensitive_action("power", {"mode": "restart"}, proposal_generation)
         if re.search(r"\b(sleep|suspend)\b", t) and re.search(r"(pc|computer|bilgisayar)", t):
-            self.pending = ("power", {"mode": "sleep"})
-            return "I am about to put the computer to sleep. Are you sure?"
+            return self._request_sensitive_action("power", {"mode": "sleep"}, proposal_generation)
         if re.search(r"\b(cancel (the )?(shutdown|restart)|kapanmayı iptal)\b", t):
             return actions.cancel_shutdown()
 
@@ -1142,7 +1125,7 @@ class Brain:
         if re.search(r"\b(read|show|list)\b.*\bnotes\b|\bnotlarımı (oku|göster)\b", t):
             return actions.read_notes()
         if re.search(r"\b(clear|delete|erase)\b.*\bnotes\b|\bnotlarımı sil\b", t):
-            return actions.clear_notes()
+            return self._request_sensitive_action("clear_notes", {}, proposal_generation)
 
         # clipboard
         if re.search(r"\bclipboard\b|\bpanoda\b|\bpanoyu\b|\bpanoya\b", t):
@@ -1189,7 +1172,7 @@ class Brain:
             return actions.read_reminders()
         if re.search(r"\b(clear|delete|cancel|remove)\b.*\breminders?\b"
                      r"|\bhatırlatıcıları (sil|temizle)\b", t):
-            return actions.clear_reminders()
+            return self._request_sensitive_action("clear_reminders", {}, proposal_generation)
 
         # timers
         match = re.search(
@@ -1210,7 +1193,7 @@ class Brain:
 
         match = re.search(r"^(?:type|write|yaz)[:\s]+(.+)$", t)
         if match:
-            return actions.type_text(match.group(1))
+            return "Typing into other applications is unavailable until the target window can be reviewed and confirmed."
 
         # files
         match = re.search(r"(?:open|find|aç)\s+(?:the\s+)?(?:file\s+)?(.+?)\s*(?:file|dosyasını|dosyayı)?$", t)
@@ -1227,7 +1210,7 @@ class Brain:
             folder = self._resolve_folder(t)
             if folder:
                 by = "date" if re.search(r"\b(date|tarih|time)\b", t) else "type"
-                dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme)\b", t))
+                dry = True
                 result = actions.organize_folder(folder, by, dry)
                 return self._format_organize_result(result, dry)
             return "Which folder should I organize? Try 'organize downloads by type'."
@@ -1235,7 +1218,7 @@ class Brain:
         if re.search(r"\b(organize|sort|arrange|clean up|tidy|düzenle|sırala|temizle)\b", t) and \
            re.search(r"\b(all|everything|hepsi|her yer)\b", t):
             by = "date" if re.search(r"\b(date|tarih|time)\b", t) else "type"
-            dry = bool(re.search(r"\b(dry|preview|test|simulate|önizleme)\b", t))
+            dry = True
             results = actions.organize_all(by, dry)
             return self._format_organize_all_result(results, dry)
 
@@ -1280,14 +1263,14 @@ class Brain:
         match = re.search(r"^(?:youtube|yt)\s+(.{2,})$", t)
         if match:
             return actions.web_search(match.group(1), "youtube")
-        if re.search(r"\b(search|look up|google|ara|araştır)\b", t) or re.search(r"(hakkında|about)", t):
+        if re.search(r"\b(search|look up|google|ara|araştır)\b", t):
             engine = "youtube" if "youtube" in t else "google"
             query = _clean_query(t)
             if len(query) > 1:
                 return actions.web_search(query, engine)
 
         match = re.search(r"(https?://\S+|www\.\S+)", t)
-        if match:
+        if match and re.search(r"\b(?:open|visit|go to|aç|git)\b", t):
             return actions.open_url(match.group(1))
 
         # --- Plugin commands (before LLM fallback) ---
@@ -1478,22 +1461,44 @@ class Brain:
             return "I could not use that application or window name."
         return self._dispatch(proposal.name, proposal.args)
 
+    def _request_sensitive_action(self, name: str, args: dict, generation: int) -> str:
+        proposal = action_policy.review_direct_action(name, args)
+        if proposal is None:
+            return "I could not validate that action."
+        if self._in_plan:
+            audit.log("Blocked sensitive action in a plan", ok=False, source="action")
+            return "Please request that action separately so I can ask for confirmation."
+        with self._model_proposal_lock:
+            if generation != self._model_proposal_generation:
+                return "The action request was cancelled."
+            if self._model_proposal is not None:
+                return "Another action is awaiting confirmation. Please answer yes or no."
+            self._model_proposal = (proposal, time.monotonic() + 60.0)
+        audit.log("Requested sensitive action approval", source="action")
+        return f"Proposed action: {proposal.preview}. Say yes to confirm or no to cancel."
+
     def _dispatch(self, name: str, args: dict, confirmed: bool = False) -> str:
+        if name in {"power", "clear_notes", "clear_reminders"}:
+            proposal = action_policy.review_direct_action(name, args)
+            if not confirmed or proposal is None:
+                audit.log("Blocked unconfirmed sensitive action", ok=False, source="action")
+                return "Please request that action separately and confirm it."
+            if name == "power":
+                return self._power(proposal.args["mode"])
+            try:
+                result = actions.clear_notes() if name == "clear_notes" else actions.clear_reminders()
+            except Exception:
+                audit.log("Sensitive action failed", ok=False, source="action")
+                return "I could not complete that action."
+            audit.log("Completed confirmed data clearing", source="action")
+            return result
+        if name == "type_text":
+            return "Typing into other applications is unavailable until the target window can be reviewed and confirmed."
         if name == "empty_recycle_bin":
             if not confirmed or args != {}:
                 audit.log("Blocked unconfirmed destructive action", ok=False, source="action")
                 return "Please request emptying the Recycle Bin directly and confirm it."
             return actions.empty_recycle_bin()
-        if name == "power":
-            mode = str(args.get("mode", "shutdown")).lower()
-            if mode not in {"shutdown", "restart", "sleep"}:
-                return "I cannot perform that power action."
-            if not confirmed:
-                self.pending = ("power", {"mode": mode})
-                labels = {"shutdown": "shut the computer down", "restart": "restart the computer",
-                          "sleep": "put the computer to sleep"}
-                return f"I am about to {labels[mode]}. Are you sure?"
-            return self._power(mode)
         try:
             minutes = float(args.get("minutes", 0) or 0)
         except (TypeError, ValueError):
@@ -1573,6 +1578,9 @@ class Brain:
                         patterns = cmd_info.get("patterns", [])
                         for pattern in patterns:
                             if re.search(pattern, text, re.I):
+                                if (plugin.manifest.name, cmd_name) not in action_policy.READ_ONLY_PLUGIN_COMMANDS:
+                                    audit.log("Blocked plugin action without review", ok=False, source="plugin")
+                                    return "This plugin action is unavailable until it can be reviewed and confirmed."
                                 # Found matching pattern, call the handler
                                 handler = cmd_info.get("handler")
                                 if handler and callable(handler):
@@ -1600,12 +1608,17 @@ class Brain:
         if not hasattr(self, '_app') or not self._app:
             return "Routines not available."
         routine = routines.get_routine(name)
-        if routine and any(step.get("action") == "power" for step in routine.get("steps", [])):
-            return "Power actions must be requested directly so Helpie can confirm them first."
+        if routine and any(not isinstance(step, dict) or step.get("action") not in action_policy.ROUTINE_ALLOWED_ACTIONS
+                           for step in routine.get("steps", [])):
+            return "This routine contains actions that must be requested separately and reviewed. No steps were run."
         return routines.run_routine(name, params, executor=self._execute_routine_step)
 
     def _execute_routine_step(self, step_name: str, step_args: dict) -> str:
         # Reuse the existing _dispatch for routine steps
+        if step_name not in action_policy.ROUTINE_ALLOWED_ACTIONS:
+            return "This action must be requested separately and confirmed."
+        if step_name in {"open_app", "close_app", "switch_window"}:
+            return self._dispatch_direct_desktop(step_name, step_args)
         return self._dispatch(step_name, step_args)
 
     def _save_routine(self, name: str, steps: list, description: str = "") -> str:

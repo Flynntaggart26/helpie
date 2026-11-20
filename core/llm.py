@@ -19,28 +19,9 @@ Rules:
 - Available actions:
   open_app {"app": "chrome"}
   close_app {"app": "chrome"}
-  web_search {"query": "...", "engine": "google"}   (engine may be "youtube")
-  open_site {"name": "youtube"}
-  open_url {"url": "https://..."}
-  set_volume {"percent": 40}
-  volume {"direction": "up"}                        (up, down, mute)
-  set_brightness {"percent": 60}
-  add_note {"text": "..."}
-  type_text {"text": "..."}
-  screenshot {}
-  set_timer {"minutes": 5, "label": "..."}
-  lock_screen {}
-  calculate {"expression": "12*8"}
-  weather {}
-  battery {}
-  system_info {}
-  remember {"text": "..."}                          (save a lasting fact about the user)
-  read_screen {}                                    (look at what is currently on screen)
-  summarize_file {"query": "report"}                (summarise a document by name)
-  briefing {}
-  plan {"steps": ["open chrome", "search for cats"]} (up to 4 short commands, in order)
+  switch_window {"name": "Calculator"}
 - The action line is silent: never mention it in your spoken answer.
-- For multi-step requests use one plan action and do not add other actions.
+- Do not propose multi-step plans or claim an action has already happened.
 - Only add an action when the user actually asks for one."""
 
 VISION_PROMPT = """Answer the user's actual question about the screenshot of their Windows desktop.

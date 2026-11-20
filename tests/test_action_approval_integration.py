@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 import json
 import threading
+import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -142,6 +144,107 @@ class ApprovalIntegrationTests(unittest.TestCase):
         self.action.assert_not_called()
         self.assertEqual(self.agent._dispatch_direct_desktop("open_app", {"app": "Calculator"}), "Opened.")
         self.action.assert_called_once_with("open_app", {"app": "Calculator"})
+
+    def test_clear_notes_requires_one_confirmation_and_expires(self) -> None:
+        self.assertIn("Delete all notes", self.agent.handle("clear notes"))
+        self.action.assert_not_called()
+        self.assertEqual(self.agent.handle("no"), "Okay, cancelled.")
+        self.action.assert_not_called()
+        with patch.object(brain.time, "monotonic", return_value=100):
+            self.agent.handle("clear notes")
+        with patch.object(brain.time, "monotonic", return_value=161):
+            self.assertIn("expired", self.agent.handle("yes"))
+        self.action.assert_not_called()
+        self.agent.handle("clear notes")
+        self.agent.handle("yes")
+        self.action.assert_called_once_with("clear_notes", {}, confirmed=True)
+
+    def test_power_request_does_not_execute_without_confirmation(self) -> None:
+        self.assertIn("Restart the computer", self.agent.handle("restart computer"))
+        self.action.assert_not_called()
+        self.agent.cancel_model_proposal()
+        self.assertNotEqual(self.agent.handle("yes"), "Opened.")
+        self.action.assert_not_called()
+
+    def test_organizer_never_moves_real_files_even_without_preview_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            source = folder / "example.txt"
+            source.write_text("test", encoding="utf-8")
+            result = brain.actions.organize_folder(folder, dry_run=False)
+            self.assertTrue(result["dry_run"])
+            self.assertTrue(source.is_file())
+            self.assertEqual(list(folder.iterdir()), [source])
+
+    def test_unsafe_routine_is_rejected_before_any_step(self) -> None:
+        self.agent._app = Mock()
+        routine = {"steps": [{"action": "open_app", "args": {"app": "Calculator"}},
+                             {"action": "type_text", "args": {"text": "hello"}}]}
+        with patch.object(brain.routines, "get_routine", return_value=routine), \
+             patch.object(brain.routines, "run_routine") as run:
+            self.assertIn("No steps were run", self.agent._run_routine("test"))
+        run.assert_not_called()
+        self.action.assert_not_called()
+
+    def test_typing_and_multi_step_plan_never_execute(self) -> None:
+        self.dispatch.stop()
+        with patch.object(brain.actions, "type_text") as typing, \
+             patch.object(brain.actions, "open_app") as opening:
+            self.assertIn("unavailable", self.agent.handle("type hello"))
+            self.assertIn("one action", self.agent.handle("open calculator and then open chrome"))
+        typing.assert_not_called()
+        opening.assert_not_called()
+
+    def test_mentioning_a_url_does_not_open_it(self) -> None:
+        self.llm.chat.return_value = "I can explain the address."
+        with patch.object(brain.actions, "open_url") as open_url:
+            self.assertEqual(self.agent.handle("tell me about https://example.com"),
+                             "I can explain the address.")
+        open_url.assert_not_called()
+
+    def test_write_plugin_command_is_blocked_before_handler(self) -> None:
+        handler = Mock(return_value="sent")
+        plugin = types.SimpleNamespace(enabled=True, instance=object(),
+            manifest=types.SimpleNamespace(name="email_calendar"),
+            _api=types.SimpleNamespace(get_commands=lambda: {
+                "send_email": {"patterns": ["send email"], "handler": handler}}))
+        self.agent._app = types.SimpleNamespace(plugins=types.SimpleNamespace(plugins={"email": plugin}))
+        reply = brain.Brain._dispatch_plugin_command(self.agent, "send email")
+        self.assertIn("unavailable", reply)
+        handler.assert_not_called()
+
+    def test_bulk_clear_endpoints_refuse_to_bypass_confirmation(self) -> None:
+        import server
+        for path in ("/api/notes/clear", "/api/reminders/clear"):
+            with self.subTest(path=path):
+                handler = server.Handler.__new__(server.Handler)
+                handler.app = Mock()
+                handler.path = path
+                handler._trusted_local_request = Mock(return_value=True)
+                handler._authorized_api = Mock(return_value=True)
+                handler._body = Mock(return_value={})
+                handler._json = Mock()
+                with patch.object(brain.actions, "clear_notes") as clear:
+                    handler.do_POST()
+                clear.assert_not_called()
+                handler.app.reminders.clear.assert_not_called()
+                self.assertEqual(handler._json.call_args.args[1], 403)
+
+    def test_routine_endpoint_refuses_unsafe_steps_before_starting_thread(self) -> None:
+        import server
+        handler = server.Handler.__new__(server.Handler)
+        handler.app = Mock()
+        handler.path = "/api/routines/run"
+        handler._trusted_local_request = Mock(return_value=True)
+        handler._authorized_api = Mock(return_value=True)
+        handler._body = Mock(return_value={"name": "unsafe"})
+        handler._json = Mock()
+        with patch.object(server.routines, "get_routine", return_value={"steps": [
+                {"action": "type_text", "args": {"text": "hello"}}]}), \
+             patch.object(server.threading, "Thread") as thread:
+            handler.do_POST()
+        thread.assert_not_called()
+        self.assertEqual(handler._json.call_args.args[1], 403)
 
     def test_user_commands_route_through_direct_policy(self) -> None:
         with patch.object(brain.action_policy, "review_direct_action", wraps=brain.action_policy.review_direct_action) as review:

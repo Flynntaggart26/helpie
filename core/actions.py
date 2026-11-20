@@ -1107,6 +1107,8 @@ def _safe_move(src: Path, dst_dir: Path, dry_run: bool = False) -> tuple[bool, s
 
 def organize_folder(folder: Path, by: str = "type", dry_run: bool = False) -> dict:
     """Organize files in folder by type or date. Returns stats dict."""
+    # Moving files is disabled until each target can be reviewed at action time.
+    dry_run = True
     if not folder.exists() or not folder.is_dir():
         return {"error": f"Folder not found: {folder}"}
     if by not in ("type", "date"):
