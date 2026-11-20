@@ -1123,6 +1123,10 @@ function applySettings() {
   document.documentElement.className = themeClass;
   $("set-rate").value = s.rate || "+0%";
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
+  $("set-groq-transcription").checked = !!s.groq_speech_consent;
+  $("set-groq-speech-key").value = "";
+  $("groq-speech-key-state").textContent = s.has_groq_speech_key
+    ? "A key is saved securely. Leave blank to keep it." : "Enter a Groq key; it is saved securely on this PC.";
   $("set-cloud-tts").checked = !!s.cloud_tts_consent;
   updateVoiceOutputStatus();
   $("set-screen-context").checked = !!s.screen_context_consent;
@@ -1253,6 +1257,8 @@ async function saveSettings() {
     voice: $("set-voice").value,
     rate: $("set-rate").value,
     cloud_speech_consent: $("set-cloud-transcription").checked,
+    groq_speech_consent: $("set-groq-transcription").checked,
+    groq_speech_key: $("set-groq-speech-key").value.trim() || undefined,
     cloud_tts_consent: $("set-cloud-tts").checked,
     screen_context_consent: $("set-screen-context").checked,
     companion_live_view_consent: $("set-screen-context").checked

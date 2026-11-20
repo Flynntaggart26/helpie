@@ -56,6 +56,7 @@ VOICES = [
 ]
 
 LANGUAGES = [
+    {"id": "groq-auto", "label": "Turkish + English (Groq multilingual)"},
     {"id": "en-US", "label": "English (US)"},
     {"id": "en-GB", "label": "English (UK)"},
     {"id": "tr-TR", "label": "Turkish"},
@@ -470,13 +471,16 @@ class App:
             self.push_state("idle")
             self.bus.push({"type": "error", "text": "Voice input is disabled in this run."})
             return
-        if not self.cfg.get("cloud_speech_consent", False):
+        multilingual = self.cfg.get("language") == "groq-auto"
+        consent = "groq_speech_consent" if multilingual else "cloud_speech_consent"
+        if not self.cfg.get(consent, False) or (multilingual and not self.cfg.get("groq_speech_key")):
             if push_to_talk:
                 self._push_to_talk_stop.set()
             self.push_state("idle")
             self.bus.push({
                 "type": "error",
-                "text": "Voice commands are off until you enable Google transcription in Settings → Voice. Typed commands still work.",
+                "text": ("Enable Groq transcription and save a Groq speech key in Settings → Voice."
+                         if multilingual else "Enable Google transcription in Settings → Voice. Typed commands still work."),
             })
             return
         if not self._listen_lock.acquire(blocking=False):
@@ -519,11 +523,17 @@ class App:
                     self.push_state("idle")
                     break
 
+                # A permission or provider change during recording cancels this transfer.
+                if (self.cfg.get("language") == "groq-auto") != multilingual or not self.cfg.get(consent, False):
+                    self.push_state("idle")
+                    break
+
                 self.push_state("thinking", "transcribing…")
                 self._cloud_voice_active = True
                 self.bus.push({"type": "cloud_voice", "active": True, "mode": "transcribe"})
                 try:
-                    text = self.listener.transcribe(wav, self.cfg.get("language", "en-US"))
+                    text = (self.listener.transcribe_multilingual(wav, self.cfg.get("groq_speech_key", ""))
+                            if multilingual else self.listener.transcribe(wav, self.cfg.get("language", "en-US")))
                 except Exception as exc:
                     if cancel_event and cancel_event.is_set():
                         break
@@ -531,7 +541,9 @@ class App:
                     self._cloud_voice_active = False
                     self.bus.push({"type": "cloud_voice", "active": False})
                     self.bus.push({"type": "error",
-                                   "text": f"Speech recognition failed ({type(exc).__name__}). Check your connection."})
+                                   "text": ("Groq transcription failed. Check your speech API key, connection and account limits."
+                                            if multilingual else
+                                            f"Speech recognition failed ({type(exc).__name__}). Check your connection.")})
                     break
 
                 if cancel_event and cancel_event.is_set():
@@ -619,7 +631,8 @@ class App:
     # -- settings -------------------------------------------------------- #
     def public_cfg(self) -> dict:
         safe = {k: v for k, v in self.cfg.items()
-                if k not in ("api_key", "openai_key", "wake_word_access_key")}
+                if k not in ("api_key", "openai_key", "wake_word_access_key", "groq_speech_key")
+                and k not in ("api_key_enc", "openai_key_enc", "wake_word_access_key_enc", "groq_speech_key_enc")}
         safe["has_key"] = bool(self.cfg.get("api_key"))
         safe["key_hint"] = ("•" * 6 + self.cfg["api_key"][-4:]) if self.cfg.get("api_key") else ""
         # Ollama settings
@@ -632,6 +645,7 @@ class App:
         openai_key = self.cfg.get("openai_key", "")
         safe["openai_key_hint"] = ("•" * 6 + openai_key[-4:]) if openai_key else ""
         safe["has_openai_key"] = bool(openai_key)
+        safe["has_groq_speech_key"] = bool(self.cfg.get("groq_speech_key"))
         safe["has_screen_context_consent"] = bool(self.cfg.get("screen_context_consent"))
         safe["has_wake_word_key"] = bool(self.cfg.get("wake_word_access_key"))
         try:
@@ -649,7 +663,7 @@ class App:
         previous_cfg = dict(self.cfg)
         self.cfg = dict(self.cfg)
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
-                   "mic_index", "language", "cloud_speech_consent", "cloud_tts_consent",
+                   "mic_index", "language", "cloud_speech_consent", "groq_speech_consent", "groq_speech_key", "cloud_tts_consent",
                    "screen_context_consent", "companion_live_view_consent",
                    "screen_capture_target", "screen_capture_target_id",
                    "screen_capture_region",
@@ -660,12 +674,16 @@ class App:
         for key, value in (patch or {}).items():
             if key in allowed:
                 # Empty password inputs mean "keep the saved credential".
-                if key in {"api_key", "openai_key", "wake_word_access_key"} and not value:
+                if key in {"api_key", "openai_key", "wake_word_access_key", "groq_speech_key"} and not value:
                     continue
                 if key == "provider" and value not in ("gemini", "ollama", "openai"):
                     continue
+                if key == "language" and value not in {item["id"] for item in LANGUAGES}:
+                    continue
+                if key == "groq_speech_key" and (not isinstance(value, str) or len(value) > 512):
+                    continue
                 if key in {"screen_context_consent", "companion_live_view_consent",
-                           "cloud_speech_consent", "cloud_tts_consent"}:
+                           "cloud_speech_consent", "groq_speech_consent", "cloud_tts_consent"}:
                     if not isinstance(value, bool):
                         continue
                 if key == "screen_capture_target" and value not in (

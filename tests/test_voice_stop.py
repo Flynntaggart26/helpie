@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import array
+import json
 import os
 import subprocess
 import sys
@@ -20,6 +21,79 @@ import config
 
 
 class VoiceStopTests(unittest.TestCase):
+    def test_multilingual_transcription_sends_one_clip_to_groq_without_fixed_language(self) -> None:
+        listener = voice.Listener.__new__(voice.Listener)
+        response = Mock(status_code=200)
+        response.json.return_value = {"text": "  ekrandaki question  nedir  "}
+        requests = types.SimpleNamespace(post=Mock(return_value=response))
+        with patch.dict(sys.modules, {"requests": requests}):
+            result = listener.transcribe_multilingual(b"synthetic wav", "test-key")
+        self.assertEqual(result, "ekrandaki question nedir")
+        call = requests.post.call_args
+        self.assertEqual(call.args[0], "https://api.groq.com/openai/v1/audio/transcriptions")
+        self.assertEqual(call.kwargs["data"]["model"], "whisper-large-v3")
+        self.assertNotIn("language", call.kwargs["data"])
+        self.assertFalse(call.kwargs["allow_redirects"])
+
+    def test_multilingual_mode_requires_separate_groq_consent_before_listening(self) -> None:
+        app = server.App.__new__(server.App)
+        app._no_voice = False
+        app.cfg = {"language": "groq-auto", "cloud_speech_consent": True,
+                   "groq_speech_consent": False, "groq_speech_key": "test-key"}
+        app.listener = Mock()
+        app.bus = Mock()
+        app.push_state = Mock()
+        app.listen("manual")
+        app.listener.listen.assert_not_called()
+        app.listener.transcribe_multilingual.assert_not_called()
+
+    def test_revoking_groq_consent_during_recording_blocks_transfer(self) -> None:
+        app = server.App.__new__(server.App)
+        app._no_voice = False
+        app.cfg = {"language": "groq-auto", "groq_speech_consent": True,
+                   "groq_speech_key": "test-key"}
+        app._listen_lock = threading.Lock()
+        app._closing = False
+        app.bus = Mock()
+        app.push_state = Mock()
+        app.listener = Mock()
+        def synthetic_recording(**_kwargs):
+            app.cfg["groq_speech_consent"] = False
+            return b"synthetic wav"
+        app.listener.listen.side_effect = synthetic_recording
+        app.listen("manual")
+        app.listener.transcribe_multilingual.assert_not_called()
+
+    def test_public_settings_do_not_expose_speech_credentials(self) -> None:
+        app = server.App.__new__(server.App)
+        app.cfg = {"groq_speech_key": "test-key", "groq_speech_key_enc": "encrypted-value"}
+        with patch.object(server.autostart, "enabled", return_value=False), \
+             patch.object(server.actions, "weather", return_value=""):
+            public = app.public_cfg()
+        self.assertTrue(public["has_groq_speech_key"])
+        self.assertNotIn("groq_speech_key", public)
+        self.assertNotIn("groq_speech_key_enc", public)
+
+    def test_groq_speech_key_is_encrypted_on_disk(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = Path(directory) / "settings.json"
+            protector = types.SimpleNamespace(protect=lambda value: "protected:" + value)
+            with patch.object(config, "DATA_DIR", Path(directory)), \
+                 patch.object(config, "SETTINGS_PATH", settings), patch.object(config, "dpapi", protector):
+                config.save({"groq_speech_key": "sample-key"})
+            data = json.loads(settings.read_text(encoding="utf-8"))
+        self.assertNotIn("groq_speech_key", data)
+        self.assertEqual(data["groq_speech_key_enc"], "protected:sample-key")
+
+    def test_failed_multilingual_request_does_not_fall_back_to_google(self) -> None:
+        listener = voice.Listener.__new__(voice.Listener)
+        requests = types.SimpleNamespace(post=Mock(return_value=Mock(status_code=401)))
+        listener.recognizer = Mock()
+        with patch.dict(sys.modules, {"requests": requests}):
+            with self.assertRaises(RuntimeError):
+                listener.transcribe_multilingual(b"synthetic wav", "invalid-key")
+        listener.recognizer.recognize_google.assert_not_called()
+
     def test_voice_detection_keeps_initial_speech_frames(self) -> None:
         stream = Mock()
         stream.read.side_effect = [b"ambient"] * 12 + [b"first", b"second", OSError("end")]

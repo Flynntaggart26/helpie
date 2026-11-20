@@ -470,6 +470,21 @@
 
                 <div class="split-row">
                   <div class="split-text">
+                    <span class="split-label">Allow Groq multilingual transcription</span>
+                    <span class="split-desc">Off by default. In Turkish + English mode, recorded commands are sent to Groq's Whisper model. Groq usage limits and charges may apply. No audio is sent to Google in this mode.</span>
+                  </div>
+                  <div class="split-control">
+                    <label class="switch"><input type="checkbox" id="set-groq-transcription" /><span class="track"></span></label>
+                  </div>
+                </div>
+                <div class="form-block">
+                  <label class="page-label" for="set-groq-speech-key">Groq speech API key</label>
+                  <input type="password" id="set-groq-speech-key" autocomplete="off" />
+                  <p class="page-help" id="groq-speech-key-state">Saved securely on this PC. Leave blank to keep the saved key.</p>
+                </div>
+
+                <div class="split-row">
+                  <div class="split-text">
                     <span class="split-label">Use Microsoft Edge neural voice for replies</span>
                     <span class="split-desc">Saves immediately. When enabled, reply text is sent to Microsoft’s online speech service and the selected voice is used. When off, Helpie uses the default Windows voice locally.</span>
                   </div>
@@ -521,7 +536,7 @@
                 <div class="form-block">
                   <label class="page-label" for="set-language">Speech recognition language</label>
                   <select id="set-language" class="wide"></select>
-                  <p class="page-help">Choose the language you speak. Select Turkish for Turkish speech; English recognition may mishear Turkish. Typed commands can use either language.</p>
+                  <p class="page-help">For mixed Turkish and English speech, choose the Groq multilingual option and enable Groq transcription above. Recognition may still make mistakes. Typed commands can use either language.</p>
                 </div>
 
                 <div class="form-block">

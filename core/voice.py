@@ -411,6 +411,26 @@ class Listener:
         text = self.recognizer.recognize_google(audio, language=language)
         return re.sub(r"\s+", " ", (text or "").strip())
 
+    def transcribe_multilingual(self, wav: bytes, api_key: str) -> str:
+        """Transcribe a user-authorized command with Groq's multilingual model."""
+        if not api_key or not wav or len(wav) > 8 * 1024 * 1024:
+            raise ValueError("Groq transcription needs an API key and a valid audio clip")
+        import requests
+        response = requests.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": "Bearer " + api_key},
+            files={"file": ("command.wav", wav, "audio/wav")},
+            data={"model": "whisper-large-v3", "response_format": "json"},
+            timeout=30, allow_redirects=False,
+        )
+        if response.status_code != 200:
+            raise RuntimeError("Groq transcription is unavailable")
+        result = response.json()
+        text = result.get("text") if isinstance(result, dict) else None
+        if not isinstance(text, str):
+            raise ValueError("Invalid transcription response")
+        return re.sub(r"\s+", " ", text.strip())[:4000]
+
 
 # --------------------------------------------------------------------------- #
 #  Konuşmacı
