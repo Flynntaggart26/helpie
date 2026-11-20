@@ -50,6 +50,13 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertIsNone(review_model_action("empty_recycle_bin", {}))
         self.assertIsNone(review_direct_action("empty_recycle_bin", {"extra": True}))
 
+    def test_screenshot_is_sensitive_and_only_direct(self) -> None:
+        proposal = review_direct_action("screenshot", {})
+        self.assertEqual(proposal.risk, "sensitive_local_data")
+        self.assertIn("all monitors", proposal.preview)
+        self.assertIsNone(review_direct_action("screenshot", {"monitor": 1}))
+        self.assertIsNone(review_model_action("screenshot", {}))
+
 
 if __name__ == "__main__":
     unittest.main()

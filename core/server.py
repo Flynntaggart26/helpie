@@ -1353,6 +1353,16 @@ class Handler(BaseHTTPRequestHandler):
             audit.log("Requested data action approval", source="action")
             self._json({"token": token, "preview": preview, "expires_in_seconds": approval_drafts.APPROVAL_SECONDS})
             return
+        if path == "/api/windows/review":
+            try:
+                windows = actions.list_windows()
+                titles = [window.title[:200] for window in windows[:50] if isinstance(window.title, str) and window.title]
+            except Exception:
+                self._json({"error": "Could not inspect open windows."}, 503)
+                return
+            audit.log("Reviewed open windows", source="action")
+            self._json({"titles": titles, "limited": len(windows) > 50})
+            return
         if path == "/api/action-approval/cancel":
             token = body.get("token")
             if not isinstance(token, str):

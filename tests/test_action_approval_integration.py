@@ -92,6 +92,18 @@ class ApprovalIntegrationTests(unittest.TestCase):
         self.assertIsNone(self.agent._model_proposal)
         self.action.assert_not_called()
 
+    def test_stop_after_approval_before_dispatch_prevents_action(self) -> None:
+        self.agent.handle("restart computer")
+        cancel = threading.Event()
+        def log(title, *_args, **_kwargs):
+            if title == "Pending action approved":
+                cancel.set()
+                self.agent.cancel_model_proposal()
+        with patch.object(brain.audit, "log", side_effect=log):
+            reply = self.agent.handle("yes", cancel_event=cancel)
+        self.assertIn("cancelled", reply.lower())
+        self.action.assert_not_called()
+
     def test_stop_during_screen_picker_prevents_provider_transfer(self) -> None:
         self.agent.cfg["screen_context_consent"] = True
         self.agent.llm.vision = Mock()
@@ -242,6 +254,62 @@ class ApprovalIntegrationTests(unittest.TestCase):
         open_url.assert_not_called()
         search.assert_not_called()
 
+    def test_screenshot_requires_approval_and_does_not_run_after_cancel(self) -> None:
+        self.dispatch.stop()
+        with patch.object(brain.actions, "screenshot", return_value="Saved.") as screenshot:
+            self.assertIn("all monitors", self.agent.handle("take a screenshot"))
+            screenshot.assert_not_called()
+            self.agent.handle("no")
+            screenshot.assert_not_called()
+            self.agent.handle("take a screenshot")
+            self.assertEqual(self.agent.handle("yes"), "Saved.")
+            screenshot.assert_called_once()
+            self.assertIn("confirm", self.agent._dispatch("screenshot", {}))
+            self.agent._dispatch("screenshot", {"extra": True}, confirmed=True)
+            screenshot.assert_called_once()
+
+    def test_close_app_requires_approval_and_routine_cannot_bypass_it(self) -> None:
+        preview = self.agent.handle("close chrome")
+        self.assertIn("unsaved", preview)
+        self.action.assert_not_called()
+        self.agent.handle("yes")
+        self.action.assert_called_once_with("close_app", {"app": "chrome"}, confirmed=True)
+        self.action.reset_mock()
+        self.assertIn("confirmed", self.agent._execute_routine_step("close_app", {"app": "chrome"}))
+        self.action.assert_not_called()
+
+    def test_app_close_does_not_force_termination_or_claim_failed_close(self) -> None:
+        with patch.object(brain.actions.subprocess, "run", return_value=Mock(returncode=1)) as run, \
+             patch.object(brain.actions, "_audit") as log:
+            result = brain.actions.close_app("chrome")
+        self.assertNotIn("/F", run.call_args.args[0])
+        self.assertIn("could not", result.lower())
+        log.assert_not_called()
+
+    def test_switch_window_rejects_ambiguous_targets(self) -> None:
+        windows = [brain.actions._WindowInfo(1, "Document A - Editor"),
+                   brain.actions._WindowInfo(2, "Document B - Editor")]
+        with patch.object(brain.actions, "list_windows", return_value=windows):
+            result = brain.actions.switch_window("Editor")
+        self.assertIn("More than one", result)
+
+    def test_partial_file_name_does_not_open_an_unreviewed_target(self) -> None:
+        with patch.object(brain.actions, "open_file") as open_file:
+            reply = self.agent.handle("open report file")
+        self.assertIn("exact target", reply)
+        open_file.assert_not_called()
+
+    def test_switch_window_does_not_claim_success_when_windows_refuses(self) -> None:
+        windows = [brain.actions._WindowInfo(1, "Document - Editor")]
+        user32 = Mock()
+        user32.SetForegroundWindow.return_value = 0
+        with patch.object(brain.actions, "list_windows", return_value=windows), \
+             patch.object(brain.actions.ctypes, "windll", types.SimpleNamespace(user32=user32)), \
+             patch.object(brain.actions, "_audit") as audit:
+            result = brain.actions.switch_window("Editor")
+        self.assertIn("did not allow", result)
+        audit.assert_not_called()
+
     def test_confirmed_external_action_runs_once_with_reviewed_target(self) -> None:
         self.dispatch.stop()
         with patch.object(brain.actions, "open_url", return_value="Opened.") as open_url:
@@ -293,6 +361,25 @@ class ApprovalIntegrationTests(unittest.TestCase):
             handler.do_POST()
         thread.assert_not_called()
         self.assertEqual(handler._json.call_args.args[1], 403)
+
+    def test_window_review_is_bounded_and_read_only(self) -> None:
+        import server
+        handler = server.Handler.__new__(server.Handler)
+        handler.app = Mock()
+        handler.path = "/api/windows/review"
+        handler._trusted_local_request = Mock(return_value=True)
+        handler._authorized_api = Mock(return_value=True)
+        handler._body = Mock(return_value={})
+        handler._json = Mock()
+        windows = [brain.actions._WindowInfo(i, f"Window {i}") for i in range(60)]
+        with patch.object(brain.actions, "list_windows", return_value=windows), \
+             patch.object(brain.actions, "switch_window") as switch:
+            handler.do_POST()
+        payload = handler._json.call_args.args[0]
+        self.assertEqual(len(payload["titles"]), 50)
+        self.assertTrue(payload["limited"])
+        self.assertEqual(set(payload), {"titles", "limited"})
+        switch.assert_not_called()
 
     def test_user_commands_route_through_direct_policy(self) -> None:
         with patch.object(brain.action_policy, "review_direct_action", wraps=brain.action_policy.review_direct_action) as review:

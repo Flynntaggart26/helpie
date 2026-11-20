@@ -437,10 +437,16 @@ def close_app(name: str) -> str:
     key = resolve_app(name)
     if not key or not APPS[key]["proc"]:
         return f"I could not find {name} running."
-    subprocess.Popen(["taskkill", "/IM", APPS[key]["proc"], "/F"],
-                     creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    _audit("Closed app", key)
-    return f"Closed {key}."
+    try:
+        result = subprocess.run(["taskkill", "/IM", APPS[key]["proc"]],
+                                creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return f"I could not request {key} to close."
+    if result.returncode != 0:
+        return f"I could not request {key} to close. It may not be running or may require attention."
+    _audit("Requested app closure", key)
+    return f"Requested {key} to close. Check for any save prompts."
 
 
 # --------------------------------------------------------------------------- #
@@ -1414,12 +1420,13 @@ def list_windows() -> list[_WindowInfo]:
         length = user32.GetWindowTextLengthW(hwnd)
         if length <= 0:
             return True
+        length = min(length, 512)
         buffer = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buffer, length + 1)
         title = buffer.value.strip()
         if title and title not in ignore:
             found.append(_WindowInfo(hwnd, title))
-        return True
+        return len(found) < 100
 
     try:
         user32.EnumWindows(_callback, 0)
@@ -1441,21 +1448,26 @@ def switch_window(name: str) -> str:
     if not query:
         return "Which window should I switch to?"
     windows = list_windows()
-    match = next((w for w in windows if query in w.title.lower()), None)
-    if match is None:
+    matches = [w for w in windows if query in w.title.lower()]
+    if not matches:
         aliases = {"chrome": "chrome", "spotify": "spotify", "notepad": "notepad",
                    "code": "visual studio code", "word": "word", "excel": "excel",
                    "explorer": "file explorer", "edge": "edge", "terminal": "terminal"}
         wanted = aliases.get(query, query)
-        match = next((w for w in windows if wanted in w.title.lower()), None)
-    if match is None:
+        matches = [w for w in windows if wanted in w.title.lower()]
+    if not matches:
         return f"I could not find a window called {name}."
+    if len(matches) != 1:
+        return "More than one window matches that name. Please specify a more distinctive window title."
+    match = matches[0]
     user32 = ctypes.windll.user32
     try:
-        user32.ShowWindow(match.hwnd, 9)
-        user32.SwitchToThisWindow(match.hwnd, True)
+        hwnd = wintypes.HWND(match.hwnd)
+        user32.ShowWindow(hwnd, 9)
+        if not user32.SetForegroundWindow(hwnd):
+            return f"Windows did not allow switching to {match.title}."
     except Exception:
-        pass
+        return "I could not switch to that window."
     _audit("Switched window", match.title)
     return f"Switched to {match.title}."
 

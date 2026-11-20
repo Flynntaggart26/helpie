@@ -202,7 +202,14 @@
       <section class="view" id="view-commands">
         <div class="panel">
           <h2>Action safety</h2>
-          <p class="muted">Web searches, opening links, deleting all notes or reminders, deleting memories or routines, and changing computer power require a separate confirmation that expires after 60 seconds. File organization is preview-only. Typing into other apps, multi-step chat plans and plugin changes are unavailable until their targets can be reviewed. Routines run only approved local steps.</p>
+          <p class="muted">Web searches, opening links, closing apps, saving screenshots, deleting all notes or reminders, deleting memories or routines, and changing computer power require a separate confirmation that expires after 60 seconds. File organization is preview-only. Opening files by partial name, typing into other apps, multi-step chat plans and plugin changes are unavailable until their targets can be reviewed. Routines run only approved local steps.</p>
+        </div>
+        <div class="panel">
+          <h2>Review open windows</h2>
+          <p class="muted">List visible window titles locally. This does not read window contents, select controls, or operate an app.</p>
+          <button class="ghost" id="window-review-start" type="button">List open windows</button>
+          <p class="muted" id="window-review-status" aria-live="polite">Window titles are listed only when requested.</p>
+          <ol id="window-review-results"></ol>
         </div>
         <div class="panel">
           <h2>Review files</h2>
@@ -265,7 +272,7 @@
             </div>
           </div>
           <p class="muted">
-            Saved sequences of commands. Say “run &lt;name&gt;”, press Ctrl + Space, or hit Run.
+            Saved sequences of approved local commands. Routines containing restricted actions, including app closure, cannot run until those actions have separate review.
           </p>
 
           <form class="routine-form" id="routine-form" hidden>

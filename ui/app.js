@@ -70,10 +70,10 @@ const COMMANDS = [
   ["Documents", '"Summarize my thesis", "Report dosyasını özetle"'],
   ["Memory", '"Remember that I prefer short answers", "What do you remember about me"'],
   ["Briefing", '"Good morning", "Give me a briefing"'],
-  ["Chain commands", '"Open Chrome and search for cats", "Sesi kıs ve parlaklığı azalt", "Lock the screen, then take a screenshot"'],
-  ["Organize files", '"Organize downloads by type", "Organize desktop by date", "Organize all preview", "Find duplicates in downloads"'],
+  ["One action at a time", 'Multi-step chat actions are unavailable until each action can be reviewed.'],
+  ["Organize files", '"Organize downloads by type", "Organize desktop by date" (preview only), "Find duplicates in downloads"'],
   ["Routines", '"Run start_work routine", "Save routine my_morning", "Run routine with params", "List routines"'],
-  ["Email & Calendar", '"Read emails", "Send email to john@doe.com", "Show calendar", "Create meeting tomorrow 10am"'],
+  ["Email & Calendar", '"Read emails", "Show calendar"; sending or creating events is unavailable until separately reviewed.'],
   ["Notes", '"Take a note: buy milk", "Read my notes"'],
   ["Reminders", '"Remind me in 10 minutes to stretch", "Remind me every day at 9 to drink water"'],
   ["Clipboard", '"What is on my clipboard", "Copy hello world to the clipboard"'],
@@ -2330,6 +2330,26 @@ function bind() {
   $("visual-note-export-png").addEventListener("click", exportVisualNotePng);
   $("visual-note-export-pdf").addEventListener("click", exportVisualNotePdf);
   $("visual-note-export-svg").addEventListener("click", exportVisualNoteSvg);
+  $("window-review-start").addEventListener("click", async () => {
+    const button = $("window-review-start"), status = $("window-review-status"), list = $("window-review-results");
+    button.disabled = true;
+    list.replaceChildren();
+    status.textContent = "Listing open windows on this PC…";
+    try {
+      const data = await api("/api/windows/review", { method: "POST", body: "{}" });
+      for (const title of data.titles || []) {
+        const item = document.createElement("li");
+        item.textContent = formatReviewPath(title);
+        item.dir = "ltr";
+        list.appendChild(item);
+      }
+      status.textContent = `${(data.titles || []).length} window(s) listed locally.${data.limited ? " More windows were omitted." : ""}`;
+    } catch (_) {
+      status.textContent = "Could not list open windows.";
+    } finally {
+      button.disabled = false;
+    }
+  });
   let reviewRoot = "", reviewToken = null;
   function clearRecheckStatus() {
     $("file-review-results").querySelectorAll(".file-review-result-status").forEach(node => { node.textContent = ""; });

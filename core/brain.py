@@ -822,7 +822,13 @@ class Brain:
                 return "Okay, cancelled."
             if decision == "yes":
                 audit.log("Pending action approved", source="action")
-                if proposal.risk in {"destructive", "device_control", "external_communication"}:
+                cancel_event = self._turn_cancel.get()
+                with self._model_proposal_lock:
+                    cancelled = proposal_generation != self._model_proposal_generation
+                if cancelled or (cancel_event and cancel_event.is_set()):
+                    audit.log("Approved action cancelled before execution", source="action")
+                    return "The action request was cancelled."
+                if proposal.risk in {"destructive", "device_control", "external_communication", "sensitive_local_data", "application_close"}:
                     return self._dispatch(proposal.name, proposal.args, confirmed=True)
                 return self._dispatch(proposal.name, proposal.args)
             return f"Please say yes or no. Proposed action: {proposal.preview}."
@@ -1088,7 +1094,7 @@ class Brain:
             return actions.media("prev")
 
         if re.search(r"\b(screenshot|screen shot|screen capture|capture the screen|ekran görüntüsü)\b", t):
-            return actions.screenshot()
+            return self._request_sensitive_action("screenshot", {}, proposal_generation)
 
         if re.search(r"\b(lock (the )?(screen|pc|computer)|kilitle)\b", t) and "shut" not in t:
             return actions.lock_screen()
@@ -1196,7 +1202,7 @@ class Brain:
         # files
         match = re.search(r"(?:open|find|aç)\s+(?:the\s+)?(?:file\s+)?(.+?)\s*(?:file|dosyasını|dosyayı)?$", t)
         if match and re.search(r"(file|dosya)", t):
-            return actions.open_file(re.sub(r"\bfile\b|\bdosya\b", "", match.group(1)).strip())
+            return "Opening a file by a partial name is unavailable until the exact target can be reviewed. Use Commands → Review files."
         match = re.search(r"open\s+(?:the\s+)?(desktop|downloads|documents|pictures|music|videos)"
                           r"|(masaüstü|indirilenler|belgeler|resimler|müzik|videolar)\s*(?:klasörünü|klasörü)?\s*aç", t)
         if match:
@@ -1254,7 +1260,7 @@ class Brain:
 
         app_key = actions.resolve_app(alt)
         if app_key and any(verb in t for verb in CLOSE_VERBS):
-            return self._dispatch_direct_desktop("close_app", {"app": app_key})
+            return self._request_sensitive_action("close_app", {"app": app_key}, proposal_generation)
         if app_key and any(verb in t for verb in OPEN_VERBS):
             return self._dispatch_direct_desktop("open_app", {"app": app_key})
         match = re.search(r"^(?:open|launch|start|run|aç|başlat|çalıştır)\s+(.+)$", alt)
@@ -1476,6 +1482,21 @@ class Brain:
         return f"Proposed action: {proposal.preview}. Say yes to confirm or no to cancel."
 
     def _dispatch(self, name: str, args: dict, confirmed: bool = False) -> str:
+        if name == "close_app":
+            proposal = action_policy.review_direct_action(name, args)
+            if not confirmed or proposal is None:
+                audit.log("Blocked unconfirmed app closure", ok=False, source="action")
+                return "Please request app closure separately and confirm it."
+            return actions.close_app(proposal.args["app"])
+        if name == "screenshot":
+            if not confirmed or action_policy.review_direct_action(name, args) is None:
+                audit.log("Blocked unconfirmed screenshot", ok=False, source="action")
+                return "Please request a screenshot separately and confirm it."
+            try:
+                return actions.screenshot()
+            except Exception:
+                audit.log("Screenshot failed", ok=False, source="action")
+                return "I could not save the screenshot."
         if name in {"web_search", "open_url", "open_site"}:
             if name == "open_site":
                 return "Please request the site directly and confirm its address."
@@ -1529,13 +1550,11 @@ class Brain:
 
         handlers: dict[str, Callable[[dict], str]] = {
             "open_app": lambda a: actions.open_app(str(a.get("app", ""))),
-            "close_app": lambda a: actions.close_app(str(a.get("app", ""))),
             "set_volume": lambda a: actions.set_volume(float(a.get("percent", 50))),
             "volume": lambda a: actions.volume(str(a.get("direction", "up"))),
             "set_brightness": lambda a: actions.set_brightness(int(a.get("percent", 50))),
             "add_note": lambda a: actions.add_note(str(a.get("text", ""))),
             "type_text": lambda a: actions.type_text(str(a.get("text", ""))),
-            "screenshot": lambda a: actions.screenshot(),
             "set_timer": lambda a: actions.set_timer(minutes * 60, str(a.get("label", "")), self.on_speak),
             "set_reminder": lambda a: actions.set_timer(minutes * 60, str(a.get("label", "")), self.on_speak),
             "read_clipboard": lambda a: actions.read_clipboard(),

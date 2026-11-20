@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 # Routines may only run these bounded, local actions without a separate review.
 ROUTINE_ALLOWED_ACTIONS = frozenset({
-    "open_app", "close_app", "switch_window", "set_volume", "volume",
+    "open_app", "switch_window", "set_volume", "volume",
     "set_brightness", "add_note", "set_timer", "set_reminder", "what_time",
     "calculate", "battery", "system_info", "read_reminders",
 })
@@ -51,6 +51,10 @@ def review_model_action(name: str, args: object) -> ProposedAction | None:
             or any(unicodedata.category(char).startswith("C") or char in "\u2028\u2029"
                    for char in value)):
         return None
+    if name == "close_app":
+        return ProposedAction(name=name, args={"app": value},
+                              preview=f"Request all {value} application processes to close; unsaved work may be affected",
+                              risk="application_close")
     return ProposedAction(name=name, args={spec[0]: value}, preview=f"{spec[1]}: {value}")
 
 
@@ -86,6 +90,10 @@ def review_direct_action(name: str, args: object) -> ProposedAction | None:
         mode = args.get("mode")
         if isinstance(mode, str) and mode in labels:
             return ProposedAction(name=name, args={"mode": mode}, preview=labels[mode], risk="device_control")
+    if name == "screenshot" and isinstance(args, dict) and not args:
+        return ProposedAction(name=name, args={},
+                              preview="Save an image of all monitors to Pictures/Helpie",
+                              risk="sensitive_local_data")
     if name in {"clear_notes", "clear_reminders", "clear_memory"} and isinstance(args, dict) and not args:
         label = {"clear_notes": "Delete all notes", "clear_reminders": "Delete all reminders",
                  "clear_memory": "Delete all saved memories"}[name]
