@@ -46,6 +46,7 @@ DEFAULTS = {
     "user_name": "",
     "provider": "gemini",
     "api_key": "",
+    "api_key_env_disabled": False,
     "model": "gemini-flash-latest",
     "voice": "en-US-AriaNeural",
     "rate": "+0%",
@@ -124,7 +125,7 @@ def load() -> dict:
                 raw.pop(field, None)
             SETTINGS_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    if not cfg.get("api_key"):
+    if not cfg.get("api_key") and not cfg.get("api_key_env_disabled", False):
         cfg["api_key"] = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("HELPIE_API_KEY", "")
     return cfg
 

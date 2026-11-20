@@ -480,6 +480,7 @@
                 <div class="form-block">
                   <label class="page-label" for="set-groq-speech-key">Groq speech API key</label>
                   <input type="password" id="set-groq-speech-key" autocomplete="off" />
+                  <button type="button" class="ghost" id="remove-groq-speech-key">Remove saved Groq speech key</button>
                   <p class="page-help" id="groq-speech-key-state">Saved securely on this PC. Leave blank to keep the saved key.</p>
                 </div>
 
@@ -599,6 +600,7 @@
                     Porcupine AccessKey <span class="badge" id="porcupine-key-state">not set</span>
                   </label>
                   <input id="set-porcupine-key" class="wide" type="password" placeholder="AccessKey." />
+                  <button type="button" class="ghost" id="remove-wake-word-key">Remove saved wake-word key</button>
                   <p class="page-help">Required for the wake word. Get a free key from the Picovoice Console.</p>
                 </div>
               </section>
@@ -636,6 +638,7 @@
                     API key <span class="badge" id="key-state">not set</span>
                   </label>
                   <input id="set-key" class="wide" type="password" placeholder="AIza…" />
+                  <button type="button" class="ghost" id="remove-gemini-key">Remove saved Gemini key</button>
                   <p class="page-help">Stored encrypted with Windows DPAPI on this PC only.</p>
                 </div>
 
@@ -686,6 +689,7 @@
                     Provider API key <span class="badge" id="openai-key-state">not set</span>
                   </label>
                   <input id="set-openai-key" class="wide" type="password" placeholder="sk-…" />
+                  <button type="button" class="ghost" id="remove-openai-key">Remove saved provider key</button>
                   <p class="page-help">Leave empty for a local server that needs no auth.</p>
                 </div>
 

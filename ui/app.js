@@ -1124,6 +1124,10 @@ function applySettings() {
   $("set-rate").value = s.rate || "+0%";
   $("set-cloud-transcription").checked = !!s.cloud_speech_consent;
   $("set-groq-transcription").checked = !!s.groq_speech_consent;
+  $("remove-groq-speech-key").disabled = !s.has_groq_speech_key;
+  $("remove-wake-word-key").disabled = !s.has_wake_word_key;
+  $("remove-gemini-key").disabled = !s.has_key;
+  $("remove-openai-key").disabled = !s.has_openai_key;
   $("set-groq-speech-key").value = "";
   $("groq-speech-key-state").textContent = s.has_groq_speech_key
     ? "A key is saved securely. Leave blank to keep it." : "Enter a Groq key; it is saved securely on this PC.";
@@ -1235,6 +1239,35 @@ function saveVoiceOutputPreference() {
     $("voice-selection-status").textContent = "Could not save the online voice setting. Please try again.";
   }).finally(() => { toggle.disabled = false; });
   return voiceSelectionPending;
+}
+
+async function removeCredential(field, buttonId, inputId) {
+  if (!window.confirm("Remove this saved key from Helpie on this PC? You will need to enter it again to use it.")) return;
+  const button = $(buttonId);
+  button.disabled = true;
+  try {
+    const result = await api("/api/settings/credentials/remove", {
+      method: "POST", body: JSON.stringify({ credential: field }),
+    });
+    state.settings = result.settings;
+    $(inputId).value = "";
+    if (field === "groq_speech_key") {
+      $("set-groq-transcription").checked = false;
+      $("groq-speech-key-state").textContent = "Key removed. Groq transcription is off.";
+    } else if (field === "wake_word_access_key") {
+      $("set-wake-word").checked = false;
+      $("porcupine-key-state").textContent = "not set";
+      $("porcupine-key-state").className = "badge";
+    } else {
+      const badge = $(field === "api_key" ? "key-state" : "openai-key-state");
+      badge.textContent = "not set";
+      badge.className = "badge";
+    }
+    toast("Saved key removed.");
+  } catch (error) {
+    button.disabled = false;
+    toast("Could not remove the saved key.");
+  }
 }
 
 async function saveSettings() {
@@ -2191,6 +2224,10 @@ function bind() {
   });
 
   $("save-settings").addEventListener("click", saveSettings);
+  $("remove-groq-speech-key").addEventListener("click", () => removeCredential("groq_speech_key", "remove-groq-speech-key", "set-groq-speech-key"));
+  $("remove-wake-word-key").addEventListener("click", () => removeCredential("wake_word_access_key", "remove-wake-word-key", "set-porcupine-key"));
+  $("remove-gemini-key").addEventListener("click", () => removeCredential("api_key", "remove-gemini-key", "set-key"));
+  $("remove-openai-key").addEventListener("click", () => removeCredential("openai_key", "remove-openai-key", "set-openai-key"));
   $("set-screen-context").addEventListener("change", () => {
     const liveView = $("set-companion-live-view");
     liveView.disabled = !$("set-screen-context").checked;

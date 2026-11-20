@@ -62,6 +62,8 @@ LANGUAGES = [
     {"id": "tr-TR", "label": "Turkish"},
 ]
 
+REMOVABLE_CREDENTIALS = frozenset({"api_key", "openai_key", "groq_speech_key", "wake_word_access_key"})
+
 
 # --------------------------------------------------------------------------- #
 #  Event bus (UI polls this)
@@ -659,7 +661,10 @@ class App:
             safe["weather"] = ""
         return safe
 
-    def update_settings(self, patch: dict, *, broadcast: bool = True) -> dict:
+    def update_settings(self, patch: dict, *, broadcast: bool = True,
+                        clear_credential: str = "") -> dict:
+        if clear_credential and clear_credential not in REMOVABLE_CREDENTIALS:
+            raise ValueError("Unknown credential")
         previous_cfg = dict(self.cfg)
         self.cfg = dict(self.cfg)
         allowed = {"user_name", "provider", "api_key", "model", "voice", "rate", "volume",
@@ -707,6 +712,16 @@ class App:
                             or width <= 0 or height <= 0 or x + width > 1 or y + height > 1):
                         continue
                 self.cfg[key] = value
+                if key == "api_key":
+                    self.cfg["api_key_env_disabled"] = False
+        if clear_credential:
+            self.cfg[clear_credential] = ""
+            if clear_credential == "api_key":
+                self.cfg["api_key_env_disabled"] = True
+            elif clear_credential == "groq_speech_key":
+                self.cfg["groq_speech_consent"] = False
+            elif clear_credential == "wake_word_access_key":
+                self.cfg["wake_word"] = False
         # Companion capture is a narrower permission inside full-chat screen
         # consent. Never persist it enabled after the broader permission is off.
         if not self.cfg.get("screen_context_consent", False):
@@ -747,7 +762,7 @@ class App:
                 self._live_capture_last_check = 0.0
             audit.log("Stopped local companion screen capture", source="screen")
         # Restart wake word if settings changed
-        if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch:
+        if "wake_word" in patch or "wake_word_access_key" in patch or "mic_index" in patch or clear_credential == "wake_word_access_key":
             self._stop_wake_word()
             self._start_wake_word()
         self.brain.refresh(self.cfg)
@@ -1212,6 +1227,19 @@ class Handler(BaseHTTPRequestHandler):
             except RuntimeError as exc:
                 self._json({"error": str(exc)}, 503)
                 return
+            self._json({"settings": settings})
+            return
+        if path == "/api/settings/credentials/remove":
+            credential = body.get("credential")
+            if not isinstance(credential, str) or credential not in REMOVABLE_CREDENTIALS:
+                self._json({"error": "Unknown credential"}, 400)
+                return
+            try:
+                settings = app.update_settings({}, broadcast=False, clear_credential=credential)
+            except (RuntimeError, OSError):
+                self._json({"error": "Could not remove the credential."}, 503)
+                return
+            audit.log("Removed saved credential", source="settings")
             self._json({"settings": settings})
             return
         if path == "/api/test_voice":
